@@ -21,8 +21,18 @@ npm run build    # type-check + production build
 - `New` starts a blank grid: draw walls (`2`), boxes (`3`), circles (`4`),
   place speakers (`5`). `+ Maple Court` adds a fresh copy of the apartment.
 - Export/Import layouts as JSON (import adds a layout, never overwrites).
-- Tip for the rolling TV stand: duplicate the layout, move the TV to its
-  second position, and compare speaker proposals between the two.
+
+## Listening spots & scenario compare
+
+- A scene holds **multiple named listening positions** ("Couch", "Bed", …) in
+  the **Listening spots** card. Switch the active seat (the "YOU" puck and the
+  live verdict follow it), rename or remove seats, and drag each into place.
+  Inactive seats stay visible on the canvas as faint labelled markers.
+- **Compare** (header, or the Listening spots card) opens a **2-up view**: two
+  seats — or two whole layouts — side by side, each with its own verdict, so the
+  rolling-TV **couch-vs-bed** decision is made in one glance instead of two tabs.
+- Old single-listener layouts and exported JSON upgrade automatically to the
+  named-seat model on load; the single-listener export shape still imports.
 
 ## The physics engine (2.5D: heights matter)
 

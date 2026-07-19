@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   activeListener,
   addListener,
+  addRoomShell,
   apartmentScene,
   blankScene,
   DEFAULT_LISTENER_NAME,
+  MAX_LISTENERS,
   removeListener,
   renameListener,
   sanitizeScene,
@@ -12,6 +14,7 @@ import {
   sceneBounds,
   sceneListeners,
   setActiveListener,
+  syncActiveListener,
   updateActiveListener,
 } from '../scene';
 import { traceScene } from '../raytrace';
@@ -228,6 +231,76 @@ describe('listener write helpers keep the mirror synced', () => {
     expect(pruned.listeners).toHaveLength(1);
     expect(pruned.activeListenerId).not.toBe(bedId);
     assertMirrorSynced(pruned);
+  });
+});
+
+describe('seat cap never silently drops the active seat', () => {
+  it('addListener is a no-op once the seat cap is reached', () => {
+    let scene = blankScene();
+    for (let i = 0; i < MAX_LISTENERS + 5; i++) scene = addListener(scene);
+    expect(scene.listeners).toHaveLength(MAX_LISTENERS);
+    // At the cap, another add returns the very same scene (no partial write).
+    expect(addListener(scene)).toBe(scene);
+  });
+
+  it('sanitizeScene truncates to the cap but keeps the ACTIVE seat', () => {
+    const many = Array.from({ length: MAX_LISTENERS + 6 }, (_, i) => ({
+      id: `s${i}`,
+      name: `Seat ${i}`,
+      pos: { x: i, y: 1 },
+      z: 1.2,
+    }));
+    const activeId = `s${MAX_LISTENERS + 3}`; // an active seat BEYOND the cap
+    const scene = sanitizeScene({ objects: [], speakers: [], pairs: [], listeners: many, activeListenerId: activeId })!;
+    expect(scene.listeners).toHaveLength(MAX_LISTENERS);
+    expect(scene.listeners!.some((l) => l.id === activeId)).toBe(true);
+    expect(scene.activeListenerId).toBe(activeId);
+    assertMirrorSynced(scene);
+  });
+});
+
+describe('addRoomShell recenters every seat on the first room', () => {
+  it('shifts inactive seats by the same delta so none is stranded', () => {
+    const base = addListener(blankScene(), 'Bed', { x: 5, y: 5 }); // active = Bed(5,5), other=default(2.5,2.5)
+    const otherBefore = base.listeners!.find((l) => l.name !== 'Bed')!;
+    const shelled = addRoomShell(base, 'Room', 4, 4);
+    // Active seat lands at the room centre.
+    expect(activeListener(shelled).pos).toEqual({ x: 2, y: 2 });
+    // The inactive seat moved by the SAME delta (-3,-3), not left behind.
+    const otherAfter = shelled.listeners!.find((l) => l.id === otherBefore.id)!;
+    expect(otherAfter.pos.x).toBeCloseTo(otherBefore.pos.x - 3);
+    expect(otherAfter.pos.y).toBeCloseTo(otherBefore.pos.y - 3);
+    assertMirrorSynced(shelled);
+  });
+});
+
+describe('syncActiveListener enforces the mirror invariant', () => {
+  it('re-derives the mirror from the active seat and normalizes a bad active id', () => {
+    // Hand-build a desynced scene: mirror at (9,9) but active seat at (1,1).
+    const desynced: Scene = {
+      objects: [],
+      speakers: [],
+      pairs: [],
+      listeners: [
+        { id: 'a', name: 'A', pos: { x: 1, y: 1 }, z: 1.2 },
+        { id: 'b', name: 'B', pos: { x: 5, y: 5 }, z: 1.2 },
+      ],
+      activeListenerId: 'ghost', // invalid → normalizes to first seat
+      listener: { pos: { x: 9, y: 9 }, z: 0.3 },
+    };
+    const fixed = syncActiveListener(desynced);
+    expect(fixed.activeListenerId).toBe('a');
+    expect(fixed.listener.pos).toEqual({ x: 1, y: 1 });
+    // The mirror must be a fresh copy, not an alias of the seat's Vec2.
+    expect(fixed.listener.pos).not.toBe(fixed.listeners!.find((l) => l.id === 'a')!.pos);
+    assertMirrorSynced(fixed);
+  });
+});
+
+describe('removeListener no-ops cleanly on an unknown id', () => {
+  it('returns the very same scene (no new identity, no undo noise)', () => {
+    const base = addListener(blankScene(), 'Bed', { x: 5, y: 5 });
+    expect(removeListener(base, 'does-not-exist')).toBe(base);
   });
 });
 

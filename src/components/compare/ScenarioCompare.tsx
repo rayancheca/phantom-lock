@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Layout, Scene } from '../../engine/types';
 import { traceScene } from '../../engine/raytrace';
-import { computeAudio, type AudioMetrics } from '../../engine/stereo';
+import { CLOSE_QUALITY, computeAudio, type AudioMetrics } from '../../engine/stereo';
 import { activeListener, sceneListeners, setActiveListener } from '../../engine/scene';
 import { drawMiniPlan } from '../canvas/thumb';
 import MetricsPanel from '../panels/MetricsPanel';
@@ -41,21 +41,36 @@ function verdictOf(audio: AudioMetrics): Computed['verdict'] {
       state: 'searching',
     };
   }
-  const quality = Math.max(...audio.pairs.map((p) => p.quality));
-  const locked = audio.allLocked;
-  const state: Computed['verdict']['state'] = locked ? 'locked' : quality > 0.55 ? 'close' : 'searching';
-  return {
-    label: locked ? 'Phantom center locked' : quality > 0.55 ? 'Almost there' : 'No lock yet',
-    quality,
-    locked,
-    state,
-  };
+  // Report the BEST pair's quality, but only call the seat "locked" when EVERY
+  // pair is locked — and keep quality tied to the same pair so a 100% meter can
+  // never sit under a "not locked" headline without an explanation.
+  const best = audio.pairs.reduce((a, b) => (b.quality > a.quality ? b : a));
+  const quality = best.quality;
+  const locked = audio.allLocked; // all pairs locked
+  const state: Computed['verdict']['state'] = locked
+    ? 'locked'
+    : quality > CLOSE_QUALITY
+      ? 'close'
+      : 'searching';
+  const label = locked
+    ? 'Phantom center locked'
+    : best.locked
+      ? 'One pair locks, another doesn’t'
+      : quality > CLOSE_QUALITY
+        ? 'Almost there'
+        : 'No lock yet';
+  return { label, quality, locked, state };
 }
 
 function useComputed(layouts: Layout[], scenario: Scenario): Computed {
   return useMemo(() => {
     const layout = layouts.find((l) => l.id === scenario.layoutId) ?? layouts[0];
-    const scene = setActiveListener(layout.scene, scenario.seatId);
+    const seats = sceneListeners(layout.scene);
+    // Guard against a stale seatId (e.g. the layout changed underneath): fall
+    // back to the first seat so the picker and the rendered verdict can never
+    // silently disagree about which seat this is.
+    const seatId = seats.some((s) => s.id === scenario.seatId) ? scenario.seatId : seats[0].id;
+    const scene = setActiveListener(layout.scene, seatId);
     const trace = traceScene(scene, layout.settings.rayCount, layout.settings.maxBounces);
     const audio = computeAudio(scene, trace, layout.settings.tvAnchor);
     return {
@@ -112,7 +127,7 @@ function ScenarioPicker({
       <label className="field">
         <span>Seat</span>
         <select
-          value={scenario.seatId}
+          value={seats.some((s) => s.id === scenario.seatId) ? scenario.seatId : seats[0].id}
           onChange={(e) => onChange({ ...scenario, seatId: e.target.value })}
           disabled={seats.length < 2}
         >
@@ -143,6 +158,7 @@ function Column({ data }: { data: Computed }) {
         speakerCount={data.scene.speakers.length}
         tvAnchor={data.layout.settings.tvAnchor}
         onSuggest={() => {}}
+        hideSuggest
       />
     </div>
   );

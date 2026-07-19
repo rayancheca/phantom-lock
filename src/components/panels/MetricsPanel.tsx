@@ -1,5 +1,5 @@
 import type { TraceResult } from '../../engine/types';
-import type { AudioMetrics, PairMetrics } from '../../engine/stereo';
+import { CLOSE_QUALITY, type AudioMetrics, type PairMetrics } from '../../engine/stereo';
 import Icon from '../ui/Icon';
 import './panels.css';
 
@@ -9,6 +9,8 @@ interface Props {
   speakerCount: number;
   tvAnchor: boolean;
   onSuggest: () => void;
+  /** Read-only contexts (e.g. scenario compare) hide the actionable Suggest button. */
+  hideSuggest?: boolean;
 }
 
 type Tone = 'ok' | 'warn' | 'bad' | 'plain';
@@ -92,7 +94,7 @@ function causeSentence(pair: PairMetrics, blockedA: boolean | undefined, blocked
 }
 
 function PairSection({ pair, trace, tvAnchor }: { pair: PairMetrics; trace: TraceResult; tvAnchor: boolean }) {
-  const state = pair.locked ? 'locked' : pair.quality > 0.55 ? 'close' : 'searching';
+  const state = pair.locked ? 'locked' : pair.quality > CLOSE_QUALITY ? 'close' : 'searching';
   const stateText = state === 'locked' ? 'Phantom center locked' : state === 'close' ? 'Almost there' : 'No lock yet';
 
   const itdTone: Tone = pair.itdMs <= 0.1 ? 'ok' : pair.itdMs <= 0.3 ? 'warn' : 'bad';
@@ -200,19 +202,22 @@ function PairSection({ pair, trace, tvAnchor }: { pair: PairMetrics; trace: Trac
   );
 }
 
-export default function MetricsPanel({ audio, trace, speakerCount, tvAnchor, onSuggest }: Props) {
+export default function MetricsPanel({ audio, trace, speakerCount, tvAnchor, onSuggest, hideSuggest }: Props) {
   if (speakerCount === 0) {
     return (
       <section className="card" aria-label="Audio metrics">
         <h2>Audio</h2>
         <p className="card-sub">
-          No speakers yet. Place them one by one with the speaker tool (<kbd>5</kbd>), or let the
-          optimizer find spots for you.
+          {hideSuggest
+            ? 'No speakers in this layout yet — place a stereo pair to get a verdict here.'
+            : 'No speakers yet. Place them one by one with the speaker tool, or let the optimizer find spots for you.'}
         </p>
-        <button type="button" className="btn btn-primary btn-block" onClick={onSuggest}>
-          <Icon name="sparkles" size={14} />
-          Suggest placement
-        </button>
+        {!hideSuggest && (
+          <button type="button" className="btn btn-primary btn-block" onClick={onSuggest}>
+            <Icon name="sparkles" size={14} />
+            Suggest placement
+          </button>
+        )}
       </section>
     );
   }

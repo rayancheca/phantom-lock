@@ -106,9 +106,11 @@ export function setActiveListener(scene: Scene, id: string): Scene {
   return syncActiveListener({ ...scene, listeners: seats, activeListenerId: id });
 }
 
-/** Add a new named seat (default offset from the active one) and make it active. */
+/** Add a new named seat (default offset from the active one) and make it active.
+ *  No-op at the seat cap so we never create seats a later load would silently drop. */
 export function addListener(scene: Scene, name?: string, at?: Vec2): Scene {
   const seats = sceneListeners(scene);
+  if (seats.length >= MAX_LISTENERS) return scene;
   const src = seats.find((l) => l.id === scene.activeListenerId) ?? seats[0];
   const pos = at ?? { x: src.pos.x + 0.6, y: src.pos.y + 0.6 };
   const seat = makeNamedListener(pos, src.z, name?.trim() ? name.trim().slice(0, 32) : `Seat ${seats.length + 1}`);
@@ -122,10 +124,11 @@ export function renameListener(scene: Scene, id: string, name: string): Scene {
   return { ...scene, listeners };
 }
 
-/** Remove a seat. Never drops below one; a removed active seat hands off to a survivor. */
+/** Remove a seat. Never drops below one; a removed active seat hands off to a
+ *  survivor. Unknown ids are a true no-op (no new object identity → no undo noise). */
 export function removeListener(scene: Scene, id: string): Scene {
   const seats = sceneListeners(scene);
-  if (seats.length <= 1) return scene;
+  if (seats.length <= 1 || !seats.some((l) => l.id === id)) return scene;
   const listeners = seats.filter((l) => l.id !== id);
   const activeListenerId = listeners.some((l) => l.id === scene.activeListenerId)
     ? scene.activeListenerId
@@ -437,8 +440,11 @@ export function sanitizeScene(raw: unknown): Scene | null {
   const seats: NamedListener[] = [];
   const rawSeats = (s as { listeners?: unknown }).listeners;
   if (Array.isArray(rawSeats)) {
-    for (const raw2 of rawSeats) {
-      if (seats.length >= MAX_LISTENERS) break; // bound pathological imports
+    // Scan a bounded slice so a pathological import can't blow up, yet collect
+    // beyond MAX_LISTENERS so the truncation below can still keep the ACTIVE seat.
+    const scanLimit = Math.min(rawSeats.length, MAX_LISTENERS * 8);
+    for (let i = 0; i < scanLimit; i++) {
+      const raw2 = rawSeats[i];
       if (typeof raw2 !== 'object' || raw2 === null) continue;
       const rl = raw2 as Record<string, unknown>;
       if (!isVec(rl.pos)) continue; // drop malformed seats rather than crash
@@ -470,9 +476,19 @@ export function sanitizeScene(raw: unknown): Scene | null {
     seats.push({ id, name: DEFAULT_LISTENER_NAME, pos, z });
   }
   const rawActive = (s as { activeListenerId?: unknown }).activeListenerId;
-  const activeListenerId =
+  let activeListenerId =
     typeof rawActive === 'string' && seats.some((l) => l.id === rawActive) ? rawActive : seats[0].id;
-  const activeSeat = seats.find((l) => l.id === activeListenerId) ?? seats[0];
+  // Cap stored seats, but NEVER drop the active one — that would silently jump
+  // YOU (and every verdict) to an unrelated seat on the next load.
+  let finalSeats = seats;
+  if (seats.length > MAX_LISTENERS) {
+    finalSeats = seats.slice(0, MAX_LISTENERS);
+    if (!finalSeats.some((l) => l.id === activeListenerId)) {
+      finalSeats[MAX_LISTENERS - 1] = seats.find((l) => l.id === activeListenerId)!;
+    }
+  }
+  const activeSeat = finalSeats.find((l) => l.id === activeListenerId) ?? finalSeats[0];
+  activeListenerId = activeSeat.id;
   const listener: ListenerState = { pos: cloneVec(activeSeat.pos), z: activeSeat.z };
 
   // Speakers: v2 array, with a v1 fallback ({L, R} object → pair).
@@ -560,7 +576,7 @@ export function sanitizeScene(raw: unknown): Scene | null {
           : [];
       })
     : [];
-  return { objects, speakers, pairs, listener, listeners: seats, activeListenerId, underlay, rooms };
+  return { objects, speakers, pairs, listener, listeners: finalSeats, activeListenerId, underlay, rooms };
 }
 
 /** Append a named rectangular room shell flush with the current bounds. */
@@ -580,8 +596,15 @@ export function addRoomShell(scene: Scene, name: string, w: number, d: number): 
     objects: [...scene.objects, ...walls],
     rooms: [...(scene.rooms ?? []), ...(name.trim() ? [room] : [])],
   };
-  // A first room recenters the (single) seat; an added room leaves seats put.
-  return hasAny ? base : updateActiveListener(base, { pos: { x: w / 2, y: d / 2 } });
+  if (hasAny) return base; // an added room leaves seats put
+  // A first room recenters the active seat into it — and shifts every OTHER seat
+  // by the same delta so none is stranded outside the brand-new room.
+  const seats = sceneListeners(base);
+  const active = seats.find((l) => l.id === base.activeListenerId) ?? seats[0];
+  const dx = w / 2 - active.pos.x;
+  const dy = d / 2 - active.pos.y;
+  const moved = seats.map((l) => ({ ...l, pos: { x: l.pos.x + dx, y: l.pos.y + dy } }));
+  return syncActiveListener({ ...base, listeners: moved });
 }
 
 export function sanitizeSettings(raw: unknown): SimSettings | null {

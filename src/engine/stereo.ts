@@ -6,6 +6,8 @@ import * as v from './vec';
 
 /** Max spread between the three triangle sides, as a fraction of the mean. */
 export const EQ_TOLERANCE = 0.05;
+/** Pair quality at/above which the verdict reads "Almost there" instead of "No lock yet". */
+export const CLOSE_QUALITY = 0.55;
 /** Max distance (m) of the TV from the perpendicular bisector of the pair base. */
 export const TV_AXIS_TOLERANCE = 0.25;
 /** Below this base width the "pair" is effectively a point source. */

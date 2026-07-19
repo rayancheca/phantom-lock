@@ -113,7 +113,21 @@ still be a URL in memory so `render.ts`/`SimCanvas` need no changes.
 ---
 
 ## Session 2 — Multiple listening positions + scenario compare (THE core job)
-**Status:** ☐ **Depends on:** S1 **Unblocks:** the product's reason to exist
+**Status:** ☑ DONE 2026-07-19 **Depends on:** S1 **Unblocks:** the product's reason to exist
+> **Design chosen:** kept `scene.listener` as a **derived mirror** of the active seat (added optional
+> `listeners:{id,name,pos,z}[]` + `activeListenerId`) → every ~13 engine read-site + the 9 listener-only
+> test fixtures work unchanged; only writes + new UI are new. Shipped: the migration in `sanitizeScene`
+> (v1 `{x,y}` / v2 `{pos,z}` / new `listeners[]`; cap-safe, never drops the active seat), the `scene.ts`
+> seat helpers (`updateActiveListener`/`setActiveListener`/`addListener`/`renameListener`/`removeListener`/
+> `syncActiveListener`), all four write-sites rerouted (App `updateListener`/apply-proposal/arrow-nudge,
+> SimCanvas drag), `ListenerCard` (radiogroup, roving tabindex + arrows), inactive-seat canvas rendering
+> + click-to-activate (`hit.ts` `hitInactiveSeat`), shared `canvas/thumb.ts`, and the 2-up `ScenarioCompare`
+> (header + gallery + card). **The tracer/verdict desync trap is structurally impossible** — both read the
+> single mirror (proven live: `mirrorMatchesActive:true` after an IDB round-trip). 5-agent pre-code
+> verification workflow + `code-reviewer` + `silent-failure-hunter` ran; every finding fixed (a11y seat
+> names, roving radiogroup, seat-cap silent-loss, verdict aggregation, addRoomShell recenter-all). Tests
+> **95→126** (+20 `listeners`, +6 `hit`); build green (~368 kB/118 kB gz). Live-verified in both themes +
+> ≤960 px; screenshots in `docs/sessions/S2/`. Deferred to backlog: App.tsx decomposition (S5 owns it).
 
 **Goal.** Let the rolling-TV, couch-vs-bed decision actually be made in-app: multiple named listening
 positions per scene, a movable "TV scenario," and a **2-up compare** of verdicts.
@@ -494,4 +508,8 @@ sync on reconnect; signing out leaves the local IndexedDB copy intact; build + t
 - **2026-07-19 — Session 0 (planning):** full audit (13 agents + verification), live human testing,
   DB design, and this roadmap. Wrote `docs/ultrareview.md`, `docs/database-plan.md`, `docs/master-plan.md`.
 - **2026-07-19 — Decision gate:** user chose **cross-device sync** → Session 11 scheduled.
-- **2026-07-19 — Session 1 DONE:** hardening + IndexedDB migration (see the Session 1 block). Next: **Session 2** (multi-listener + scenario compare) — the core product gap.
+- **2026-07-19 — Session 1 DONE:** hardening + IndexedDB migration (see the Session 1 block).
+- **2026-07-19 — Session 2 DONE:** named listening positions (couch/bed) + 2-up scenario compare (see the
+  Session 2 block). Mirror-model migration is data-safe and desync-proof (verified live). Tests 95→126,
+  build green. Next: **Session 3** (engine correctness + missing engine tests) — independent of UI; can
+  run any time. S3's kickoff prompt is in its block below (re-states the Standing Operating Protocol).

@@ -69,7 +69,7 @@ say so.
 ## Commands
 
 - `npm run dev` — Vite (user usually has this running on :5173 already; autoPort will move yours)
-- `npm test` — vitest, **95 tests**, all green as of 2026-07-19 (85 engine + 10 in `db.test.ts`)
+- `npm test` — vitest, **126 tests**, all green as of 2026-07-19 (85 engine + 10 `db.test.ts` + 25 `listeners.test.ts` + 6 `hit.test.ts`). Ratchet: never let the count drop.
 - `npm run build` — tsc --noEmit + vite build (~357 kB / 115 kB gzip). Run all three before claiming done.
 
 ## Architecture map
@@ -84,15 +84,17 @@ say so.
 - `arrange.ts` — furniture placement brain (door corridors, daylight, feng shui, first-reflection absorbers, `ZONE_AFFINITY`, walkable containment) + `suggestInventory` ("Decide for me")
 - `detect.ts` — floorplan image → walls (Otsu → component filter → Hough → merge); pure core testable without DOM
 - `joints.ts` — wall snapping (`snapToWalls`) + `integrateWall` (crossings split BOTH walls into chunks)
-- `scene.ts` — presets, sanitize, `addRoomShell`, `loadStore` (legacy localStorage `phantom-lock:v2` reader — now only used as the migration source + IDB-unavailable fallback)
+- `scene.ts` — presets, sanitize, `addRoomShell`, `loadStore` (legacy localStorage `phantom-lock:v2` reader — now only used as the migration source + IDB-unavailable fallback). **Multi-listener (Session 2):** the source of truth is `scene.listeners: NamedListener[]` (`{id,name,pos,z}`) + `scene.activeListenerId`; `scene.listener` is a **mirror** always kept equal to the active seat so every engine/UI read-site is unchanged. Write ONLY through the helpers — `updateActiveListener` / `setActiveListener` / `addListener` (no-op at `MAX_LISTENERS`=32) / `renameListener` / `removeListener` — each runs `syncActiveListener` (which clones the mirror `Vec2`, never aliases). `sanitizeScene` migrates v2 single `{pos,z}`, v1 `{x,y}`, and the new `listeners[]` shape, truncating to the cap **without dropping the active seat**. Constructors + `addRoomShell` seed the fields (`addRoomShell` recenters ALL seats on a first room). `sceneListeners`/`activeListener` are defensive readers for hand-built scenes.
 - `db.ts` — **IndexedDB persistence (Session 1)**: stores `layouts`/`underlays` (image Blobs)/`meta`; `bootstrapPersistence()` migrates the legacy localStorage blob on first run (keeps the old key as rollback), `saveLayout(layout, writeImage)` does per-record async writes, `loadFromIDB()` re-runs `sanitizeLayout`; hardened localStorage fallback when IDB is unavailable. In memory `Scene.underlay.src` stays a data URL so render/UI/export are unchanged.
-- `types.ts` — `Selection` includes `{ type:'multi', objectIds, speakerIds }`; `ToolMode` includes `'room' | 'marquee' | 'lasso'`; `RoomLabel {id,name,at,w?,h?}` = zone
+- `types.ts` — `Selection` includes `{ type:'multi', objectIds, speakerIds }`; `ToolMode` includes `'room' | 'marquee' | 'lasso'`; `RoomLabel {id,name,at,w?,h?}` = zone; `NamedListener extends ListenerState {id,name}`; `Scene.listeners?`/`activeListenerId?` are OPTIONAL (so hand-built test fixtures with only `listener` still type-check) but always populated for real data
 
 **UI:**
 - `components/app/App.tsx` — default export `App` is now a thin **async-bootstrap wrapper** (hydrates persistence via `bootstrapPersistence`, shows a splash, then mounts `AppInner`); `AppInner` is the orchestrator: 4-step workflow (Build/Furnish/Sound/Analyze), per-layout infinite undo/redo (`historyRef`, 400 ms coalescing, ⌘Z/⇧⌘Z), toasts (undo instead of confirm), dialogs, `closeFloatingPanels()`. Autosave writes per-layout to IndexedDB (`persistMode`), diffs via `persistedRef`, only re-encodes the photo blob when it changed, and shows a LOUD "Export all" toast on any save failure (no more silent quota loss). "Export all" backup lives in the gallery header.
 - `components/canvas/SimCanvas.tsx` — all pointer interaction: wall chains, marquee/lasso band select, ⌘-click toggle, group drag, speaker height auto-snap onto furniture (`surfaceHeightAt`), wall-hover door/window chips
 - `components/canvas/render.ts` — pure canvas renderer; `THEMES` ('sound' dark glow / 'plan' light blueprint); `labelPill` is the single annotation primitive
-- `components/gallery/LayoutGallery.tsx` — card gallery with live thumbnails (Roomba-style home)
+- `components/gallery/LayoutGallery.tsx` — card gallery with live thumbnails (Roomba-style home); thumbnails now use the shared `canvas/thumb.ts` `drawMiniPlan` (also used by compare) and draw every seat
+- `components/panels/ListenerCard.tsx` — **seat manager** (Session 2): a `radiogroup` of listening spots (roving tabindex + arrow keys), switch/add/rename/remove, "Compare" entry. Shown in Sound + Analyze.
+- `components/compare/ScenarioCompare.tsx` — **2-up scenario compare** (Session 2): two `(layout, seat)` scenarios side by side, each a read-only `MetricsPanel` (`hideSuggest`) + mini preview; verdict aggregation uses the best pair's own lock state. Reachable from the header + gallery + ListenerCard.
 - `components/ui/` — Icon (no emoji anywhere!), Dialog (focus trap/restore), Toast (single-slot, hover-pause), Menu (full ARIA keyboard contract)
 - `components/panels/` — sidebar cards; `MetricsPanel` is verdict-first with plain-English cause sentences
 
@@ -110,7 +112,8 @@ motion tokens `--dur-1/2/3`, destructive actions get undo toasts never confirms,
 - `setScene` history push guards against StrictMode double-runs (`h.past.top !== l.scene`).
 - Windows/doors occupy no floor space in collision checks; door corridors are hard constraints.
 - Vite HMR errors about deleted files (e.g. RoomMenu.tsx) are stale-buffer noise; hard reload clears.
-- App-level keyboard shortcuts must gate on `overlayOpen` (dialogs/optimizer/arrange).
+- App-level keyboard shortcuts must gate on `overlayOpen` (dialogs/optimizer/arrange **and now `compare`**).
+- **Listener mirror invariant:** `scene.listener` MUST always equal the active `listeners[]` entry. Never write `scene.listener` directly (that desyncs the tracer from the verdict — the S2 trap); go through the `scene.ts` seat helpers. `sanitizeScene` re-derives the mirror on every load, so on-disk drift self-heals; a live desync would silently show a verdict for one seat while the echogram traces another.
 
 ## NEXT UP: read-only 3D view — see docs/3d-view-plan.md
 
