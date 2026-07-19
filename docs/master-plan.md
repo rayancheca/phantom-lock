@@ -239,10 +239,14 @@ old single-listener export/import shape working for files already on disk.
 > (`pathDiff ≤ ITD_LOCK_TOLERANCE_M` 0.07 m) — the skeptic caught that a naive 2D-only fix false-locks
 > unequal-height pairs. **(4) Silent geometry:** `regionOf` adaptive cell (`max(0.3, span/158)`, no >48 m
 > truncation, bit-identical ≤47.4 m); `splitWallAt` clamps the cut so neither half is <2 cm; `findByLabel`
-> now scans `scene.objects` too. Tests **126→139** (+13, all failing-first then green); coverage ≥80% on
+> now scans `scene.objects` too. Tests **126→140** (+14, all failing-first then green); coverage ≥80% on
 > every touched file; build green (~369 kB/119 kB gz). Engine-only → no live-browser pass required (stated).
-> Deferred to backlog: the same 2D/3D mix in `bestspot.ts pairQualityAt` + `pairspot.ts triQ` (soft
-> seat-ranking weights, not the lock verdict).
+> The self-review (code-reviewer + adversarial skeptic + silent-failure-hunter) caught three real issues,
+> all fixed in-session: the ITD gate wasn't fed into `quality` (a plan-equilateral mismatched-height pair
+> showed a full meter while "not locked"); `bestspot.ts pairQualityAt` + `pairspot.ts triQ` still mixed 2D
+> base with 3D legs (aligned to 2D to match `computePair`); and the reflection guard over-refused windows +
+> closed doors (narrowed to genuine OPEN-door holes only). Backlog: proper rect-mirroring of window/closed-
+> door reflection material (approximated with wall absorption for now).
 
 **Goal.** Fix the confirmed acoustic bugs and pin them with tests, so placement advice is trustworthy.
 
@@ -531,7 +535,7 @@ sync on reconnect; signing out leaves the local IndexedDB copy intact; build + t
 - **2026-07-19 — Session 3 DONE:** engine-correctness pass — whole-house stacking, reflections-through-
   openings, the equilateral/lock 2D-vs-3D mix (+ the false-lock ITD gate the skeptic caught), and three
   silent geometry degradations (`regionOf` clamp, `splitWallAt`, `findByLabel`). Two pre-code verification
-  workflows + a post-code self-review workflow; every bug adversarially verified. Tests 126→139, coverage
+  workflows + a post-code self-review workflow; every bug adversarially verified. Tests 126→140, coverage
   ≥80% on touched files, build green. See the Session 3 block. Next: **Session 4** (canvas interaction
   fixes + dead features) — its kickoff prompt is in its block (re-states the Standing Operating Protocol).
 - **2026-07-19 — Repo hygiene + GitHub (S3 session):** untracked `coverage/` (now gitignored); on the

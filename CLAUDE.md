@@ -38,7 +38,7 @@ Every session MUST:
    - *Automated:* keep the suite green and ADD tests for every new behavior (failing-test-first for every
      new pure-function behavior). Run `npm run test:coverage`; paste the coverage line for every file you
      touched (≥80%, or state the exact reason). **Test count is a ratchet — it must not decrease**
-     (95 at S1 → 126 at S2 → **139** at S3, all 2026-07-19) and no test may be newly skipped/only'd/
+     (95 at S1 → 126 at S2 → **140** at S3, all 2026-07-19) and no test may be newly skipped/only'd/
      weakened; state before/after counts.
    - *Migrations:* seed an OLD-shape store/record and assert it upgrades correctly on read — not just
      fresh-fixture writes.
@@ -70,8 +70,14 @@ say so.
 ## Commands
 
 - `npm run dev` — Vite (user usually has this running on :5173 already; autoPort will move yours)
-- `npm test` — vitest, **139 tests**, all green as of 2026-07-19 (was 126 after S2; S3 added +13 engine-correctness tests across stereo/pairspot/rooms/scene/arrange). Ratchet: never let the count drop.
-- `npm run build` — tsc --noEmit + vite build (~357 kB / 115 kB gzip). Run all three before claiming done.
+- `npm test` — vitest, **140 tests**, all green as of 2026-07-19 (was 126 after S2; S3 added +14 engine-correctness tests across stereo/pairspot/rooms/scene/arrange). Ratchet: never let the count drop.
+- `npm run build` — tsc --noEmit + vite build (~369 kB / 119 kB gzip). Run all three before claiming done.
+
+**GitHub (as of 2026-07-19):** the repo is public at **github.com/rayancheca/phantom-lock** (`origin`, default
+branch `main`). The owner wants visible contribution activity, so **push `main` after every session lands the
+gate** (land per-session branch work onto `main`, then `git push`). The bundled demo apartment's real address
+was scrubbed to the placeholder **"Maple Court"** across all history — keep it that way; `docs/sessions/` and
+`coverage/` are gitignored (local-only, never publish the real-floorplan screenshots).
 
 ## Architecture map
 
@@ -126,7 +132,7 @@ efficiency only matters if the app gets slow.** It must be read-only and touch n
 ## Other known gaps (backlog)
 
 - Drag-release doesn't split walls crossed mid-drag (only creation does, via `integrateWall`).
-- `bestspot.ts` `pairQualityAt` + `pairspot.ts` `bestPairSpot` `triQ` still mix a 2D `base` with 3D `dA`/`dB` (soft seat-ranking weights, NOT the binary lock verdict — scope kept S3 to `stereo.ts`). Align them to 2D like `computePair` if elevated-speaker seat ranking ever looks off.
+- Proper image-source reflection off window glass / closed-door leaves (mirror the rect with its own material, not the host wall's) — S3 keeps them solid but approximates with wall absorption; a bounce landing on a coplanar door/window leaf is still governed by leg occlusion.
 - Marquee/lasso not yet visually verified in a browser (typed + tested only) — check first run.
 - README.md predates gallery/zones/detection/multi-select — needs a rewrite eventually.
 - Hover cursors/halos on draggable canvas objects still default.
