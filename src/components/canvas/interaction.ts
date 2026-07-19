@@ -236,7 +236,11 @@ export function watchDevicePixelRatio(
   let cancelled = false;
   function subscribe(): void {
     if (cancelled) return;
-    mql = win!.matchMedia(`(resolution: ${win!.devicePixelRatio || 1}dppx)`);
+    const next = win!.matchMedia(`(resolution: ${win!.devicePixelRatio || 1}dppx)`);
+    // Pre-2020 WebKit exposes matchMedia but its MediaQueryList lacks
+    // addEventListener (only the deprecated addListener) — no-op rather than throw.
+    if (typeof next.addEventListener !== 'function') return;
+    mql = next;
     mql.addEventListener('change', handle, { once: true });
   }
   function handle(): void {

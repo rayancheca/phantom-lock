@@ -242,7 +242,9 @@ export default function SimCanvas({
   }, []);
 
   useEffect(() => {
-    if (size.w > 0 && size.h > 0) {
+    // Don't refit/reset the view mid-band-drag — the band is stored in screen
+    // space, so moving the view under it would desync the marquee selection.
+    if (size.w > 0 && size.h > 0 && dragRef.current?.kind !== 'band') {
       setView(fitView(size.w, size.h, sceneBounds(sceneRef.current)));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -445,6 +447,7 @@ export default function SimCanvas({
     }
     setPreview(null);
     updateChain(null);
+    chainWallsRef.current = []; // keep id-groups in sync when the chain ends
     calibRef.current = null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -735,17 +738,26 @@ export default function SimCanvas({
     if (!drag && mode === 'select' && view) {
       const cursorS = { x: native.offsetX, y: native.offsetY };
       const hp = s2w(native);
-      // Latch the anchor once shown so the chip stays put and stays reachable —
-      // otherwise its anchor chases the cursor along the wall (a screen-vertical
-      // wall's chip would retreat 10 px ahead forever).
       setWallHover((prev) => {
-        if (prev && v.dist(worldToScreen(prev.at, view), cursorS) <= WALL_HOVER_HOLD_PX) return prev;
-        return wallHoverAt(sceneRef.current.objects, hp, WALL_HOVER_APPEAR_PX / view.scale);
+        const found = wallHoverAt(sceneRef.current.objects, hp, WALL_HOVER_APPEAR_PX / view.scale);
+        // On a wall: keep the SAME wall's latched anchor so the chip doesn't chase
+        // the cursor along it (a screen-vertical wall's chip would retreat forever),
+        // but switch to a DIFFERENT wall at once so a neighbour's chip is reachable.
+        if (found) return prev && prev.id === found.id ? prev : found;
+        // Off all walls: briefly hold the chip within reach so you can move onto it
+        // to click — but only while its wall still exists (self-heal if deleted).
+        return prev &&
+          v.dist(worldToScreen(prev.at, view), cursorS) <= WALL_HOVER_HOLD_PX &&
+          sceneRef.current.objects.some((o) => o.id === prev.id)
+          ? prev
+          : null;
       });
       const grab = isDraggableAt(sceneRef.current, hp, 10 / view.scale);
       setHoverGrab((prev) => (prev === grab ? prev : grab));
-    } else if (wallHover) {
-      setWallHover(null);
+    } else {
+      // A drag is live or we left select mode — drop any hover affordance.
+      if (wallHover) setWallHover(null);
+      if (hoverGrab) setHoverGrab(false);
     }
 
     // Wall chain preview follows the cursor without a drag.
@@ -1045,9 +1057,18 @@ export default function SimCanvas({
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
+        onPointerLeave={() => {
+          // No pointermove fires once the cursor is off the canvas, so clear the
+          // hover affordances here or a door/window chip would linger over a panel.
+          if (!dragRef.current) {
+            setWallHover(null);
+            setHoverGrab(false);
+          }
+        }}
         onDoubleClick={(e) => {
           if (mode === 'wall') {
             updateChain(null);
+            chainWallsRef.current = []; // finishing the chain clears its id-groups
             return;
           }
           if (mode !== 'select' || !view) return;
@@ -1098,7 +1119,10 @@ export default function SimCanvas({
           className={`compass ${rotDeg !== 0 ? 'compass-off' : ''}`}
           title={`View rotated ${rotDeg}°. Click to straighten. Rotate: twist two fingers, ⌥-scroll, or R / ⇧R.`}
           aria-label={`Compass, view rotated ${rotDeg} degrees, click to straighten`}
-          onClick={() => rotateBy(-(view.rot))}
+          onClick={() => {
+            if (dragRef.current?.kind === 'band') return; // don't move the view mid-band-drag
+            rotateBy(-view.rot);
+          }}
         >
           <svg viewBox="0 0 24 24" aria-hidden="true" style={{ transform: `rotate(${view.rot}rad)` }}>
             <path d="M12 3 L15.4 12 L12 10.4 L8.6 12 Z" className="compass-n" />

@@ -445,6 +445,17 @@ describe('watchDevicePixelRatio', () => {
     const dispose = watchDevicePixelRatio(() => {}, win);
     expect(() => dispose()).not.toThrow();
   });
+
+  it('no-ops when the MediaQueryList lacks addEventListener (legacy WebKit)', () => {
+    const win = {
+      devicePixelRatio: 2,
+      matchMedia: (q: string) => ({ media: q }) as unknown as MediaQueryList, // no addEventListener
+    } as unknown as FakeWin;
+    const onChange = vi.fn();
+    const dispose = watchDevicePixelRatio(onChange, win);
+    expect(() => dispose()).not.toThrow();
+    expect(onChange).not.toHaveBeenCalled();
+  });
 });
 
 // --- Fix 5: isDraggableAt + hoverCursor -----------------------------------

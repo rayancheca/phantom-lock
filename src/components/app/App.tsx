@@ -887,9 +887,11 @@ function AppInner({ initialStore, persistMode }: AppInnerProps) {
   // --- keyboard --------------------------------------------------------------------
 
   // One definition of "a blocking overlay is open", shared by this handler and
-  // SimCanvas's key gate. Includes the full-screen gallery + compare (which sit
-  // OVER the still-mounted canvas), so their open state can't leak keys through.
-  const overlayOpen = dialog !== null || optimizeOpen || arrangeOpen || compare !== null || galleryOpen;
+  // SimCanvas's key gate. Includes the full-screen gallery + compare AND the
+  // "Detected layout" confirmation (wallProposal) — all sit OVER the still-mounted
+  // canvas, so their open state can't leak scene/tool/rotate keys through.
+  const overlayOpen =
+    dialog !== null || optimizeOpen || arrangeOpen || compare !== null || galleryOpen || wallProposal !== null;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
