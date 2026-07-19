@@ -281,7 +281,6 @@ export default function SimCanvas({
       width: size.w,
       height: size.h,
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     scene,
     settings,
@@ -449,8 +448,7 @@ export default function SimCanvas({
     updateChain(null);
     chainWallsRef.current = []; // keep id-groups in sync when the chain ends
     calibRef.current = null;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [onDragging, updateChain, setPreview]);
 
   // Switching tools (or Escape → select) finishes/cancels the in-flight draw.
   useEffect(() => {
@@ -459,7 +457,6 @@ export default function SimCanvas({
     setBandBoth(null);
     setHoverGrab(false);
     setGrabbing(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, cancelDraw]);
 
   // --- pointer interaction ------------------------------------------------
@@ -629,9 +626,11 @@ export default function SimCanvas({
       const oh = nh ? null : hitTestObjects(scene, p, tol);
       const { objectIds, speakerIds } = selectionSets(selection);
       if (nh?.type === 'speaker') {
-        speakerIds.has(nh.id) ? speakerIds.delete(nh.id) : speakerIds.add(nh.id);
+        if (speakerIds.has(nh.id)) speakerIds.delete(nh.id);
+        else speakerIds.add(nh.id);
       } else if (oh?.type === 'object') {
-        objectIds.has(oh.id) ? objectIds.delete(oh.id) : objectIds.add(oh.id);
+        if (objectIds.has(oh.id)) objectIds.delete(oh.id);
+        else objectIds.add(oh.id);
       } else {
         return; // clicked empty space — keep the selection as is
       }
@@ -878,7 +877,7 @@ export default function SimCanvas({
         ...cur,
         objects: cur.objects.map((o) => {
           if (o.id !== drag.id || o.kind === 'wall') return o;
-          let center = snap(v.add(drag.c0, d));
+          const center = snap(v.add(drag.c0, d));
           // Windows and doors magnetise onto the nearest wall.
           if (o.kind === 'rect' && (o.role === 'window' || o.role === 'door')) {
             let bestWall: { point: Vec2; angle: number; dist: number } | null = null;

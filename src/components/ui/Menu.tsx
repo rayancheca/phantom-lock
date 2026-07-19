@@ -75,7 +75,6 @@ export default function Menu({ trigger, align = 'left', label, children }: MenuP
       window.removeEventListener('pointerdown', onDown, true);
       window.removeEventListener('keydown', onKey, true);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   return (
