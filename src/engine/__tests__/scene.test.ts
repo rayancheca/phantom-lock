@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { apartmentScene, loadStore, sanitizeScene, splitWallAt } from '../scene';
+import { pointInPolygon, rectCorners } from '../geometry';
+import type { RectObj } from '../types';
 
 function mockStorage(data: Record<string, string>): Pick<Storage, 'getItem'> {
   return { getItem: (k: string) => data[k] ?? null };
@@ -144,5 +146,23 @@ describe('apartmentScene', () => {
     expect(bed?.height).toBeCloseTo(0.55);
     const tv = scene.objects.find((o) => o.kind === 'rect' && o.role === 'tv');
     expect(tv?.height).toBeCloseTo(1.5);
+  });
+
+  it('seats the kitchen counters fully inside the outer walls (no clip-through)', () => {
+    // The apartment outer boundary (matches the `outline` in apartmentScene).
+    const outline = [
+      { x: 0.0, y: 2.16 }, { x: 0.57, y: 1.49 }, { x: 4.28, y: 0.72 }, { x: 4.59, y: 0.05 },
+      { x: 5.85, y: 5.57 }, { x: 6.65, y: 6.08 }, { x: 7.27, y: 8.92 }, { x: 5.77, y: 9.18 },
+      { x: 5.05, y: 9.95 }, { x: 2.68, y: 10.77 }, { x: 0.57, y: 10.41 }, { x: 0.0, y: 10.0 },
+    ];
+    const counters = apartmentScene().objects.filter(
+      (o): o is RectObj => o.kind === 'rect' && o.label === 'Counter',
+    );
+    expect(counters).toHaveLength(2);
+    for (const c of counters) {
+      for (const corner of rectCorners(c)) {
+        expect(pointInPolygon(corner, outline)).toBe(true);
+      }
+    }
   });
 });

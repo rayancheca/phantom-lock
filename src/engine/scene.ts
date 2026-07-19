@@ -269,8 +269,8 @@ export function apartmentScene(): Scene {
     rect('Couch', vec(1.95, 5.35), 0.85, 2.1, -15, 0.7, 0.8),
     rect('Couch 2', vec(1.75, 7.25), 1.9, 0.85, -6, 0.7, 0.8),
     rect('Closets', vec(4.6, 7.75), 1.3, 2.3, -10, 0.35, 2.4),
-    rect('Counter', vec(0.33, 8.85), 0.65, 2.4, 0, 0.22, 0.9),
-    rect('Counter', vec(1.7, 10.25), 2.1, 0.62, -10, 0.22, 0.9),
+    rect('Counter', vec(0.33, 8.8), 0.65, 2.3, 0, 0.22, 0.9),
+    rect('Counter', vec(1.65, 10.2), 2.1, 0.62, 10, 0.22, 0.9),
     circle('Table', vec(1.05, 5.85), 0.55, 0.3, 0.75),
   ];
 

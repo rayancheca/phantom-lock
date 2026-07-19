@@ -70,7 +70,7 @@ say so.
 ## Commands
 
 - `npm run dev` — Vite (user usually has this running on :5173 already; autoPort will move yours)
-- `npm test` — vitest, **181 tests**, all green as of 2026-07-19 (was 140 after S3; S4 added +41 in `src/components/canvas/__tests__/interaction.test.ts`). Ratchet: never let the count drop.
+- `npm test` — vitest, **182 tests**, all green as of 2026-07-19 (was 140 after S3; S4 added +41 in `src/components/canvas/__tests__/interaction.test.ts`, +1 apartment-counter containment guard in `scene.test.ts`). Ratchet: never let the count drop.
 - `npm run build` — tsc --noEmit + vite build (~369 kB / 119 kB gzip). Run all three before claiming done.
 
 **GitHub (as of 2026-07-19):** the repo is public at **github.com/rayancheca/phantom-lock** (`origin`, default
