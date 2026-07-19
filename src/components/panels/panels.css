@@ -1,0 +1,1128 @@
+/* --- cards ---------------------------------------------------------------
+   Elevation over borders: cards are one surface step above the sidebar. */
+
+.card {
+  background: var(--surface-1);
+  border-radius: var(--radius);
+  padding: var(--space-3) var(--space-4);
+}
+
+.card h2 {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-base);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--text);
+}
+
+.card-tag {
+  font-size: var(--text-xs);
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.card-sub {
+  margin: var(--space-1) 0;
+  color: var(--text-2);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+/* --- step guide (compact hint + optional disclosure) --------------------- */
+
+.card-guide {
+  background: linear-gradient(135deg, var(--accent-06), var(--surface-1) 55%);
+}
+
+.guide-hint {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.guide-more {
+  margin-top: var(--space-2);
+}
+
+.guide-more summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  color: var(--text-2);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.guide-more summary::-webkit-details-marker {
+  display: none;
+}
+
+.guide-more summary::after {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid var(--text-3);
+  border-bottom: 1.5px solid var(--text-3);
+  transform: rotate(45deg);
+  transition: transform var(--dur-2) var(--ease-out);
+}
+
+.guide-more[open] summary::after {
+  transform: rotate(-135deg);
+}
+
+.guide-more:hover summary {
+  color: var(--text);
+}
+
+.guide-list {
+  margin: var(--space-2) 0 0;
+  padding-left: 1.15rem;
+  color: var(--text-2);
+  font-size: var(--text-sm);
+  line-height: 1.55;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.guide-list li::marker {
+  color: var(--accent);
+}
+
+.room-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: var(--space-2);
+}
+
+.room-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 6px 3px 10px;
+  border-radius: 999px;
+  background: var(--accent-06);
+  color: var(--accent);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.room-chip button {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.room-chip button:hover {
+  background: var(--bad-10);
+  color: var(--bad);
+}
+
+/* --- metrics -------------------------------------------------------- */
+
+.metric-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: 0.22rem 0;
+}
+
+.metric-label {
+  color: var(--text-2);
+  font-size: var(--text-sm);
+}
+
+.metric-value {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.tone-ok {
+  color: var(--ok);
+}
+
+.tone-warn {
+  color: var(--warn);
+}
+
+.tone-bad {
+  color: var(--bad);
+}
+
+/* Meter bar: value against its psychoacoustic threshold. */
+
+.meter {
+  position: relative;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--surface-2);
+  margin: 2px 0 6px;
+  overflow: hidden;
+}
+
+.meter-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width var(--dur-2) var(--ease-out);
+}
+
+.meter-fill.tone-ok {
+  background: var(--ok);
+}
+
+.meter-fill.tone-warn {
+  background: var(--warn);
+}
+
+.meter-fill.tone-bad {
+  background: var(--bad);
+}
+
+/* --- verdict --------------------------------------------------------- */
+
+.verdict {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--space-3);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  margin-bottom: var(--space-2);
+}
+
+.verdict-state {
+  font-size: var(--text-lg);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.verdict-locked {
+  background: linear-gradient(135deg, rgba(62, 224, 138, 0.16), var(--surface-2) 70%);
+}
+
+.verdict-locked .verdict-state {
+  color: var(--ok);
+  text-shadow: 0 0 18px rgba(62, 224, 138, 0.5);
+  animation: verdict-in 400ms var(--ease-spring);
+}
+
+.verdict-close .verdict-state {
+  color: var(--warn);
+}
+
+.verdict-searching .verdict-state {
+  color: var(--text-2);
+}
+
+@keyframes verdict-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .verdict-locked .verdict-state {
+    animation: none;
+  }
+}
+
+.verdict-cause {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.quality-meter {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--surface-1);
+  overflow: hidden;
+  margin-top: var(--space-1);
+}
+
+.quality-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--accent), var(--ok));
+  transition: width var(--dur-2) var(--ease-out);
+}
+
+.warn-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: var(--space-2) 0 0;
+  color: var(--bad);
+  font-size: var(--text-xs);
+  line-height: 1.45;
+}
+
+.warn-line svg {
+  margin-top: 1px;
+}
+
+.pair-section {
+  padding-top: var(--space-2);
+  margin-top: var(--space-2);
+  border-top: 1px solid var(--border);
+}
+
+.pair-section:first-of-type {
+  border-top: none;
+  margin-top: 0;
+  padding-top: 0;
+}
+
+.pair-title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.metric-details {
+  margin-top: var(--space-1);
+}
+
+.metric-details summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  color: var(--text-3);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.metric-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.metric-details summary:hover {
+  color: var(--text-2);
+}
+
+.preset-row {
+  display: flex;
+  gap: var(--space-1);
+  margin: var(--space-2) 0 0;
+  flex-wrap: wrap;
+}
+
+.preset-row .btn {
+  font-size: var(--text-xs);
+  padding: 4px 10px;
+}
+
+/* --- speakers card ----------------------------------------------------- */
+
+.speaker-list {
+  list-style: none;
+  margin: 0 0 var(--space-1);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.speaker-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: 100%;
+  padding: 7px 10px;
+  background: var(--surface-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: var(--text-sm);
+  text-align: left;
+  transition:
+    background var(--dur-1) var(--ease-out),
+    border-color var(--dur-1) var(--ease-out);
+}
+
+.speaker-row:hover {
+  background: var(--surface-3);
+}
+
+.speaker-row-active {
+  border-color: var(--accent);
+  background: var(--accent-06);
+}
+
+.speaker-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 0 0 6px currentColor;
+}
+
+.speaker-model {
+  color: var(--text-3);
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+
+.speaker-dist {
+  margin-left: auto;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.speaker-trim,
+.speaker-pair {
+  font-size: var(--text-xs);
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.15rem 0;
+}
+
+.stepper-label {
+  flex: 1;
+  color: var(--text-2);
+  font-size: var(--text-sm);
+}
+
+.stepper output {
+  min-width: 1.4rem;
+  text-align: center;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- optimizer / arrange dialogs --------------------------------------- */
+
+.optimize-dialog {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: min(348px, calc(100% - 28px));
+  max-height: calc(100% - 28px);
+  overflow-y: auto;
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  backdrop-filter: blur(8px);
+  box-shadow: var(--shadow-3);
+  animation: dialog-in var(--dur-3) var(--ease-out);
+}
+
+.optimize-dialog h2 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.field-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: var(--space-2) 0 var(--space-1);
+}
+
+.field-row-label {
+  color: var(--text-2);
+  font-size: var(--text-sm);
+}
+
+.where-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 2px 0 var(--space-1);
+}
+
+.where-chips .btn {
+  font-size: var(--text-xs);
+  padding: 4px 10px;
+}
+
+.count-group {
+  display: flex;
+  gap: 4px;
+}
+
+.count-btn {
+  min-width: 2.2rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Scoped so it can't fight ui.css's .dialog-actions (right-aligned, for
+   modal forms) — these action rows stay left-aligned and wrap. */
+.optimize-dialog .dialog-actions {
+  display: flex;
+  justify-content: flex-start;
+  gap: 6px;
+  margin-top: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.arrange-grid {
+  max-height: 40vh;
+  overflow-y: auto;
+  margin-top: var(--space-1);
+}
+
+.palette-grid + .preset-row,
+.card .btn-block + .palette-grid {
+  margin-top: var(--space-2);
+}
+
+.proposal-notes {
+  margin: var(--space-3) 0 0;
+  padding-left: 1.1rem;
+  color: var(--text-2);
+  font-size: var(--text-xs);
+  line-height: 1.6;
+}
+
+.proposal-shortfall {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: var(--space-3) 0 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--warn-10);
+  color: var(--warn);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+}
+
+.proposal-shortfall svg {
+  margin-top: 1px;
+}
+
+/* --- fields --------------------------------------------------------- */
+
+.field {
+  display: grid;
+  grid-template-columns: 6.2rem 1fr auto;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.18rem 0;
+  font-size: var(--text-sm);
+}
+
+.field > span:first-child {
+  color: var(--text-2);
+}
+
+.field output {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text);
+  min-width: 2.6rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.field input[type='number'],
+.field input[type='text'],
+.field select {
+  width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 5px 8px;
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.field input:focus,
+.field select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.field input[type='range'] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.field-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.field-pair .field {
+  grid-template-columns: 2.4rem 1fr;
+}
+
+.field-check {
+  display: flex;
+  gap: 0.45rem;
+  cursor: pointer;
+}
+
+.field-check input {
+  accent-color: var(--accent);
+}
+
+.toggle-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 0.6rem;
+  margin-top: var(--space-1);
+}
+
+/* --- furniture palette --------------------------------------------------- */
+
+.palette-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+  margin-bottom: var(--space-1);
+}
+
+.palette-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 9px;
+  background: var(--surface-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    background var(--dur-1) var(--ease-out),
+    border-color var(--dur-1) var(--ease-out);
+}
+
+.palette-item:hover {
+  background: var(--surface-3);
+  border-color: var(--border-strong);
+}
+
+.palette-icon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  background: var(--surface-1);
+  color: var(--text-2);
+  flex-shrink: 0;
+}
+
+.palette-item:hover .palette-icon {
+  color: var(--accent);
+}
+
+.palette-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.palette-name {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.palette-dims {
+  font-size: 0.65rem;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* --- tool strip (labeled, floats top-left of canvas) --------------------- */
+
+.stage {
+  --overlay-bg: rgba(11, 16, 27, 0.88);
+  --overlay-text: var(--text-2);
+  --overlay-text-strong: var(--text);
+  --overlay-border: var(--border);
+  --overlay-warn: var(--warn);
+}
+
+.stage-plan {
+  --overlay-bg: rgba(250, 249, 244, 0.92);
+  --overlay-text: #5a6272;
+  --overlay-text-strong: #1f2635;
+  --overlay-border: rgba(31, 38, 53, 0.14);
+  --overlay-warn: #92610a;
+}
+
+.toolstrip {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px;
+  border-radius: var(--radius);
+  border: 1px solid var(--overlay-border);
+  background: var(--overlay-bg);
+  backdrop-filter: blur(6px);
+  flex-wrap: wrap;
+  max-width: calc(100% - 24px);
+  box-shadow: var(--shadow-1);
+}
+
+.strip-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 6px 10px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--overlay-text);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background var(--dur-1) var(--ease-out),
+    color var(--dur-1) var(--ease-out);
+}
+
+.strip-btn svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.strip-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.strip-btn:disabled:hover {
+  color: var(--overlay-text);
+}
+
+.strip-btn:hover {
+  color: var(--overlay-text-strong);
+}
+
+.strip-active {
+  background: var(--accent-12);
+  color: var(--accent);
+}
+
+.stage-plan .strip-active {
+  background: rgba(37, 99, 235, 0.12);
+  color: #2563eb;
+}
+
+.strip-kbd {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(148, 163, 184, 0.14);
+  color: var(--overlay-text);
+}
+
+.strip-sep {
+  width: 1px;
+  height: 20px;
+  background: var(--overlay-border);
+  margin: 0 2px;
+}
+
+/* --- workflow "channel fader" (header stepper) --------------------------
+   The four steps read as detents on an audio-console rail. One inline integer
+   var (--active, 0..3) drives three compositor-only layers — a signal fill
+   (scaleX), a frosted carriage (translateX) and the ring handle (translateX) —
+   with a spring so it snaps like a fader into its detent. Progress is shown by
+   luminance ("reached"); the amber LED means the step has data ("armed").
+   Never a checkmark. Root keeps the .steps-bar class so app.css keeps
+   centering + reflowing it in the header grid with no app.css edits. */
+
+.steps-bar {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(var(--count), 1fr); /* equal cols => 100% == one detent */
+  align-items: center;
+  gap: 0;
+  width: min(420px, 42vw);
+  padding: 4px;
+  background: var(--surface-2);
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px var(--border), var(--shadow-1);
+  isolation: isolate;
+  --node-c: 9px; /* vertical center of the node row inside the padding box */
+}
+
+/* One absolute chrome layer, inset to the 4px padding box so its 100% and its
+   column coordinates line up 1:1 with the four 1fr grid columns. */
+.fader-layer {
+  position: absolute;
+  inset: 4px;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* Rail: the dim wire the handle rides. */
+.fader-rail {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: var(--node-c);
+  height: 3px;
+  transform: translateY(-50%);
+  border-radius: 999px;
+  background: var(--surface-0);
+  box-shadow: inset 0 0 0 1px var(--border);
+  overflow: hidden;
+}
+
+/* Signal wire: scaleX only; leading edge lands on the active node's center. */
+.fader-fill {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  transform-origin: left center;
+  transform: scaleX(calc((var(--active) + 0.5) / var(--count)));
+  background: linear-gradient(90deg, var(--accent-20), var(--accent) 82%, var(--ok));
+  box-shadow: 0 0 8px var(--accent-20);
+  transition: transform var(--dur-3) var(--ease-spring);
+}
+
+/* Frosted glass carriage: the grounded selected segment, glides under active. */
+.fader-carriage {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: calc(100% / var(--count));
+  border-radius: 999px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--surface-3) 86%, white 14%),
+    var(--surface-3)
+  );
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    inset 0 0 0 1px var(--accent-20),
+    var(--shadow-1),
+    0 0 22px -8px var(--accent-20);
+  transform: translateX(calc(var(--active) * 100%));
+  transition: transform var(--dur-3) var(--ease-spring);
+}
+
+/* Cap: the fader HANDLE — a glowing ring that rides the rail and lands
+   concentrically around the active (smaller) node. */
+.fader-cap {
+  position: absolute;
+  top: var(--node-c);
+  left: 0;
+  width: calc(100% / var(--count));
+  display: grid;
+  place-items: center;
+  transform: translateX(calc(var(--active) * 100%));
+  transition: transform var(--dur-3) var(--ease-spring);
+}
+.fader-cap-ring {
+  position: relative;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  transform: translateY(-50%);
+  background: var(--accent-06);
+  box-shadow:
+    0 0 0 1.5px var(--accent),
+    0 0 12px var(--accent-20),
+    inset 0 0 8px var(--accent-06);
+  transition: transform var(--dur-2) var(--ease-spring);
+}
+.fader-cap-ring::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 999px;
+  box-shadow: 0 0 14px 1px var(--accent);
+  opacity: 0.16;
+  animation: capBreathe 2.8s var(--ease-out) infinite;
+}
+@keyframes capBreathe {
+  0%,
+  100% {
+    opacity: 0.1;
+  }
+  50% {
+    opacity: 0.34;
+  }
+}
+.steps-bar:hover .fader-cap-ring {
+  transform: translateY(-50%) scale(1.08);
+}
+
+/* Step buttons — real tabs, above the chrome. */
+.step {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 76px;
+  padding: 0;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  color: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Node: dim 18px detent by default. */
+.step-node {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  color: var(--text-3);
+  background: var(--surface-1);
+  box-shadow: inset 0 0 0 1px var(--border);
+  transition:
+    color var(--dur-2) var(--ease-out),
+    background var(--dur-2) var(--ease-out),
+    box-shadow var(--dur-2) var(--ease-out),
+    transform var(--dur-2) var(--ease-spring);
+}
+
+.step-label {
+  font-size: var(--text-xs);
+  line-height: 1;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--text-3);
+  transition: color var(--dur-2) var(--ease-out);
+}
+
+/* Reached by the signal wire => lit cyan (progress, no checkmark). */
+.step[data-reached] .step-node {
+  color: var(--accent);
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--accent-20), 0 0 8px -2px var(--accent-20);
+}
+.step[data-reached] .step-label {
+  color: var(--text-2);
+}
+
+/* Current step => brightest + lifted + breathing halo.
+   Keep AFTER [data-reached]: equal specificity, source order wins. */
+.step[data-active] .step-node {
+  color: var(--text);
+  background: var(--surface-3);
+  box-shadow: inset 0 0 0 1px var(--accent), 0 0 12px -2px var(--accent);
+  transform: translateY(-1px);
+}
+.step[data-active] .step-label {
+  color: var(--text);
+}
+.step[data-active] .step-node::after {
+  content: '';
+  position: absolute;
+  inset: -5px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px var(--accent-20);
+  animation: nodePulse 2.4s var(--ease-out) infinite;
+}
+@keyframes nodePulse {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: scale(0.88);
+  }
+  50% {
+    opacity: 0.8;
+    transform: scale(1.06);
+  }
+}
+
+/* Armed = heuristic satisfied => tiny amber LED (Right-channel identity). */
+.step[data-armed] .step-node::before {
+  content: '';
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--accent-r);
+  box-shadow: 0 0 6px var(--accent-r);
+}
+
+/* Hover: lift the pointed-at node. */
+.step:hover .step-node {
+  transform: translateY(-1px) scale(1.04);
+  color: var(--text-2);
+}
+.step[data-active]:hover .step-node {
+  color: var(--text);
+}
+
+/* Keyboard focus (roving tabindex). */
+.step:focus-visible {
+  outline: none;
+}
+.step:focus-visible .step-node {
+  box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 3px var(--accent-20);
+}
+
+/* Reduced motion: snap, never glide/pulse/breathe. */
+@media (prefers-reduced-motion: reduce) {
+  .fader-fill,
+  .fader-carriage,
+  .fader-cap,
+  .fader-cap-ring,
+  .step-node,
+  .step-label {
+    transition: none;
+  }
+  .fader-cap-ring::after,
+  .step[data-active] .step-node::after {
+    animation: none;
+    opacity: 0.4;
+  }
+  .steps-bar:hover .fader-cap-ring {
+    transform: translateY(-50%);
+  }
+}
+
+/* Responsive: app.css already reflows .topbar > .steps-bar to a full-width,
+   order:3, overflow-x:auto row at <=1180px — just widen + guard min-width. */
+@media (max-width: 1180px) {
+  .steps-bar {
+    width: 100%;
+    min-width: 340px;
+  }
+}
+
+/* --- echogram --------------------------------------------------------- */
+
+.echogram {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.echo-axis {
+  stroke: rgba(139, 150, 173, 0.35);
+  stroke-width: 1;
+}
+
+.echo-early {
+  fill: rgba(245, 192, 78, 0.05);
+}
+
+.echo-early-line {
+  stroke: rgba(245, 192, 78, 0.35);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.echo-tick {
+  fill: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-anchor: middle;
+}
+
+.echo-zone-label {
+  fill: rgba(245, 192, 78, 0.75);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+
+.echo-legend-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: var(--space-1) 0 var(--space-2);
+}
+
+.echo-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.echo-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  box-shadow: 0 0 5px currentColor;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .optimize-dialog {
+    animation: none;
+  }
+
+  .meter-fill,
+  .quality-fill {
+    transition: none;
+  }
+}

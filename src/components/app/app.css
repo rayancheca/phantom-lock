@@ -1,0 +1,330 @@
+.app {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  height: 100%;
+}
+
+/* --- header ---------------------------------------------------------------- */
+
+.topbar {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 52px;
+  padding: var(--space-2) var(--space-4);
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--border);
+}
+
+.topbar > .steps-bar {
+  justify-self: center;
+}
+
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.brand h1 {
+  margin: 0;
+  font-size: 0.82rem;
+  letter-spacing: 0.2em;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.brand h1 span {
+  color: var(--accent);
+  font-weight: 300;
+}
+
+.room-trigger {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 15rem;
+  padding: 6px 10px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: var(--text-base);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--dur-1) var(--ease-out);
+}
+
+.room-trigger:hover,
+.room-trigger-open {
+  background: var(--surface-hover);
+}
+
+.room-trigger svg {
+  color: var(--text-3);
+}
+
+.room-trigger-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* --- buttons ---------------------------------------------------------------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: var(--surface-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  padding: 6px 12px;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background var(--dur-1) var(--ease-out),
+    color var(--dur-1) var(--ease-out);
+}
+
+.btn:hover {
+  background: var(--surface-3);
+}
+
+.btn:active {
+  transform: translateY(0.5px);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.btn-primary {
+  background: var(--accent-12);
+  color: var(--accent);
+}
+
+.btn-primary:hover {
+  background: var(--accent-20);
+}
+
+.btn-ok {
+  background: var(--ok-10);
+  color: var(--ok);
+}
+
+.btn-ok:hover {
+  background: rgba(62, 224, 138, 0.2);
+}
+
+.btn-active {
+  background: var(--accent-12);
+  color: var(--accent);
+}
+
+.btn-danger {
+  margin-top: var(--space-2);
+  width: 100%;
+  color: var(--text-2);
+}
+
+.btn-danger:hover {
+  background: var(--bad-10);
+  color: var(--bad);
+}
+
+.btn-block {
+  width: 100%;
+  margin-top: var(--space-1);
+}
+
+.btn-suggest {
+  white-space: nowrap;
+}
+
+/* --- mode toggle ---------------------------------------------------------------- */
+
+.mode-toggle {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--surface-2);
+  border-radius: 999px;
+}
+
+.mode-toggle button {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: transparent;
+  border: none;
+  border-radius: 999px;
+  padding: 4px 11px;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text-2);
+  cursor: pointer;
+  transition:
+    background var(--dur-1) var(--ease-out),
+    color var(--dur-1) var(--ease-out);
+}
+
+.mode-toggle button:hover {
+  color: var(--text);
+}
+
+.mode-toggle .mode-on {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+/* --- stage & starter ---------------------------------------------------------- */
+
+.workspace {
+  display: grid;
+  grid-template-columns: 1fr 324px;
+  min-height: 0;
+}
+
+.stage {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+}
+
+.stage-starter {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(360px, calc(100% - 40px));
+  padding: var(--space-5);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-3);
+  text-align: center;
+}
+
+.stage-starter h2 {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-xl);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.stage-starter p {
+  margin: 0 0 var(--space-4);
+  color: var(--text-2);
+  font-size: var(--text-sm);
+}
+
+.starter-btn {
+  justify-content: flex-start;
+  gap: 12px;
+  padding: 10px 14px;
+  margin-top: var(--space-2);
+  text-align: left;
+}
+
+.starter-btn span {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.starter-btn strong {
+  font-size: var(--text-base);
+  font-weight: 600;
+}
+
+.starter-btn small {
+  font-size: var(--text-xs);
+  color: var(--text-2);
+  font-weight: 400;
+}
+
+.btn-primary.starter-btn small {
+  color: color-mix(in oklab, var(--accent) 60%, var(--text-2));
+}
+
+/* --- sidebar ---------------------------------------------------------------- */
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  overflow-y: auto;
+  border-left: 1px solid var(--border);
+  background: var(--surface-0);
+}
+
+/* --- canvas hint ---------------------------------------------------------------- */
+
+.mode-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: var(--overlay-bg);
+  backdrop-filter: blur(6px);
+  border: 1px solid var(--overlay-border);
+  color: var(--overlay-text);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+  max-width: calc(100% - 24px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+
+@media (max-width: 1180px) {
+  .topbar {
+    grid-template-columns: auto 1fr;
+  }
+
+  .topbar > .steps-bar {
+    order: 3;
+    grid-column: 1 / -1;
+    justify-self: start;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  .topbar-actions {
+    justify-self: end;
+  }
+}
+
+@media (max-width: 960px) {
+  .workspace {
+    grid-template-columns: 1fr;
+    grid-template-rows: clamp(260px, 48vh, 60vh) minmax(0, 1fr);
+  }
+
+  .sidebar {
+    border-left: none;
+    border-top: 1px solid var(--border);
+  }
+
+  .btn-suggest span {
+    display: none;
+  }
+}

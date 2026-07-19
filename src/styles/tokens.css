@@ -1,0 +1,75 @@
+:root {
+  /* A dark "studio console" surface is deliberate: the additive ray glow is
+     the product, and it only reads on a near-black canvas. Hierarchy comes
+     from a luminance ladder (surface-0 → surface-3), not from borders. */
+  --surface-0: #05070c;
+  --surface-1: #0b101b;
+  --surface-2: #121a29;
+  --surface-3: #1b2438;
+  --surface-hover: rgba(148, 163, 184, 0.07);
+
+  /* Hairlines are reserved for inputs and focus — panels rely on elevation. */
+  --border: rgba(148, 163, 184, 0.12);
+  --border-strong: rgba(148, 163, 184, 0.28);
+
+  /* Three emphasis tiers instead of one "muted". text-3 stays ≥4.5:1 on the
+     surface ladder — it labels real information (headings, dims, tags). */
+  --text: #eef2fa;
+  --text-2: #9aa5bb;
+  --text-3: #7583a0;
+
+  /* Cyan/amber are the stereo channel identities (L/R) and double as the
+     app accent; green/amber/red are strictly acoustic status semantics. */
+  --accent: #4fd8ff;
+  --accent-r: #ffa04f;
+  --ok: #3ee08a;
+  --warn: #f5c04e;
+  --bad: #ff6b6b;
+
+  --accent-06: rgba(79, 216, 255, 0.06);
+  --accent-12: rgba(79, 216, 255, 0.12);
+  --accent-20: rgba(79, 216, 255, 0.2);
+  --ok-10: rgba(62, 224, 138, 0.12);
+  --warn-10: rgba(245, 192, 78, 0.12);
+  --bad-10: rgba(255, 107, 107, 0.12);
+
+  --font-ui: 'Avenir Next', -apple-system, 'Segoe UI', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, 'Cascadia Code', monospace;
+
+  --text-xs: 0.7rem;
+  --text-sm: 0.8rem;
+  --text-base: 0.875rem;
+  --text-lg: 1rem;
+  --text-xl: 1.2rem;
+  --text-display: 1.45rem;
+
+  --radius-sm: 7px;
+  --radius: 10px;
+  --radius-lg: 14px;
+
+  /* 4px rhythm. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+
+  --dur-1: 70ms;
+  --dur-2: 150ms;
+  --dur-3: 240ms;
+  --ease-out: cubic-bezier(0, 0, 0.38, 0.9);
+  --ease-exit: cubic-bezier(0.2, 0, 1, 0.9);
+  --ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 6px 24px rgba(0, 0, 0, 0.45);
+  --shadow-3: 0 16px 48px rgba(0, 0, 0, 0.55);
+
+  /* Back-compat aliases (canvas + legacy rules). */
+  --bg: var(--surface-0);
+  --surface: var(--surface-1);
+  --muted: var(--text-2);
+  --accent-l: var(--accent);
+  --duration-fast: var(--dur-2);
+  --ease-out-expo: var(--ease-spring);
+}

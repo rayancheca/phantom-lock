@@ -1,0 +1,117 @@
+.sim-canvas-wrap {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.sim-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  display: block;
+}
+
+/* Inherits the overlay palette from .stage / .stage-plan so it matches both
+   the dark sound view and the light blueprint. */
+.compass {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--overlay-border);
+  background: var(--overlay-bg);
+  color: var(--overlay-text);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  box-shadow: var(--shadow-1);
+  transition: color var(--dur-1) var(--ease-out);
+}
+
+.compass:hover {
+  color: var(--overlay-text-strong);
+}
+
+.compass-off {
+  border-color: var(--overlay-warn);
+  color: var(--overlay-warn);
+}
+
+.compass svg {
+  width: 18px;
+  height: 18px;
+  transition: transform 120ms var(--ease-out);
+}
+
+.compass-n {
+  fill: var(--bad);
+}
+
+.compass-s {
+  fill: var(--overlay-text);
+}
+
+/* Hover-a-wall suggestion chips (door / window insertion). */
+.wall-actions {
+  position: absolute;
+  transform: translate(-50%, calc(-100% - 10px));
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  border: 1px solid var(--overlay-border);
+  background: var(--overlay-bg);
+  backdrop-filter: blur(6px);
+  box-shadow: var(--shadow-1);
+  z-index: 6;
+  animation: pop-in var(--dur-2) var(--ease-out);
+}
+
+.wall-actions button {
+  border: none;
+  background: transparent;
+  color: var(--overlay-text-strong);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.wall-actions button:hover {
+  background: var(--accent-12);
+  color: var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wall-actions {
+    animation: none;
+  }
+}
+
+/* Marquee / lasso rubber band. */
+.band-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.band-overlay rect,
+.band-overlay polygon {
+  fill: rgba(79, 216, 255, 0.08);
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 4;
+}
