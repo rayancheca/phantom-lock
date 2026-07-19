@@ -1,102 +1,160 @@
 # Phantom Lock — Acoustic Room Planner
 
-A browser-based room planner with a real 2D acoustic ray-tracing engine, built
-to find the optimal **HomePod placement** in any layout. Ships with the
-Maple Court apartment (~52 m²) digitized from the floorplan; create as many
-layouts as you want from scratch.
+**Find the objectively best place to put your speakers — and the best place to sit —
+with a real 2.5D acoustic ray-tracing engine that runs entirely in your browser.**
+
+Most "speaker placement" advice is folklore. Phantom Lock instead *simulates* the room:
+it casts hundreds of sound rays per speaker, bounces them off walls and furniture at their
+real heights, checks true 3D line-of-sight to your ears, and turns the result into one
+plain-English verdict — **is the stereo phantom center locked, and if not, why not?** It
+ships with a bundled sample apartment (~52 m²) so you can start immediately, and you can
+draw any number of your own layouts from a floorplan photo or from scratch.
+
+Zero runtime dependencies beyond React. The physics is a hand-written TypeScript engine
+(~85% of the codebase), covered by **140 unit tests**.
+
+---
+
+## What makes it non-trivial
+
+- **It's 2.5D, not 2D.** Every object has a height — a bed grazes sound, a wardrobe blocks
+  it, a wall stops it. Rays and line-of-sight walk the true 3D line between speaker height
+  and ear height, so lying on the bed doesn't shadow your own ears but a tall shelf does.
+- **Real stereo imaging.** For any same-model pair it computes the inter-channel time
+  difference (ITD), level balance (ILD), subtended angle, comb-filter notch (`f = c/2Δ`),
+  and the exact ±30° equilateral "sweet spot" — then relocates that spot when a wall makes
+  the geometric ideal physically unreachable.
+- **Image-source reflections that respect the room.** First-order wall bounces are found by
+  the image-source method, occlusion-checked on *both* legs, and — as of the latest pass —
+  refused when they'd pass through an open doorway instead of reflecting off solid wall.
+- **It answers a real question:** *where do my speakers go so both the couch and the bed
+  sound right?* Multiple named listening positions + a 2-up scenario compare make that a
+  one-glance decision instead of a spreadsheet.
+
+---
 
 ## Run it
 
 ```bash
 npm install
 npm run dev      # http://localhost:5173
-npm test         # engine unit tests (vitest)
-npm run build    # type-check + production build
+npm test         # engine unit tests (vitest) — 140, all green
+npm run build    # type-check (tsc --noEmit) + production build
 ```
 
-## Layouts
+No API keys, no backend, no environment setup. Layouts persist locally in IndexedDB; a
+one-click "Export all" writes a portable JSON backup of every layout.
 
-- Multiple named layouts, each with its own scene + simulation settings —
-  switch, rename, duplicate, delete from the header bar. Everything autosaves.
-- `New` starts a blank grid: draw walls (`2`), boxes (`3`), circles (`4`),
-  place speakers (`5`). `+ Maple Court` adds a fresh copy of the apartment.
-- Export/Import layouts as JSON (import adds a layout, never overwrites).
+---
 
-## Listening spots & scenario compare
+## Architecture
 
-- A scene holds **multiple named listening positions** ("Couch", "Bed", …) in
-  the **Listening spots** card. Switch the active seat (the "YOU" puck and the
-  live verdict follow it), rename or remove seats, and drag each into place.
-  Inactive seats stay visible on the canvas as faint labelled markers.
-- **Compare** (header, or the Listening spots card) opens a **2-up view**: two
-  seats — or two whole layouts — side by side, each with its own verdict, so the
-  rolling-TV **couch-vs-bed** decision is made in one glance instead of two tabs.
-- Old single-listener layouts and exported JSON upgrade automatically to the
-  named-seat model on load; the single-listener export shape still imports.
+```
+src/
+├── engine/                 pure TypeScript, fully unit-tested — no DOM, no React
+│   ├── raytrace.ts         ray casting, 3D line-of-sight, graze attenuation, door gaps
+│   ├── stereo.ts           pair metrics (ITD/ILD/angle), phantom-center lock verdict
+│   ├── pairspot.ts         per-pair wall-aware sweet-spot search + image-source bounces
+│   ├── bestspot.ts         the green-★ "best place to sit" field for all speakers
+│   ├── optimize.ts         "Suggest placement" (listener / room / whole-house targets)
+│   ├── rooms.ts            flood-fill room regions (walkable vs sound zones)
+│   ├── arrange.ts          rule-based furniture arranger (light, quiet, feng shui…)
+│   ├── detect.ts           floorplan photo → walls (Otsu → Hough → merge)
+│   ├── scene.ts            presets, sanitize/migrate, multi-listener model
+│   └── db.ts               hand-rolled IndexedDB persistence (images as Blobs)
+└── components/             React 19 + Vite UI (canvas renderer, panels, dialogs, gallery)
+```
 
-## The physics engine (2.5D: heights matter)
+**Data flow:** the canvas / panels mutate an immutable `Scene`; `traceScene` produces ray
+arrivals; `computeAudio` turns those into the verdict; the renderer draws the ray field and
+overlays. The engine never imports React, so every acoustic claim is unit-testable in
+isolation — which is why the physics has real tests and the "advice" is trustworthy.
 
-- Every object has a **height**: bed 0.55 m, desk 0.75 m, couch 0.8 m,
-  wardrobe 2.4 m, walls 2.7 m… all editable. Speakers have a shelf height and
-  the listener has an ear height (sitting 1.2 / standing 1.7 / lying 0.8).
-- Each speaker emits **360–1440 rays** over 360°, reflecting off anything
-  taller than the ray's height (angle in = angle out, energy × (1 − absorption)
-  per bounce, nearest-hit so nothing is tunnelled through).
-- Sound **passes over low furniture**, losing a little energy when it grazes
-  within 0.5 m of a top edge — so lying on the bed doesn't "block" your own
-  ears; the mattress just grazes the path.
-- Line-of-sight checks walk the true 3D line between speaker height and ear
-  height. Reflections arriving at your head are plotted on the echogram
-  (direct sound ▲ + reflection bars per speaker), with occlusion-checked
-  capture so you never "hear" rays through a wall.
+---
 
-## Speakers & stereo pairs
+## Technical deep-dive
 
-- Layouts start with **zero speakers**; add them from the Speakers panel or
-  tool `5` — choosing the model: **HomePod** (0 dB ref, happy 1.0–3.5 m,
-  bass to ~40 Hz) or **HomePod mini** (−6 dB, happy 0.7–2.2 m, ~90 Hz).
-  Model scales the ray energy, the level math, and the optimizer's distances.
-- Each speaker has a **volume trim** (dB); "Match volumes" turns
-  louder/nearer speakers down so everything lands at your seat equally —
-  the metrics show that trim fixes level balance but can never fix the
-  arrival-time offset (ITD).
-- Link any two **same-model** speakers as a stereo pair (Apple won't pair a
-  HomePod with a mini — the app enforces and explains this). Each pair gets
-  full phantom-center analysis and its own **PHANTOM CENTER LOCKED** state.
-- "Anchor image to TV" toggle: on = cinema semantics (the phantom center must
-  sit on the TV); off = music semantics (the image anchors on you).
+**The hardest decision was the metric space for the stereo lock.** A phantom center is
+"locked" when the listener forms an equilateral triangle with the pair (equal distance →
+zero ITD, ±30° → correct width) *and* the TV (in cinema mode) sits on that axis. The trap:
+the sweet-spot geometry is a **2D floor-plan** construction, but arrival time and level are
+genuinely **3D** (speaker height matters). Early versions mixed the two — measuring the
+triangle with 3D leg lengths but a 2D base — so a pair mounted symmetrically at head height
+could *never* lock, even when it was acoustically perfect. The fix computes the triangle in
+one consistent 2D space, keeps 3D only for ITD/level, **and** adds a separate 3D
+arrival-symmetry gate so a pair that's plan-symmetric but at mismatched heights (equal floor
+distance, unequal path) is honestly reported as *not* locked. A false "locked" is worse than
+an honest "almost there," and both the lock flag and the quality meter now agree.
 
-## ✨ Suggest placement
+**Reflections were the other subtle one.** The image-source method mirrors a speaker across a
+wall and charges the folded path — but a naïve implementation happily "reflects" off the
+empty air inside a doorway. The engine now requires the bounce point to land on solid wall
+(the same door/window openings the forward ray tracer already carves out), while keeping
+closed doors and windows as real reflectors. The alternative — mirroring every furniture
+rect — was rejected as far more expensive for a first-order model.
 
-Pick a mode, your speaker inventory (n× HomePod + n× mini), and stereo on/off:
+Other decisions worth a look: the listener is stored as a `listeners[]` array with the
+legacy single `scene.listener` kept as a **derived mirror**, so ~13 engine read-sites and
+every old saved layout keep working unchanged; and persistence migrates the original
+`localStorage` blob into IndexedDB non-destructively (the old key is kept as a frozen
+rollback).
 
-- **🎬 TV** — front pair on the listener→TV axis, equilateral with your seat;
-  rear speakers mirrored behind you.
-- **🎵 Music** — ignores the TV: the pair orients toward your most open side,
-  independent speakers spread evenly **around** you for envelopment.
+---
 
-It searches the actual floorplan (line of sight at real heights, wall
-clearance for boundary boost, model-appropriate distances), auto-computes
-volume trims so every speaker reaches your seat at the same level, and shows
-green ghosts — Apply, then fine-tune by dragging.
+## Using it
 
-## Building rooms (blueprint view)
+**Build** → draw walls corner-by-corner (snaps to 45° and a 5 cm grid), or drop a floorplan
+photo and let auto-detection trace the walls, then calibrate scale with two clicks.
 
-Drawing tools flip the canvas into a light **graph-paper plan view** (toggle
-manually with `T`). Walls draw like a floor planner: click corner by corner,
-segments snap to 45° angles and the 5 cm grid, lengths label live, click the
-first corner to close the room, double-click or `Esc` to finish. "New room"
-starts from a W×D rectangle prompt.
+**Furnish** → place furniture by hand, or hit *Arrange for me* and let the rule engine reason
+about circulation, daylight, quiet, first-reflection absorption, and feng shui.
 
-## Controls
+**Sound** → add HomePods / HomePod minis, link same-model pairs, then *Suggest placement*
+(🎬 cinema anchors the image on the TV; 🎵 music wraps the pair around you). Apply the green
+ghosts and drag to fine-tune.
+
+**Analyze** → read the verdict: **PHANTOM CENTER LOCKED**, the timing/level/angle breakdown,
+the glowing ray field, and the green ★ best-seat. Define a "Couch" and a "Bed" listening
+spot, move the rolling TV, and open **Compare** to see both verdicts side by side.
+
+### Controls
 
 | | |
 |---|---|
 | `1`–`5` | select · wall · box · circle · speaker |
 | `Q`/`E` | rotate selected box (TV included) |
 | arrows | nudge selection (⇧ = 25 cm) |
-| `Del` | delete selection · `⌘Z` undo delete |
+| `Del` | delete selection · `⌘Z` undo |
 | scroll / pinch | zoom · right-drag / space-drag = pan |
+| `T` | toggle sound (dark) / plan (blueprint) view |
 
-Click anything to edit its size, angle, height, and material (absorption
-presets from glass to acoustic panel) in the inspector.
+Everything autosaves. Export/Import layouts as JSON (import adds, never overwrites).
+
+---
+
+## Screenshots
+
+> 🚧 **Placeholders — coming soon.** The UI is under active development, so live screenshots
+> are intentionally deferred until the surface settles (rather than shipping shots that go
+> stale every session). The captured walkthrough will follow the golden path end-to-end:
+
+1. **Boot** — the bundled *Maple Court* apartment loads in the dark "sound" view.
+2. **Build** — drawing walls in the light blueprint view (live length labels).
+3. **Furnish** — *Arrange for me* placing furniture with its stated reasoning.
+4. **Suggest placement** — the optimizer dialog + green-ghost speaker preview.
+5. **Analyze** — the glowing ray field, verdict panel, and green-★ best seat.
+6. **Compare** — couch vs bed verdicts side by side for the rolling-TV decision.
+
+<!-- docs/screenshots/01-boot.png … 06-compare.png -->
+
+---
+
+## Development
+
+- `npm test` — vitest engine suite (140 tests). The engine is the source of truth; add a
+  failing test first for every new acoustic behavior.
+- `npm run build` — `tsc --noEmit` + a production Vite build.
+- The project follows a session-based roadmap (`docs/master-plan.md`) with an
+  adversarial-review operating protocol (`CLAUDE.md`); `docs/ultrareview.md` is a full audit.
+
+Built with React 19 + Vite + TypeScript. No runtime dependencies beyond React.

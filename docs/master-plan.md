@@ -535,6 +535,7 @@ sync on reconnect; signing out leaves the local IndexedDB copy intact; build + t
   ≥80% on touched files, build green. See the Session 3 block. Next: **Session 4** (canvas interaction
   fixes + dead features) — its kickoff prompt is in its block (re-states the Standing Operating Protocol).
 - **2026-07-19 — Repo hygiene + GitHub (S3 session):** untracked `coverage/` (now gitignored); on the
-  user's request, published to GitHub (public, with the "Maple Court" demo scrubbed to a placeholder across
-  all history for privacy) and set the standing rule to push after each session. README rewritten to the
-  readme-standards bar with placeholder screenshots (real ones deferred — the app changes too often).
+  user's request, published to GitHub (public), with the bundled demo apartment's real address scrubbed to
+  a neutral placeholder across ALL git history (`git filter-repo`) for privacy, and set the standing rule to
+  push after each session. README rewritten to the readme-standards bar with placeholder screenshots (real
+  ones deferred — the app changes too often to keep them current).
