@@ -1,6 +1,13 @@
 import { useCallback, useRef } from 'react';
 import type { LayoutStore, Scene, Selection } from '../../../engine/types';
-import { emptyBucket, historyPush, historyRedo, historyUndo, type HistoryBucket } from '../history';
+import {
+  emptyBucket,
+  historyPush,
+  historyRedo,
+  historyUndo,
+  reapHistory,
+  type HistoryBucket,
+} from '../history';
 import { updateLayout } from '../store';
 
 type SceneUpdater = Scene | ((s: Scene) => Scene);
@@ -107,9 +114,7 @@ export function useSceneHistory({ store, setStore, setSelection }: Args): SceneH
   }, []);
 
   const reap = useCallback((liveIds: Set<string>, keepId?: string) => {
-    for (const id of [...historyRef.current.keys()]) {
-      if (!liveIds.has(id) && id !== keepId) historyRef.current.delete(id);
-    }
+    reapHistory(historyRef.current, liveIds, keepId);
   }, []);
 
   const bucket = historyRef.current.get(store.activeId);

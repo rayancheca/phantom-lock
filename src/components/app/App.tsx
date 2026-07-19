@@ -556,7 +556,7 @@ function AppInner({ initialStore, persistMode }: AppInnerProps) {
         return;
       case 'rotate':
         if (selection?.type !== 'object') return;
-        setScene((s) => rotateSelectedRect(s, selection.id, cmd.dir));
+        setScene((s) => rotateSelectedRect(s, selection.id, cmd.dir), { coalesce: cmd.coalesce });
         return;
       case 'nudge':
         if (!selection) return;

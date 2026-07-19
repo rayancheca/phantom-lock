@@ -194,10 +194,19 @@ describe('handleKeydown rotate', () => {
     expect(handleKeydown(key('q'), env({ selection: { type: 'object', id: 'r1' } }))?.command).toEqual({
       type: 'rotate',
       dir: -1,
+      coalesce: false,
     });
     expect(handleKeydown(key('e'), env({ selection: { type: 'object', id: 'r1' } }))?.command).toEqual({
       type: 'rotate',
       dir: 1,
+      coalesce: false,
+    });
+  });
+  it('held rotate repeat coalesces into one undo entry (like nudge)', () => {
+    expect(handleKeydown(key('e', { repeat: true }), env({ selection: { type: 'object', id: 'r1' } }))?.command).toEqual({
+      type: 'rotate',
+      dir: 1,
+      coalesce: true,
     });
   });
   it('q/e do nothing without an object selection', () => {

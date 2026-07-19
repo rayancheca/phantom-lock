@@ -32,7 +32,7 @@ export type KeyCommand =
   | { type: 'delete' }
   | { type: 'tool'; tool: ToolMode }
   | { type: 'theme-toggle' }
-  | { type: 'rotate'; dir: -1 | 1 }
+  | { type: 'rotate'; dir: -1 | 1; coalesce: boolean }
   | { type: 'nudge'; dx: number; dy: number; coalesce: boolean };
 
 export interface KeyResult {
@@ -96,7 +96,8 @@ export function handleKeydown(e: KeyEvt, env: KeyEnv): KeyResult | null {
   }
 
   if ((e.key === 'q' || e.key === 'e') && env.selection?.type === 'object') {
-    return { command: { type: 'rotate', dir: e.key === 'q' ? -1 : 1 } };
+    // Held-key repeat folds into one undo entry, like nudge.
+    return { command: { type: 'rotate', dir: e.key === 'q' ? -1 : 1, coalesce: e.repeat } };
   }
 
   if (e.key.startsWith('Arrow') && env.selection) {

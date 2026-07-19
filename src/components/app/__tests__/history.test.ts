@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { emptyBucket, historyPush, historyRedo, historyUndo, HISTORY_CAP } from '../history';
+import {
+  emptyBucket,
+  historyPush,
+  historyRedo,
+  historyUndo,
+  reapHistory,
+  HISTORY_CAP,
+} from '../history';
 import type { Scene } from '../../../engine/types';
 
 // Minimal fake scenes — history treats them as opaque references.
@@ -90,6 +97,36 @@ describe('undo/redo round-trip', () => {
     expect(afterRedo.scene).toBe(cur);
     expect(afterRedo.bucket.past).toEqual([pre]);
     expect(afterRedo.bucket.future).toEqual([]);
+  });
+});
+
+describe('reapHistory (the leak fix)', () => {
+  it('drops buckets for layouts no longer live', () => {
+    const map = new Map([
+      ['a', emptyBucket()],
+      ['orphan', emptyBucket()],
+    ]);
+    reapHistory(map, new Set(['a']));
+    expect([...map.keys()]).toEqual(['a']); // orphan reaped — no unbounded accumulation
+  });
+
+  it('keeps keepId so undo-after-undelete survives', () => {
+    const map = new Map([
+      ['a', emptyBucket()],
+      ['just-deleted', emptyBucket()],
+      ['old-orphan', emptyBucket()],
+    ]);
+    reapHistory(map, new Set(['a']), 'just-deleted');
+    expect([...map.keys()].sort()).toEqual(['a', 'just-deleted']); // keepId kept, old orphan gone
+  });
+
+  it('keeps every live bucket', () => {
+    const map = new Map([
+      ['a', emptyBucket()],
+      ['b', emptyBucket()],
+    ]);
+    reapHistory(map, new Set(['a', 'b']));
+    expect([...map.keys()].sort()).toEqual(['a', 'b']);
   });
 });
 

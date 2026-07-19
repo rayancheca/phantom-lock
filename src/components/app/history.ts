@@ -15,6 +15,21 @@ export function emptyBucket(): HistoryBucket {
 }
 
 /**
+ * Drop undo buckets for layouts that are gone (the historyRef leak fix). Mutates
+ * `map` in place. `keepId` protects a just-deleted layout whose Undo can still
+ * restore it — so undo-after-undelete keeps its full scene stack.
+ */
+export function reapHistory(
+  map: Map<string, HistoryBucket>,
+  liveIds: Set<string>,
+  keepId?: string,
+): void {
+  for (const id of [...map.keys()]) {
+    if (!liveIds.has(id) && id !== keepId) map.delete(id);
+  }
+}
+
+/**
  * Record a scene edit. Returns a NEW bucket (never mutates the input).
  *
  * - `coalesce: false` (a discrete edit or the first frame of a gesture) pushes
