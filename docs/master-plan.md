@@ -332,8 +332,31 @@ old single-listener export/import shape working for files already on disk.
 ---
 
 ## Session 5 — App.tsx decomposition + ESLint
-**Status:** ☐ **Depends on:** nothing hard (do after S1-S4 land so you refactor stable code)
-**Unblocks:** cleaner S6/S7
+**Status:** ☑ DONE 2026-07-19 **Depends on:** nothing hard **Unblocks:** cleaner S6/S7
+> Behavior-identical refactor + the 3 named history fixes. **App.tsx 1506 → 789 lines** (< 800 cap). A pre-code
+> understand→refute Workflow (11 agents: 5 concern maps × adversarial skeptic + a budget/ESLint agent) caught the
+> big trap BEFORE coding — naive gesture-only coalescing would silently change undo granularity because many discrete
+> edits (wall-chain corners, speaker placement, draw commits, rapid deletes) fire `onScene` with no `onDragging`
+> bracket — so the coalescing model is drag-groups (`beginGroup`/`endGroup` on `onDragging`) **plus** `e.repeat` for
+> held keys, with the granularity change documented. Extracted pure, **failing-test-first** modules `history.ts`
+> (push/undo/redo/`reapHistory` reducers, 14 tests), `keyboard.ts` (`handleKeydown` + `nudgeSelection`/`rotateSelectedRect`,
+> 38 tests), `store.ts` (`updateLayout` helper replacing the 6 duplicated `layouts.map` blocks, 5 tests); and hooks
+> `useSceneHistory` (pure store updater — no StrictMode-double-invoke reliance, fixes the dev double-pop — + `reap`
+> leak fix keeping `keepId`), `useLayoutStore`, `useLayoutActions`, `usePersistence`, `useSimulation`,
+> `useKeyboardShortcuts` (mount-once `[]`-deps via `ctxRef`); JSX split into `AppHeader`/`CanvasStage`/`Sidebar`/`AppDialogs`;
+> constants/types to siblings. Removed dead `setHistVersion` + both `setTimeout(fn,0)` selection hacks (ids computed
+> synchronously). **ESLint:** flat `eslint.config.js` + `eslint-plugin-react-hooks` + `typescript-eslint`, `npm run
+> lint`, all 12 exhaustive-deps suppressions re-derived (7 removed incl. the App keydown one via the ref-driven hook;
+> 5 documented survivors), 4 pre-existing lint errors fixed. Self-review Workflow (code-reviewer + silent-failure-hunter
+> + history-skeptic + wiring-skeptic over the diff): history-skeptic found NOTHING, wiring confirmed byte-identical;
+> caught **one real regression** — q/e rotate had lost held-key undo coalescing (nudge had it) — **fixed** (+1 test).
+> Tests **182 → 239**, coverage ≥96% on the pure modules (React glue deferred to S10, no jsdom/RTL yet), `npm run lint`
+> clean, `npm run build` green (~378 kB / 122.6 kB gz; +3.5 kB gz decomposition wiring). Live-verified via keyboard +
+> JS-dispatch + IndexedDB reads on a **disposable duplicate** of the user's real layout (backed up first, restored
+> pristine): boot-clean, duplicate, tool-switch, nudge→⌘Z→⇧⌘Z (2.30→2.55→2.30→2.55), delete + undo-delete, cross-layout
+> undo. Evidence in `docs/sessions/S5/` (`live-verification.md`, both-theme canvas PNGs, `backup.json`). Deferred to
+> backlog: React hook/component tests (S10); a LOW theoretical `splitWall` phantom-selection if a future handler fires
+> two scene-edits in one tick; SimCanvas's own hook split.
 
 **Goal.** Break the god-component into tested hooks and get files under the 800-line cap, so future
 work is safe.
@@ -366,7 +389,14 @@ redo, keyboard, layout CRUD unchanged.
 ---
 
 ## Session 6 — Performance: Web Worker tracer + memoization
-**Status:** ☐ **Depends on:** S1 (async store), ideally S5 (`useSimulation` extracted)
+**Status:** ☐ **Depends on:** S1 (async store) + S5 (both DONE) **Now unblocked**
+> **S5 handoff:** `useSimulation(scene, settings, dragging)` (`src/components/app/hooks/useSimulation.ts`) now owns the
+> whole `trace`/`audio`/`bestSpot` memo chain and `DRAG_RAYS` (=360) — the single seam to move off the main thread. It
+> returns `{trace, audio, bestSpot}` and App consumes them as props into `CanvasStage`/`Sidebar`; `stepDone` reads
+> `audio.pairs`. Keep the exact memo dep arrays when threading through the worker (`trace` deps `[scene, effRays,
+> settings.maxBounces]`; `audio` `[scene, trace, settings.tvAnchor]`; `bestSpot` `[scene, settings.showBestSpot,
+> settings.tvAnchor, dragging]` with `coarse = dragging`). The panels are NOT yet `React.memo`'d (S6 scope). `npm run
+> lint` now exists and enforces exhaustive-deps — keep it clean. Baseline: 239 tests, ~378 kB / 122.6 kB gz.
 
 **Goal.** Get the expensive ray-tracing off the main thread so the editor never janks at high settings.
 
@@ -648,3 +678,15 @@ screenshots stay local/gitignored (the demo apartment's floorplan is the owner's
   **Session 12** (auto-detect accuracy overhaul), root causes diagnosed against `detect.ts`. Codified the
   first-time-user-testing practice into memory (`first-time-user-testing`): drive each feature cold as a naive
   user, capture real friction, add it to this plan, and hand it off to a dedicated session — not half-fixed inline.
+- **2026-07-19 — Session 5 DONE:** App.tsx decomposition + ESLint (see the Session 5 block). **1506 → 789 lines**
+  into 6 hooks + 3 pure modules + 4 JSX components; the 3 history bugs fixed (leak via `reap`+`keepId`, impure
+  updater → pure, 400 ms timer → gesture-scoped coalescing). ESLint (`npm run lint`) added, all 12 exhaustive-deps
+  suppressions re-derived (5 documented survivors). A pre-code 11-agent understand→refute Workflow caught the
+  coalescing trap; a 4-agent self-review Workflow caught + fixed the rotate-coalescing regression. Tests **182 → 239**,
+  lint clean, build green (~378 kB/122.6 kB gz). Live-verified on a disposable duplicate (real layout backed up +
+  restored pristine). Next: **Session 6** (Web-Worker tracer + memoization) — kickoff in its block; `useSimulation`
+  is now cleanly extracted to unblock it.
+- **2026-07-19 — Data-safety note (S5):** the preview browser's IndexedDB holds the owner's **real** layout
+  ("1500 Bay Rd" — their real home; source/default stays the scrubbed "Maple Court", and no `1500 Bay` string is in
+  `src/`/`docs/`). All S5 write-tests ran on a duplicate; the real layout was backed up and verified byte-identical
+  afterward. Keep testing on duplicates, never the real active layout.
