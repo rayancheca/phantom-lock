@@ -4,42 +4,67 @@ Browser-based 2D acoustic room planner (React 19 + Vite + TS, **zero runtime dep
 Finds optimal HomePod placement via a real 2.5D ray-tracing engine. The user owns 4 HomePods,
 lives in the bundled "Maple Court" apartment, has a rolling TV stand (couch spot ↔ bed spot).
 
-## ⚠️ OPERATING PROTOCOL — the quality bar (READ FIRST, applies to EVERY session)
+## ⚠️ OPERATING PROTOCOL — the quality bar (CANONICAL · append-only · READ FIRST)
 
-The owner's standing directive: **make this perfect. Never be lazy, never take shortcuts, use as
-many agents as the work warrants, and spend as many tokens/seconds as it takes.** Token and time
-budget are NOT constraints here — optimize for correctness and completeness, never for speed. This
-is an **ultracode** project: default to multi-agent orchestration for anything non-trivial.
+The owner's standing directive: **make this perfect. Never be lazy, never take shortcuts, use as many
+agents as the work warrants, spend as many tokens/seconds as it takes.** Token/time budget is NOT a
+constraint — optimize for correctness and completeness, never speed. This is an **ultracode** project.
 
-Every session MUST follow this protocol (it is non-negotiable):
+This protocol is **canonical and append-only**: do not weaken, soften, reword-down, or delete any clause
+without explicit owner approval quoted in your handoff. Confirm the next kickoff you write re-states it.
 
-1. **Read first.** `docs/master-plan.md` (your session + the roadmap), `docs/ultrareview.md`,
-   `docs/database-plan.md`, and this file. Understand the code you're about to touch before touching it.
-2. **Orchestrate, don't solo.** For any non-trivial task, run a multi-agent **Workflow**: fan out
-   understanding/design/review across parallel agents and synthesize the best result. Scale the number
-   of agents to the work — more when in doubt.
-3. **Adversarially verify — ALWAYS.** Every serious finding, design choice, and risky change gets an
-   independent skeptic agent that tries to REFUTE it against the real code. (In Session 1 this pattern
-   caught real data-loss bugs that would otherwise have shipped. It is mandatory, not optional.)
-4. **Implement fully — no shortcuts.** No stubs, no TODOs, no placeholder returns, no "left as an
-   exercise," no silently narrowing scope, no faking completion. If a scope is genuinely too big for
-   one session, finish a coherent slice properly and hand off the rest explicitly.
-5. **Test EVERYTHING — twice.** (a) Automated: keep `npm test` green, and ADD tests for every new
-   behavior (write the failing test first where practical); honor the 80% coverage bar. (b) Live: use
-   the browser preview tools to actually exercise the change — click it, read the console, inspect the
-   persisted/DOM state, screenshot the result. Never claim "works" without having run it for real.
-6. **Double-check your own work.** After implementing, spawn a self-review agent (`code-reviewer`,
-   `security-reviewer`, `silent-failure-hunter`, or a domain reviewer) to hunt for bugs, data loss,
-   edge cases, and laziness in exactly what you just wrote. Fix everything real it finds, then re-verify.
-7. **Verification gate before "done".** `npm test` (all green) + `npm run build` (`tsc --noEmit` + vite,
-   both green) + a live browser check when the change is observable. If any is red, it is NOT done.
-8. **Leave it clean.** If your testing altered the user's real data/state, reset it to clean. No leftover
-   artifacts, no dead code, no `console.log`, no `any`/`@ts-ignore`. Respect the design system below.
-9. **Report honestly.** State exactly what you did, what you verified, and what you did NOT do. If a test
-   failed or a step was skipped, say so plainly — never paper over it.
-10. **Hand off.** Update the `docs/master-plan.md` checklist + progress log, update this file / memory if
-    architecture or preferences changed, and write the next session's kickoff prompt (which must re-state
-    this protocol so the chain never degrades).
+**Objective triggers (no self-grading of "non-trivial").** A task is **heavy** — and MUST get a
+multi-agent Workflow **and** an adversarial skeptic pass — if it does ANY of: changes a data model or
+migration · touches persistence · touches the engine (`src/engine`) · deletes/overwrites data · or edits
+more than one file. When unsure, treat it as heavy.
+
+Every session MUST:
+
+1. **Git first.** A git repo exists (as of 2026-07-19). Create a per-session branch, commit a baseline,
+   and commit again after the gate passes — so the change is diffable and revertable. A migration that
+   cannot be reverted must not be run.
+2. **Read first.** `docs/master-plan.md` (your session + roadmap), `docs/ultrareview.md`,
+   `docs/database-plan.md`, this file. Map every site you'll touch before touching it.
+3. **Orchestrate.** For any heavy task, run a multi-agent Workflow (parallel understanding/design/review →
+   synthesize). Do not solo heavy work.
+4. **Adversarially verify — ALWAYS.** Every heavy change and every serious finding gets an independent
+   skeptic agent that tries to REFUTE it against the real code. (This caught real data-loss bugs in S1 and
+   a seat/verdict desync trap in the S2 plan.) Report each verdict.
+5. **Implement fully.** No stubs, TODOs, placeholder returns, `.skip`/`.only`, scope-narrowing, or faked
+   completion. A split is legitimate ONLY if the shipped slice fully satisfies a NAMED subset of the
+   session's Acceptance criteria and the remainder is rescheduled as its own block with its own Acceptance.
+   Map every Acceptance bullet to "met (with evidence)" or "deferred to <block>" — none left unaddressed.
+6. **Test everything — and PROVE it.**
+   - *Automated:* keep the suite green and ADD tests for every new behavior (failing-test-first for every
+     new pure-function behavior). Run `npm run test:coverage`; paste the coverage line for every file you
+     touched (≥80%, or state the exact reason). **Test count is a ratchet — it must not decrease** (was
+     **95** on 2026-07-19) and no test may be newly skipped/only'd/weakened; state before/after counts.
+   - *Migrations:* seed an OLD-shape store/record and assert it upgrades correctly on read — not just
+     fresh-fixture writes.
+   - *Live:* any change to scene data, persistence, engine output, or UI is "observable" by definition.
+     Drive the browser preview, exercise it, read the console, inspect persisted/DOM state, and SAVE
+     screenshots to `docs/sessions/S<n>/` (both the dark "sound" and light "plan" themes for canvas/UI
+     changes; check the ≤960 px stacked layout for new UI). Reference the files in the handoff. No saved
+     artifact = the live check did not happen.
+   - *New interactive UI* must be keyboard-operable, show a visible focus state, respect
+     `prefers-reduced-motion`, and not regress contrast (`--text-3`) or the design system — at creation.
+7. **Double-check your own work.** After implementing, spawn a self-review agent (`code-reviewer` /
+   `security-reviewer` / `silent-failure-hunter` / domain reviewer) over the actual diff to hunt bugs, data
+   loss, edge cases, and laziness. Fix everything real it finds, then re-verify.
+8. **Data safety.** Before any live test that writes persistence, run Export-all and save the bundle to
+   `docs/sessions/S<n>/backup.json`. Test on a disposable DUPLICATE layout — never the user's real active
+   "Maple Court" layout — and never hand-mutate IndexedDB to "reset".
+9. **Verification gate — proven, not paraphrased.** Paste the literal terminal tail of `npm test` (with the
+   test count) and `npm run build` (with the emitted size). Any red = not done.
+10. **Hand off with an Evidence block.** Update the master-plan checklist + progress log; update this file /
+    memory if architecture or preferences changed; write the next kickoff (re-stating this protocol). The
+    handoff MUST include an **Evidence block**: agents spawned (role + verdict) · before/after test count ·
+    pasted gate output · saved screenshot paths · each Acceptance bullet → met/deferred. No Evidence block =
+    the session is incomplete.
+
+State honestly per session: live checks run ONE browser (not cross-browser); ESLint/`npm run lint` doesn't
+exist until Session 5; automated a11y/contrast tests land in Session 7 — until then, meet these by hand and
+say so.
 
 ## Commands
 

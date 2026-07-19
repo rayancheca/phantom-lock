@@ -16,29 +16,17 @@
 
 ## ⚠️ Standing Operating Protocol — EVERY session MUST follow this
 
-> The owner's standing directive: **make this perfect. Never be lazy, never take shortcuts, use as
-> many agents as the work warrants, spend as many tokens/seconds as it takes.** Token/time budget is
-> NOT a constraint — optimize for correctness and completeness, never speed. This is an **ultracode**
-> project. The full protocol also lives in `CLAUDE.md` (auto-loaded), so it applies even if you only
-> paste a kickoff prompt below. Do not skip any step.
-
-1. **Read first** — this file (your session + roadmap), `docs/ultrareview.md`, `docs/database-plan.md`,
-   `CLAUDE.md`. Understand the code before touching it.
-2. **Orchestrate, don't solo** — for any non-trivial task run a multi-agent **Workflow** (parallel
-   understanding/design/review → synthesize). Scale agents to the work; more when in doubt.
-3. **Adversarially verify — ALWAYS** — every serious finding/decision/risky change gets an independent
-   skeptic agent that tries to REFUTE it against the real code. (This caught real data-loss bugs in S1.)
-4. **Implement fully** — no stubs, TODOs, placeholder returns, scope-narrowing, or faked completion.
-5. **Test EVERYTHING twice** — (a) automated: keep `npm test` green + ADD tests for every new behavior
-   (failing-test-first where practical; 80% bar); (b) **live**: drive the browser preview, read the
-   console, inspect persisted/DOM state, screenshot. Never claim "works" without running it for real.
-6. **Double-check your own work** — after implementing, spawn a self-review agent (code-reviewer /
-   security-reviewer / silent-failure-hunter / domain reviewer) to hunt bugs, data loss, edge cases,
-   and laziness in what you just wrote. Fix everything real it finds, then re-verify.
-7. **Verification gate before "done"** — `npm test` (all green) + `npm run build` (tsc + vite green) +
-   live browser check when observable. Any red = not done.
-8. **Leave it clean** — reset the user's real data/state if testing changed it; no artifacts, dead code,
-   `console.log`, `any`, or `@ts-ignore`.
+**The full, canonical, append-only protocol lives in `CLAUDE.md` ("OPERATING PROTOCOL"), which every
+session auto-loads. Follow it verbatim — do not weaken it.** In brief: it is an **ultracode** project
+(unlimited token/time budget, optimize for perfection); a task is **heavy** (→ multi-agent Workflow +
+adversarial skeptic REQUIRED) if it changes a data model/migration, touches persistence, touches the
+engine, deletes data, or edits >1 file; every session does git-per-session, reads first, orchestrates,
+adversarially verifies, implements fully (no stubs/shortcuts/`.skip`), tests everything with PROOF
+(coverage numbers + a non-decreasing test count + saved live screenshots in both themes + a migration
+old-shape→upgrade test), backs up before persistence tests (Export-all, test on a duplicate not the real
+layout), self-reviews the diff with an agent, meets a11y at creation, runs a proven gate (pasted `npm
+test` + `npm run build` output), and hands off with a required **Evidence block** (agents+verdicts,
+before/after test count, pasted gate output, screenshot paths, each Acceptance bullet → met/deferred).
 
 ### Repo-specific rules (in addition to the protocol)
 - **Zero-runtime-deps by default** — React only, unless a session adds a dep the user approved
@@ -130,23 +118,60 @@ still be a URL in memory so `render.ts`/`SimCanvas` need no changes.
 **Goal.** Let the rolling-TV, couch-vs-bed decision actually be made in-app: multiple named listening
 positions per scene, a movable "TV scenario," and a **2-up compare** of verdicts.
 
-**In scope (may spill into a 2a/2b split — that's fine)**
-- **Data model:** extend `Scene` to hold multiple named listener positions (e.g. `listeners:
-  {id,name,pos,z}[]` + `activeListenerId`), migrating the single `listener`. Optionally a `scenarios`
-  concept (named TV position + active listener). Update `sanitizeScene` + the IDB schema/migration.
-- **Engine:** `computeAudio`/`bestListeningSpot`/optimizer accept a chosen listener; optionally score
-  a placement against *all* positions (a "works at both seats" metric).
-- **UI:** switch active seat; a compare view (two scenes or two seats) showing both MetricsPanels
-  side by side with synced highlighting. Update the gallery to open a compare.
-- Tests for the multi-listener engine paths + migration.
+**Design decision — RESOLVE FIRST (it sets the blast radius).** Recommended: **keep `scene.listener` as
+a derived accessor for the active seat** (add `listeners: {id,name,pos,z}[]` + `activeListenerId`, and
+compute `listener` = the active entry) so the ~20 engine/UI read-sites and the ~9 test fixtures keep
+working unchanged, and only *writes* + the seat-switching UI are new. If you instead REMOVE
+`scene.listener`, every site in the touch-point map below **plus** the test fixtures must be migrated —
+larger and riskier. Pick one explicitly before coding; don't leave it implicit.
+
+**In scope (may split into 2a data-model+migration / 2b compare-UI — see split rule in the protocol)**
+- **Data model:** extend `Scene` with named listener positions + `activeListenerId`. Do the back-compat
+  migration in `sanitizeScene` (src/engine/scene.ts) — it runs on EVERY load (IDB via `loadFromIDB`→
+  `sanitizeLayout`→`sanitizeScene:482`, localStorage via `loadStore:500`, import via App.tsx:1002/1005).
+  **No IndexedDB `DB_VERSION` bump / no `onupgradeneeded` change** — the whole scene is stored per layout
+  (`db.ts` `saveLayout:181` `stripUnderlay:157`), so new scene fields persist automatically (lazy upgrade
+  on next save; sanitize re-applies on every read). Also update the scene *constructors*
+  (`apartmentScene:176`/`blankScene:185`/`rectRoomScene:221`/`addRoomShell:439`) — sanitize does NOT
+  cover those.
+- **Engine:** thread the chosen seat through `computeAudio`, `bestListeningSpot`, the optimizer, **AND
+  `traceScene`/`traceSpeaker` (raytrace.ts:297-298)** — the tracer produces the arrivals that feed
+  `computeAudio` and the Echogram, so if it keeps reading the old `scene.listener` while the verdict uses
+  the new seat, the echogram/capture silently desyncs from the verdict. Also `arrange.ts:225,596` (which
+  seat drives furniture arrangement) and `speakers.ts` (`matchTrims`/`dist3dTo`). Optionally a "works at
+  BOTH seats" score.
+- **UI:** switch active seat; a 2-up compare (two seats or two layouts) showing both `MetricsPanel`s side
+  by side, reachable from the gallery/header; update `InspectorPanel` (listener editor), `SpeakersCard`,
+  `Echogram` ("which seat?"), `LayoutGallery` thumbnail, and the canvas puck drag/hit-test
+  (`SimCanvas`/`render.ts`/`hit.ts`).
+- Tests: sanitize old-shape→new-shape upgrade (v2 single `listener` and v1 `{x,y}`), old exported-JSON
+  round-trip, engine paths per chosen seat, and a live compare check.
+
+**Complete `listener` touch-point map (verified 2026-07-19 — do not miss one).**
+`scene.ts` 176/185/221 (constructors), 239 (`sceneBounds`), 327-332/420 (sanitize), 439 (`addRoomShell`);
+`raytrace.ts` 297-298 (**tracer — the desync trap**); `stereo.ts` 91/208; `bestspot.ts` 129; `optimize.ts`
+242/249; `arrange.ts` 225/596; `hit.ts` 10; `speakers.ts` 39/54 (called App.tsx:788, Inspector:189,
+SpeakersCard:45); `render.ts` 673/806/850-853; `App.tsx` 491-492 (`updateListener`)/822/944/947/1299;
+`SimCanvas.tsx` 69/609/611/758-759; `InspectorPanel.tsx` 17/130/157/164/171; `LayoutGallery.tsx` 62;
+`types.ts` 65 (`ListenerState`)/100 (`Scene.listener`)/196 (`Selection 'listener'`). Do NOT conflate with
+the optimizer's `PlaceTarget {kind:'listener'}` (optimize.ts:13, OptimizeDialog) — that's the "where to
+optimize for" target, a different concept. Test fixtures set `listener` in bestspot/optimize/pairspot/
+rooms/stereo/scene/arrange/db `.test.ts` — only migrate them if you REMOVE `scene.listener`.
 
 **Out of scope.** 3D; performance worker (S6); visual polish beyond what compare needs.
 
-**Acceptance.** In one layout I can define "couch" and "bed" seats, move the TV between two spots, and
-see both verdicts at once; migration preserves old single-listener layouts; tests + build green.
+**Acceptance (each maps to a named check).**
+- `sanitizeScene` test: a v2 single-`listener` blob upgrades to `listeners[]`+`activeListenerId` with
+  identical pos/z; a v1 `{x,y}` listener still upgrades. → unit test in `scene.test.ts`.
+- Round-trip test: an old exported single-listener JSON still imports and loads. → unit test.
+- Live: in one layout, define "couch" + "bed" seats, move the TV, open compare, both verdicts render and
+  differ correctly; reload → both seats persist; console clean. → saved screenshots (both themes + ≤960 px).
+- Engine test: `computeAudio`/`traceScene` use the SAME active seat (no echogram/verdict desync).
+- Gate: `npm run test:coverage` (count ≥ current, ≥80% on touched files) + `npm run build` green.
 
-**Watch-outs.** This is the biggest data-model change — do the migration carefully (S1's patterns).
-Keep the single-listener path working for old exported files.
+**Watch-outs.** Biggest data-model change so far — the tracer-desync trap above is the easy bug to ship;
+the migration must never drop/reshape an existing layout (adversarially verify it, S1-style); keep the
+old single-listener export/import shape working for files already on disk.
 
 **KICKOFF PROMPT** — *run under the Standing Operating Protocol at the top of this file (also in CLAUDE.md, auto-loaded): multi-agent orchestration, adversarial verification of every serious finding, full implementation (no shortcuts/stubs), test everything (unit + live browser), a self-review agent pass, the full verification gate, clean-up, and honest reporting. Token/time budget is unlimited — optimize for perfection, not speed.*
 > Read `docs/ultrareview.md` (§5 items 1-2, and §0/§6 for context), `docs/database-plan.md`, and
@@ -159,17 +184,26 @@ Keep the single-listener path working for old exported files.
 > calls `sanitizeLayout`→`sanitizeScene`), so old single-listener layouts and old exported JSON upgrade
 > automatically; the data rides inside the scene JSON, so **no IndexedDB `DB_VERSION` bump is needed**
 > (confirm this by tracing `db.ts` `loadFromIDB`/`saveLayout` — the whole scene is stored per layout).
-> Keep exporting/importing the old single-listener shape working. (2) Thread a chosen listener through
-> `computeAudio`, `bestListeningSpot`, and the optimizer; optionally add a "works at BOTH seats" score.
-> (3) Build a 2-up **scenario compare** (two seats, or two layouts) showing both `MetricsPanel`s side by
-> side, reachable from the gallery/header. Update all pointer/keyboard/undo paths that touched `listener`.
+> Keep exporting/importing the old single-listener shape working, and update the scene CONSTRUCTORS
+> (apartmentScene/blankScene/rectRoomScene/addRoomShell) — sanitize does not cover those. FIRST resolve
+> the design decision in the Session 2 block: recommended is keeping `scene.listener` as a derived
+> active-seat accessor (minimal blast radius); state your choice explicitly. (2) Thread the chosen seat
+> through `computeAudio`, `bestListeningSpot`, the optimizer, **and `traceScene`/`traceSpeaker`
+> (raytrace.ts:297-298)** — the tracer feeds the echogram/capture, so if it keeps reading the old
+> `scene.listener` while the verdict uses the new seat, they silently desync (this is THE bug to avoid);
+> also `arrange.ts` and `speakers.ts`. Optionally add a "works at BOTH seats" score. (3) Build a 2-up
+> **scenario compare** (two seats or two layouts) showing both `MetricsPanel`s side by side, reachable
+> from the gallery/header. Use the COMPLETE touch-point map in the Session 2 block — do not miss a site.
+> (Undo/redo needs no change: it snapshots the whole `Scene`, so listener edits are already captured.)
 >
-> Rigor (per the Standing Operating Protocol): use a multi-agent Workflow to map every `listener`
-> touch-point first (there are many — App.tsx, SimCanvas, render.ts, stereo/bestspot/optimize, sanitize,
-> the compare UI); adversarially verify the migration can't drop or corrupt existing layouts; add engine
-> + migration tests (write failing tests first) AND unit-test the sanitize upgrade path; then verify
-> LIVE in the browser preview (create two seats, move the TV, open compare, confirm both verdicts render,
-> reload to confirm persistence, check the console) and screenshot it; run a self-review agent over the
+> Rigor (per the Standing Operating Protocol): use a multi-agent Workflow to re-verify every `listener`
+> touch-point against the map before coding; adversarially verify the migration can't drop or corrupt
+> existing layouts; add engine + migration tests (failing-tests-first) INCLUDING a seed-old-shape→
+> upgrade-on-read test and an old-exported-JSON round-trip; then verify LIVE in the browser preview
+> (create two seats, move the TV, open compare, confirm both verdicts render and differ, reload to confirm
+> persistence, check the console) and SAVE screenshots to docs/sessions/S2/ (both themes + the ≤960 px
+> stacked layout); back up first (Export-all → docs/sessions/S2/backup.json) and test on a duplicate, not
+> the real layout; run a self-review agent over the
 > diff; and run the full gate (`npm test` all green + `npm run build`). Reset any test data you created.
 > Then update `CLAUDE.md`, `README.md`, the Session 2 checklist + progress log, and write the Session 3
 > handoff (re-stating the protocol). This may legitimately split into 2a (data model + migration) and 2b
