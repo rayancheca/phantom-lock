@@ -37,8 +37,9 @@ Every session MUST:
 6. **Test everything — and PROVE it.**
    - *Automated:* keep the suite green and ADD tests for every new behavior (failing-test-first for every
      new pure-function behavior). Run `npm run test:coverage`; paste the coverage line for every file you
-     touched (≥80%, or state the exact reason). **Test count is a ratchet — it must not decrease** (was
-     **95** on 2026-07-19) and no test may be newly skipped/only'd/weakened; state before/after counts.
+     touched (≥80%, or state the exact reason). **Test count is a ratchet — it must not decrease**
+     (95 at S1 → 126 at S2 → **139** at S3, all 2026-07-19) and no test may be newly skipped/only'd/
+     weakened; state before/after counts.
    - *Migrations:* seed an OLD-shape store/record and assert it upgrades correctly on read — not just
      fresh-fixture writes.
    - *Live:* any change to scene data, persistence, engine output, or UI is "observable" by definition.
@@ -69,18 +70,18 @@ say so.
 ## Commands
 
 - `npm run dev` — Vite (user usually has this running on :5173 already; autoPort will move yours)
-- `npm test` — vitest, **126 tests**, all green as of 2026-07-19 (85 engine + 10 `db.test.ts` + 25 `listeners.test.ts` + 6 `hit.test.ts`). Ratchet: never let the count drop.
+- `npm test` — vitest, **139 tests**, all green as of 2026-07-19 (was 126 after S2; S3 added +13 engine-correctness tests across stereo/pairspot/rooms/scene/arrange). Ratchet: never let the count drop.
 - `npm run build` — tsc --noEmit + vite build (~357 kB / 115 kB gzip). Run all three before claiming done.
 
 ## Architecture map
 
 **Engine (`src/engine/`, pure TS, fully unit-tested):**
 - `raytrace.ts` — ray casting, `directPath` (3D LOS with graze attenuation), `collectSurfaces`, `wallKeptSpans` (door gaps)
-- `stereo.ts` — `computeAudio`/`computePair`: pair metrics (ITD/ILD/angle/lock), `apexBlocked`, relocated `sweet` spot
-- `pairspot.ts` — `bestPairSpot` (per-pair wall-aware seat search), `bestReflectionDb` (image-source first-order bounces, **both legs occlusion-checked**)
+- `stereo.ts` — `computeAudio`/`computePair`: pair metrics (ITD/ILD/angle/lock), `apexBlocked`, relocated `sweet` spot. **(S3)** the equilateral test (`eqError`/`isEquilateral`) is now pure **2D plan** distances — consistent with the 2D apex/angle/base — while `dA`/`dB` stay 3D for ITD/level; `locked` also requires 3D arrival symmetry (`pathDiff ≤ ITD_LOCK_TOLERANCE_M` = 0.07 m ≈ 0.2 ms) so an elevated-but-plan-symmetric pair locks yet a mismatched-height pair never false-locks.
+- `pairspot.ts` — `bestPairSpot` (per-pair wall-aware seat search), `bestReflectionDb` (image-source first-order bounces, **both legs occlusion-checked**). **(S3)** a bounce is now only credited when its point `u` lands on a **solid (kept) span** of the wall — surfaces filtered by `objectId === w.id` — so reflections no longer pass through door/window openings; plus an explicit zero-length-wall guard.
 - `bestspot.ts` — `bestListeningSpot` field (green ★ + glow): occlusion + reflections for ALL speakers, capability-weighted (mini 0.65), TV-mode gates score on `tvViewQuality`
-- `optimize.ts` — `suggestPlacement` with `target: listener | room | house`; TV-behind-wall falls back to music with a note
-- `rooms.ts` — `regionOf` flood-fill regions (`doorsBlock` option: true for sound zones, false for walkable floor)
+- `optimize.ts` — `suggestPlacement` with `target: listener | room | house`; TV-behind-wall falls back to music with a note. **(S3)** whole-house `placeAcrossHouse` keeps a **per-room** `Map<roomId, Vec2[]>` and adds a dominant separation reward (`sepR·SEP_WEIGHT`, `MIN_HOUSE_SEP` = 1.0 m) so two pods sharing a room never stack on the same point — yet the most-separated valid spot always wins, so a pod is never silently dropped.
+- `rooms.ts` — `regionOf` flood-fill regions (`doorsBlock` option: true for sound zones, false for walkable floor). **(S3)** the grid cell is now **adaptive** (`max(0.3, span/158)`) instead of a hard 160-cell clamp, so scenes wider than ~48 m no longer silently truncate; bit-identical for spans ≤ 47.4 m.
 - `arrange.ts` — furniture placement brain (door corridors, daylight, feng shui, first-reflection absorbers, `ZONE_AFFINITY`, walkable containment) + `suggestInventory` ("Decide for me")
 - `detect.ts` — floorplan image → walls (Otsu → component filter → Hough → merge); pure core testable without DOM
 - `joints.ts` — wall snapping (`snapToWalls`) + `integrateWall` (crossings split BOTH walls into chunks)
@@ -114,6 +115,8 @@ motion tokens `--dur-1/2/3`, destructive actions get undo toasts never confirms,
 - Vite HMR errors about deleted files (e.g. RoomMenu.tsx) are stale-buffer noise; hard reload clears.
 - App-level keyboard shortcuts must gate on `overlayOpen` (dialogs/optimizer/arrange **and now `compare`**).
 - **Listener mirror invariant:** `scene.listener` MUST always equal the active `listeners[]` entry. Never write `scene.listener` directly (that desyncs the tracer from the verdict — the S2 trap); go through the `scene.ts` seat helpers. `sanitizeScene` re-derives the mirror on every load, so on-disk drift self-heals; a live desync would silently show a verdict for one seat while the echogram traces another.
+- **Stereo lock lives in ONE metric space (S3):** `eqError`/apex/subtended-angle are 2D **plan** geometry; keep `dA`/`dB` 3D only for ITD + level, and gate `locked` on 3D arrival symmetry (`pathDiff ≤ 0.07 m`). Mixing a 2D `base` with 3D legs in `eqError` made elevated symmetric pairs un-lockable; a naive 2D-only fix then false-locks unequal-height pairs — you need BOTH halves.
+- **Image-source reflections must hit a SOLID span (S3):** a bounce point inside a door/window opening reflects off nothing. Check the bounce param against the wall's kept surfaces (`objectId === w.id`), not the raw a→b segment — same openings the forward tracer already respects via `wallKeptSpans`/`collectSurfaces`.
 
 ## NEXT UP: read-only 3D view — see docs/3d-view-plan.md
 
@@ -123,6 +126,7 @@ efficiency only matters if the app gets slow.** It must be read-only and touch n
 ## Other known gaps (backlog)
 
 - Drag-release doesn't split walls crossed mid-drag (only creation does, via `integrateWall`).
+- `bestspot.ts` `pairQualityAt` + `pairspot.ts` `bestPairSpot` `triQ` still mix a 2D `base` with 3D `dA`/`dB` (soft seat-ranking weights, NOT the binary lock verdict — scope kept S3 to `stereo.ts`). Align them to 2D like `computePair` if elevated-speaker seat ranking ever looks off.
 - Marquee/lasso not yet visually verified in a browser (typed + tested only) — check first run.
 - README.md predates gallery/zones/detection/multi-select — needs a rewrite eventually.
 - Hover cursors/halos on draggable canvas objects still default.

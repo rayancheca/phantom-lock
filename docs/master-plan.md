@@ -226,7 +226,23 @@ old single-listener export/import shape working for files already on disk.
 ---
 
 ## Session 3 — Engine correctness + missing engine tests
-**Status:** ☐ **Depends on:** S1 (S2 optional) **Independent of** UI sessions
+**Status:** ☑ DONE 2026-07-19 **Depends on:** S1 (S2 optional) **Independent of** UI sessions
+> Fixed all four confirmed bug areas, each adversarially re-verified against the real engine BEFORE coding
+> (two verification workflows) and the implemented diff re-reviewed after (code-reviewer + adversarial
+> skeptic + silent-failure-hunter). **(1) Whole-house stacking** (`optimize.ts` `placeAcrossHouse`): a
+> per-room `Map<roomId,Vec2[]>` + a dominant separation reward (`sepR·SEP_WEIGHT`, `MIN_HOUSE_SEP`=1.0 m)
+> — the skeptic's refinement over a hard reject — so same-room pods never stack AND none is ever dropped.
+> **(2) Reflections through openings** (`pairspot.ts` `bestReflectionDb`): the bounce point must land on a
+> solid kept span (surfaces filtered by `objectId===w.id`, no signature change) + a zero-length-wall guard.
+> **(3) Lock 2D-vs-3D** (`stereo.ts` `computePair`): `eqError`/`isEquilateral` now pure 2D plan (matching the
+> 2D apex/angle/base), dA/dB stay 3D for ITD/level, and `locked` gains a 3D arrival-symmetry gate
+> (`pathDiff ≤ ITD_LOCK_TOLERANCE_M` 0.07 m) — the skeptic caught that a naive 2D-only fix false-locks
+> unequal-height pairs. **(4) Silent geometry:** `regionOf` adaptive cell (`max(0.3, span/158)`, no >48 m
+> truncation, bit-identical ≤47.4 m); `splitWallAt` clamps the cut so neither half is <2 cm; `findByLabel`
+> now scans `scene.objects` too. Tests **126→139** (+13, all failing-first then green); coverage ≥80% on
+> every touched file; build green (~369 kB/119 kB gz). Engine-only → no live-browser pass required (stated).
+> Deferred to backlog: the same 2D/3D mix in `bestspot.ts pairQualityAt` + `pairspot.ts triQ` (soft
+> seat-ranking weights, not the lock verdict).
 
 **Goal.** Fix the confirmed acoustic bugs and pin them with tests, so placement advice is trustworthy.
 
@@ -511,5 +527,14 @@ sync on reconnect; signing out leaves the local IndexedDB copy intact; build + t
 - **2026-07-19 — Session 1 DONE:** hardening + IndexedDB migration (see the Session 1 block).
 - **2026-07-19 — Session 2 DONE:** named listening positions (couch/bed) + 2-up scenario compare (see the
   Session 2 block). Mirror-model migration is data-safe and desync-proof (verified live). Tests 95→126,
-  build green. Next: **Session 3** (engine correctness + missing engine tests) — independent of UI; can
-  run any time. S3's kickoff prompt is in its block below (re-states the Standing Operating Protocol).
+  build green.
+- **2026-07-19 — Session 3 DONE:** engine-correctness pass — whole-house stacking, reflections-through-
+  openings, the equilateral/lock 2D-vs-3D mix (+ the false-lock ITD gate the skeptic caught), and three
+  silent geometry degradations (`regionOf` clamp, `splitWallAt`, `findByLabel`). Two pre-code verification
+  workflows + a post-code self-review workflow; every bug adversarially verified. Tests 126→139, coverage
+  ≥80% on touched files, build green. See the Session 3 block. Next: **Session 4** (canvas interaction
+  fixes + dead features) — its kickoff prompt is in its block (re-states the Standing Operating Protocol).
+- **2026-07-19 — Repo hygiene + GitHub (S3 session):** untracked `coverage/` (now gitignored); on the
+  user's request, published to GitHub (public, with the "Maple Court" demo scrubbed to a placeholder across
+  all history for privacy) and set the standing rule to push after each session. README rewritten to the
+  readme-standards bar with placeholder screenshots (real ones deferred — the app changes too often).

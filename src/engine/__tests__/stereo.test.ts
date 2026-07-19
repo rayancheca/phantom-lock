@@ -125,3 +125,36 @@ describe('computePair', () => {
     expect(m2.ildDb).toBeCloseTo(0, 1);
   });
 });
+
+// S3 — the equilateral/lock test must live in ONE metric space. The triangle
+// shape (apex, subtended angle, base) is a floor-plan (2D) construction, so
+// eqError/isEquilateral must be 2D too — a common height on BOTH speakers
+// cancels in the arrival time and must not read as triangle asymmetry. But a
+// plan-symmetric pair at DIFFERENT heights hides a real ITD, so `locked` must
+// additionally require near-equal 3D arrival (a false lock is worse than a
+// false "almost there").
+describe('computePair — plan vs 3D lock consistency (S3)', () => {
+  it('locks a plan-equilateral pair even when both speakers are elevated', () => {
+    // Both speakers 1 m above the 1.2 m ears; still a perfect floor triangle.
+    const a = spk('a', 0, 0, 2.2);
+    const b = spk('b', 2, 0, 2.2);
+    const m = computePair(makeScene({ x: 1, y: SQRT3 }, null, [a, b]), a, b, false);
+    expect(m.itdMs).toBeCloseTo(0, 5); // equal 3D distance → perfectly centred
+    expect(m.isEquilateral).toBe(true); // was false: mixed 2D base + 3D legs → eqError ~0.11
+    expect(m.locked).toBe(true);
+  });
+
+  it('refuses to lock a plan-symmetric pair whose heights differ (ITD guard)', () => {
+    // Equal FLOOR distance to the seat, but very different heights → big ITD.
+    const a = spk('a', 0, 0, 1.2);
+    const b = spk('b', 2, 0, 2.5);
+    const m = computePair(makeScene({ x: 1, y: SQRT3 }, null, [a, b]), a, b, false);
+    expect(m.isEquilateral).toBe(true); // the floor triangle IS equilateral…
+    expect(m.pathDiff).toBeGreaterThan(0.3); // …but the 3D arrival is skewed…
+    expect(m.itdMs).toBeGreaterThan(1);
+    expect(m.locked).toBe(false); // …so it must NOT lock (a naive 2D-only fix would)
+    // …and the quality meter must reflect that, not read a near-full "almost
+    // there" bar (the arrival mismatch caps quality, not just the lock flag).
+    expect(m.quality).toBeLessThan(0.5);
+  });
+});

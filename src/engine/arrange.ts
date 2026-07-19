@@ -190,7 +190,10 @@ function findRole(ctx: Ctx, role: RectObj['role']): RectObj | null {
 }
 
 function findByLabel(ctx: Ctx, label: string): RectObj | null {
-  for (const o of ctx.placed) {
+  // Just-placed pieces first, then what already lives in the scene — the TV,
+  // bed, and dining rules must reason about a PRE-EXISTING sofa/counter, not
+  // only pieces arranged in this same run (mirrors findRole).
+  for (const o of [...ctx.placed, ...ctx.scene.objects]) {
     if (o.kind === 'rect' && o.label === label) return o;
   }
   return null;

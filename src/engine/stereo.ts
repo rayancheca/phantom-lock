@@ -10,6 +10,11 @@ export const EQ_TOLERANCE = 0.05;
 export const CLOSE_QUALITY = 0.55;
 /** Max distance (m) of the TV from the perpendicular bisector of the pair base. */
 export const TV_AXIS_TOLERANCE = 0.25;
+/** Max 3D path mismatch (m) that still counts as a centred arrival for a lock.
+ *  0.07 m ≈ 0.2 ms ITD — well below the ~0.6 ms where the phantom visibly pulls
+ *  toward the nearer speaker. Guards against a plan-equilateral pair at very
+ *  different heights (equal floor distance, unequal 3D path) false-locking. */
+export const ITD_LOCK_TOLERANCE_M = 0.07;
 /** Below this base width the "pair" is effectively a point source. */
 const MIN_BASE = 0.5;
 
@@ -107,8 +112,14 @@ export function computePair(
 
   const degenerate = base < MIN_BASE || dA < 0.2 || dB < 0.2;
 
-  const mean = (dA + dB + base) / 3;
-  const spread = Math.max(dA, dB, base) - Math.min(dA, dB, base);
+  // The stereo triangle is a FLOOR-PLAN construction — apex, subtended angle,
+  // and base are all 2D — so its equilateral test must use 2D plan distances
+  // too, in ONE consistent metric space. A height shared by both speakers
+  // cancels in the arrival time (ITD) and must not read as triangle asymmetry.
+  const planA = v.dist(a.pos, P.pos);
+  const planB = v.dist(b.pos, P.pos);
+  const mean = (planA + planB + base) / 3;
+  const spread = Math.max(planA, planB, base) - Math.min(planA, planB, base);
   const eqError = mean > 1e-6 ? spread / mean : 1;
   const isEquilateral = !degenerate && eqError <= EQ_TOLERANCE;
 
@@ -128,7 +139,12 @@ export function computePair(
   }
 
   const modelMismatch = !canPair(a, b);
-  const locked = isEquilateral && (tv === null || tv.aligned) && !losBlocked && !modelMismatch;
+  // A plan-equilateral triangle can still hide a real arrival-time mismatch
+  // when the speakers sit at very different heights; require near-equal 3D
+  // arrival so a false lock never slips through (worse than "almost there").
+  const arrivalSymmetric = pathDiff <= ITD_LOCK_TOLERANCE_M;
+  const locked =
+    isEquilateral && arrivalSymmetric && (tv === null || tv.aligned) && !losBlocked && !modelMismatch;
 
   // The geometric sweet spot is only real if both speakers can actually
   // reach it — a wall in between makes the triangle meaningless.
@@ -155,10 +171,14 @@ export function computePair(
   const tvQ = tv
     ? Math.max(0, Math.min(1, 1 - Math.max(0, tv.offAxis - TV_AXIS_TOLERANCE) / 0.9))
     : 1;
+  // The 3D arrival mismatch caps the quality meter too, so the verdict never
+  // shows a near-full "almost there" bar for a pair the lock gate just refused
+  // on ITD (a plan-equilateral pair whose speakers sit at very different heights).
+  const itdQ = Math.max(0, 1 - Math.max(0, pathDiff - ITD_LOCK_TOLERANCE_M) / 0.2);
   const quality =
     losBlocked || modelMismatch
       ? Math.min(0.5, triQ)
-      : triQ * (0.7 + 0.3 * tvQ) * (apexBlocked ? 0.6 : 1);
+      : triQ * (0.7 + 0.3 * tvQ) * (apexBlocked ? 0.6 : 1) * itdQ;
 
   return {
     aId: a.id,

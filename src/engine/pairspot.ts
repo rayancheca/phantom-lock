@@ -1,5 +1,5 @@
-import type { Scene, SpeakerObj, Surface, Vec2, WallObj } from './types';
-import { distPointSegment, pointInRect } from './geometry';
+import type { Scene, SceneObject, SpeakerObj, Surface, Vec2, WallObj } from './types';
+import { distPointSegment, pointInRect, EPS } from './geometry';
 import { directPath } from './raytrace';
 import { levelAtDb, SPEAKER_MODELS } from './speakers';
 import { sceneBounds } from './scene';
@@ -33,18 +33,23 @@ function insideFurnitureOrWall(scene: Scene, p: Vec2): boolean {
 /**
  * Strongest first-order wall bounce from speaker to p, in dB (image-source
  * method): mirror the speaker across each wall, require the image→p segment
- * to actually cross that wall below its top, then charge the full folded
- * path length plus the wall's absorption.
+ * to actually cross that wall below its top AND land on solid wall (not through
+ * an open doorway), then charge the full folded path length plus the wall's
+ * absorption. `objects` supplies the openings; closed doors and windows are
+ * solid reflectors and stay in play.
  */
 export function bestReflectionDb(
   surfaces: Surface[],
   walls: WallObj[],
+  objects: SceneObject[],
   sp: SpeakerObj,
   p: Vec2,
   earZ: number,
 ): number {
   let best = -Infinity;
   for (const w of walls) {
+    const wlen = v.dist(w.a, w.b);
+    if (wlen < EPS) continue; // a zero-length wall reflects nothing
     const dir = v.norm(v.sub(w.b, w.a));
     const rel = v.sub(sp.pos, w.a);
     const along = v.dot(rel, dir);
@@ -64,6 +69,23 @@ export function bestReflectionDb(
     const total = Math.hypot(flat, sp.z - earZ);
     const bounceZ = sp.z + (earZ - sp.z) * t;
     if (bounceZ > w.height) continue;
+    // Refuse a bounce that lands in a genuine acoustic HOLE — an OPEN door,
+    // which carves the wall away and reflects nothing (both legs would sail
+    // straight through the doorway). Closed doors and windows are SOLID: they
+    // fill the gap with their own surface, so leg occlusion below + the wall's
+    // material approximation handle them (precise rect-mirroring is backlog).
+    let throughOpening = false;
+    for (const o of objects) {
+      if (o.kind !== 'rect' || o.role !== 'door' || o.doorOpen === false) continue;
+      if (distPointSegment(o.center, w.a, w.b) > 0.12) continue; // door not on this wall
+      const tc = v.dot(v.sub(o.center, w.a), dir) / wlen;
+      const half = o.w / 2 / wlen;
+      if (u >= tc - half && u <= tc + half) {
+        throughOpening = true;
+        break;
+      }
+    }
+    if (throughOpening) continue;
     // Both legs of the bounce must themselves be clear — otherwise a wall
     // between speaker and mirror wall would "reflect" straight through it.
     const bounce = v.add(w.a, v.scale(q, u));
@@ -82,6 +104,7 @@ export function bestReflectionDb(
 function reachDb(
   surfaces: Surface[],
   walls: WallObj[],
+  objects: SceneObject[],
   sp: SpeakerObj,
   p: Vec2,
   earZ: number,
@@ -91,7 +114,7 @@ function reachDb(
     const graze = 20 * Math.log10(Math.max(0.05, d.attenuation));
     return { db: levelAtDb(sp, Math.max(0.3, d.distance3d)) + graze, reflected: false };
   }
-  return { db: bestReflectionDb(surfaces, walls, sp, p, earZ) - REFLECTION_PENALTY_DB, reflected: true };
+  return { db: bestReflectionDb(surfaces, walls, objects, sp, p, earZ) - REFLECTION_PENALTY_DB, reflected: true };
 }
 
 /**
@@ -120,14 +143,18 @@ export function bestPairSpot(
       const p = { x, y };
       if (insideFurnitureOrWall(scene, p)) continue;
 
-      const ra = reachDb(surfaces, walls, a, p, earZ);
-      const rb = reachDb(surfaces, walls, b, p, earZ);
+      const ra = reachDb(surfaces, walls, scene.objects, a, p, earZ);
+      const rb = reachDb(surfaces, walls, scene.objects, b, p, earZ);
       if (ra.db < UNREACHABLE_DB || rb.db < UNREACHABLE_DB) continue;
 
       const dA = Math.hypot(v.dist(a.pos, p), a.z - earZ);
       const dB = Math.hypot(v.dist(b.pos, p), b.z - earZ);
-      const mean = (dA + dB + base) / 3;
-      const spread = Math.max(dA, dB, base) - Math.min(dA, dB, base);
+      // Triangle shape is 2D plan (matches computePair); dA/dB stay 3D for the
+      // distance band + level balance below.
+      const pA = v.dist(a.pos, p);
+      const pB = v.dist(b.pos, p);
+      const mean = (pA + pB + base) / 3;
+      const spread = Math.max(pA, pB, base) - Math.min(pA, pB, base);
       const triQ = Math.max(0, 1 - spread / mean / 0.25);
 
       const balance = Math.max(0, 1 - Math.abs(ra.db - rb.db) / 10);

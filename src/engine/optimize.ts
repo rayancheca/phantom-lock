@@ -48,6 +48,15 @@ const IDEAL_WALL_CLEARANCE = 0.5;
 /** Sitting beside furniture (e.g. flanking the TV) is fine — just not inside it. */
 const MIN_FURNITURE_CLEARANCE = 0.05;
 const MIN_DIST = 0.7;
+/** Minimum spacing between two whole-house speakers that share a room. */
+const MIN_HOUSE_SEP = 1.0;
+/** Separation dominates the whole-house per-room search so same-room pods are
+ *  pushed apart to the most-separated valid spot instead of re-picking the
+ *  identical best point; wall clearance / distance only break ties among
+ *  well-separated spots. Large enough that any fully-separated candidate beats
+ *  any under-separated one, and a pod is never dropped. (Two pods can only
+ *  coincide in the pathological case of a room with a single valid cell.) */
+const SEP_WEIGHT = 100;
 
 interface Ctx {
   scene: Scene;
@@ -67,6 +76,12 @@ function clearanceOf(surfaces: Surface[], p: Vec2): number {
       s.type === 'seg' ? distPointSegment(p, s.a, s.b) : Math.abs(v.dist(p, s.c) - s.r);
     best = Math.min(best, d);
   }
+  return best;
+}
+
+function minDistTo(pts: Vec2[], p: Vec2): number {
+  let best = Infinity;
+  for (const q of pts) best = Math.min(best, v.dist(p, q));
   return best;
 }
 
@@ -420,8 +435,12 @@ function placeAcrossHouse(
   zones.sort((a, b) => b.region.area - a.region.area);
 
   const speakers: ProposedSpeaker[] = [];
+  // Speakers already proposed for each room — used to spread same-room pods
+  // apart instead of re-finding the identical best point for each one.
+  const placedByRoom = new Map<string, Vec2[]>();
   models.forEach((model, i) => {
     const { room, region } = zones[i % zones.length];
+    const near = placedByRoom.get(room.id) ?? [];
     let best: { pos: Vec2; score: number } | null = null;
     for (let ang = 0; ang < 360; ang += 15) {
       for (const d of sweep(0.3, 2.6, 0.2)) {
@@ -436,11 +455,18 @@ function placeAcrossHouse(
         const cw = clearanceOf(wallSurfaces, p);
         if (cw < MIN_WALL_CLEARANCE) continue;
         if (clearanceOf(furnitureSurfaces, p) < MIN_FURNITURE_CLEARANCE) continue;
-        const score = Math.min(1, cw / IDEAL_WALL_CLEARANCE) + Math.max(0, 1 - Math.abs(d - 1.2) / 1.4);
+        // Reward separation from this room's already-placed pods (dominant), so
+        // the most-separated valid spot always wins and pods never stack.
+        const sepR = near.length === 0 ? 1 : Math.min(1, minDistTo(near, p) / MIN_HOUSE_SEP);
+        const base =
+          Math.min(1, cw / IDEAL_WALL_CLEARANCE) + Math.max(0, 1 - Math.abs(d - 1.2) / 1.4);
+        const score = sepR * SEP_WEIGHT + base;
         if (!best || score > best.score) best = { pos: p, score };
       }
     }
     if (best) {
+      near.push({ x: best.pos.x, y: best.pos.y }); // clone — never alias the winning Vec2
+      placedByRoom.set(room.id, near);
       const n = speakers.filter((s) => s.label.startsWith(room.name.slice(0, 3))).length + 1;
       speakers.push({
         pos: best.pos,

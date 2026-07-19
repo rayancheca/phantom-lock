@@ -3,8 +3,11 @@ import { rectCorners } from './geometry';
 import { sceneBounds } from './scene';
 import * as v from './vec';
 
-/** Grid resolution for room flood-fills, metres. */
+/** Base grid resolution for room flood-fills, metres. */
 const CELL = 0.3;
+/** Grid cap per axis. Beyond this the cell GROWS (see regionOf) rather than the
+ *  grid clamping and silently truncating scenes past ~48 m. */
+const MAX_CELLS = 160;
 /** Walls shorter than a seated ear don't bound a listening region. */
 const MIN_BOUNDING_HEIGHT = 1.2;
 
@@ -50,18 +53,24 @@ function collectBlockers(scene: Scene, doorsBlock: boolean): Blocker[] {
 export function regionOf(scene: Scene, seed: Vec2, opts?: { doorsBlock?: boolean }): Region {
   const blockers = collectBlockers(scene, opts?.doorsBlock ?? true);
   const b = sceneBounds(scene);
-  const pad = CELL;
+  const rawW = b.max.x - b.min.x;
+  const rawH = b.max.y - b.min.y;
+  // Grow the cell for huge scenes instead of clamping the grid and silently
+  // truncating everything past ~48 m. Scenes under ~47.4 m keep the exact 0.3 m
+  // cell, so their flood-fills (and every existing test) are unchanged.
+  const cell = Math.max(CELL, rawW / (MAX_CELLS - 2), rawH / (MAX_CELLS - 2));
+  const pad = cell;
   const minX = b.min.x - pad;
   const minY = b.min.y - pad;
-  const cols = Math.min(160, Math.max(1, Math.ceil((b.max.x - minX + pad) / CELL)));
-  const rows = Math.min(160, Math.max(1, Math.ceil((b.max.y - minY + pad) / CELL)));
+  const cols = Math.min(MAX_CELLS, Math.max(1, Math.ceil((rawW + 2 * pad) / cell)));
+  const rows = Math.min(MAX_CELLS, Math.max(1, Math.ceil((rawH + 2 * pad) / cell)));
   const cellCenter = (cx: number, cy: number): Vec2 => ({
-    x: minX + (cx + 0.5) * CELL,
-    y: minY + (cy + 0.5) * CELL,
+    x: minX + (cx + 0.5) * cell,
+    y: minY + (cy + 0.5) * cell,
   });
   const cellOf = (p: Vec2) => ({
-    cx: Math.floor((p.x - minX) / CELL),
-    cy: Math.floor((p.y - minY) / CELL),
+    cx: Math.floor((p.x - minX) / cell),
+    cy: Math.floor((p.y - minY) / cell),
   });
 
   const seedCell = cellOf(seed);
@@ -115,7 +124,7 @@ export function regionOf(scene: Scene, seed: Vec2, opts?: { doorsBlock?: boolean
       return inGrid(c.cx, c.cy) ? filled[c.cx + c.cy * cols] === 1 : false;
     },
     centroid: count > 0 ? { x: sumX / count, y: sumY / count } : seed,
-    area: count * CELL * CELL,
+    area: count * cell * cell,
   };
 }
 

@@ -327,14 +327,27 @@ export function rectRoomScene(w: number, d: number): Scene {
   };
 }
 
+/** A wall half shorter than this is a point, not a wall. */
+const MIN_WALL_LEN = 0.02;
+
 /**
  * Break a wall into two at a point (projected onto the wall; defaults to the
- * midpoint). Both halves keep the original material and height.
+ * midpoint). Both halves keep the original material and height; the cut is
+ * pulled in from either endpoint so neither half collapses to a near-zero
+ * fragment (a wall under 2·MIN_WALL_LEN is simply split at its midpoint).
  */
 export function splitWallAt(wall: WallObj, at?: Vec2): [WallObj, WallObj] {
-  const cut = at
-    ? closestPointOnSegment(at, wall.a, wall.b).point
-    : v.lerp(wall.a, wall.b, 0.5);
+  let cut: Vec2;
+  if (at) {
+    const len = v.dist(wall.a, wall.b);
+    const { t } = closestPointOnSegment(at, wall.a, wall.b);
+    // Pull the cut in from either endpoint so neither half degenerates.
+    const minFrac = len > 2 * MIN_WALL_LEN ? MIN_WALL_LEN / len : 0.5;
+    const clamped = Math.max(minFrac, Math.min(1 - minFrac, t));
+    cut = v.lerp(wall.a, wall.b, clamped);
+  } else {
+    cut = v.lerp(wall.a, wall.b, 0.5);
+  }
   const first: WallObj = { ...wall, id: createId('wall'), b: cut };
   const second: WallObj = { ...wall, id: createId('wall'), a: cut };
   return [first, second];

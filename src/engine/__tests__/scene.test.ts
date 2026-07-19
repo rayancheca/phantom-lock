@@ -113,6 +113,25 @@ describe('splitWallAt', () => {
     expect(m1.b).toEqual({ x: 2, y: 0 }); // midpoint by default
     expect(m2.a).toEqual({ x: 2, y: 0 });
   });
+
+  it('never emits a near-zero-length half when the cut lands on an endpoint (S3)', () => {
+    const wall = {
+      id: 'w',
+      kind: 'wall' as const,
+      a: { x: 0, y: 0 },
+      b: { x: 4, y: 0 },
+      absorption: 0.12,
+      label: 'Wall',
+      height: 2.7,
+    };
+    // A crossing that resolves ~1 mm from the end used to leave a ~0 m wall.
+    const [first, second] = splitWallAt(wall, { x: 3.999, y: 0 });
+    const lenOf = (w: { a: { x: number; y: number }; b: { x: number; y: number } }) =>
+      Math.hypot(w.b.x - w.a.x, w.b.y - w.a.y);
+    expect(lenOf(first)).toBeGreaterThanOrEqual(0.02 - 1e-9);
+    expect(lenOf(second)).toBeGreaterThanOrEqual(0.02 - 1e-9);
+    expect(first.b).toEqual(second.a); // still contiguous
+  });
 });
 
 describe('apartmentScene', () => {

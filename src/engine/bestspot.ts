@@ -66,8 +66,13 @@ function pairQualityAt(
   const dB = Math.hypot(v.dist(b.pos, p), b.z - earZ);
   const base = v.dist(a.pos, b.pos);
   if (base < 0.5) return 0;
-  const mean = (dA + dB + base) / 3;
-  const spread = Math.max(dA, dB, base) - Math.min(dA, dB, base);
+  // Triangle shape is a floor-plan (2D) quantity — consistent with computePair's
+  // equilateral test — while the distance band below stays 3D (height matters
+  // for level, not for the horizontal ±30° imaging geometry).
+  const pA = v.dist(a.pos, p);
+  const pB = v.dist(b.pos, p);
+  const mean = (pA + pB + base) / 3;
+  const spread = Math.max(pA, pB, base) - Math.min(pA, pB, base);
   let q = Math.max(0, 1 - spread / mean / 0.25);
 
   // Stay inside the model's comfortable distance band.
@@ -163,7 +168,7 @@ export function bestListeningSpot(scene: Scene, tvAnchor: boolean, coarse = fals
         // image-smeared) transmission instead of writing the cell off.
         const straight = Math.hypot(v.dist(sp.pos, p), sp.z - earZ);
         const cleanDb = levelAtDb(sp, Math.max(0.3, straight));
-        const reflDb = bestReflectionDb(surfaces, walls, sp, p, earZ);
+        const reflDb = bestReflectionDb(surfaces, walls, scene.objects, sp, p, earZ);
         const t =
           reflDb > -200 ? Math.min(1, Math.pow(10, (reflDb - cleanDb) / 20)) * 0.6 : 0;
         atten.set(sp.id, t);

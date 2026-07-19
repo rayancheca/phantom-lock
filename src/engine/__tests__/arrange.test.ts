@@ -116,4 +116,22 @@ describe('arrangeFurniture placement rules', () => {
     expect(wallsOf(scene)).toHaveLength(4);
     expect(ROOM_HEIGHT).toBeGreaterThan(2);
   });
+
+  it('positions a new TV opposite a PRE-EXISTING sofa (S3 findByLabel)', () => {
+    // The sofa already lives in the scene (not part of this arrange run), so it
+    // sits in scene.objects, never in ctx.placed. Before the fix findByLabel
+    // scanned only ctx.placed and missed it, so the TV was placed blind.
+    const scene = addRect(room(6, 4), {
+      center: { x: 3, y: 3.2 },
+      w: 2,
+      h: 0.9,
+      role: 'furniture',
+      label: 'Sofa',
+      height: 0.9,
+    });
+    const res = arrangeFurniture(scene, [{ presetId: 'tv', count: 1 }]);
+    const tv = placedOf(res.objects).find((o) => o.kind === 'rect' && o.role === 'tv');
+    expect(tv).toBeDefined();
+    expect(res.notes.join(' ')).toMatch(/opposite the seating/);
+  });
 });
