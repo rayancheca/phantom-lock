@@ -515,7 +515,75 @@ sync on reconnect; signing out leaves the local IndexedDB copy intact; build + t
 > source of truth, wire secrets via env + update CSP connect-src, and add the auth/sync UI. Verify
 > `npm test` + `npm run build`, update CLAUDE.md + the checklist, and mark the roadmap complete.
 
+---
+
+## Session 12 — Auto-detect walls: accuracy overhaul (the floorplan→walls pipeline)
+**Status:** ☐ **Depends on:** nothing hard (pure engine + the existing detect ghost step) **Independent, additive**
+> **Surfaced 2026-07-19 by a first-time-user clickthrough** (the owner drove "Auto-detect walls" on a real
+> uploaded apartment floorplan): it returned a spidery, overlapping, duplicated tangle — banner read
+> *"Found 20 walls — 69.4 m"* — with double/triple parallel walls, bogus cross-plan diagonal beams over the
+> dining/sofa area, and corners that overshoot and don't meet. It does **not** track the actual walls; a user's
+> only move is "Discard." No threshold tweak fixes this — the failure is structural in `src/engine/detect.ts`
+> (Otsu ink mask → `dropSmallComponents` → global `houghPeaks` → `segmentsOnLine` run-split → `mergeSegments`
+> collinear merge → 45° `snapSegment`).
+
+**Goal.** Make auto-detect produce a clean, orthogonal, de-duplicated wall set a user accepts as-is (or with one
+or two corrections) — not a tangle they discard.
+
+**Diagnosed root causes (read from detect.ts against the live failure).**
+- **Global Hough on FILLED (thick) walls** (`houghPeaks`) finds many parallel/grazing lines per wall; the greedy
+  NMS (`dt<=3`, `MERGE_RHO_PX=7`) is too weak, so redundant peaks survive → double/triple walls.
+- **No skeletonization/thinning** before Hough — it should run on a 1-px centerline (or an edge map), not the
+  filled stroke; the wall thickness itself manufactures the duplicate detections.
+- **`segmentsOnLine` grazing artifacts:** a diagonal Hough line collects every ink pixel within `BAND_PX` and
+  projects it onto the line, so a line grazing several thick walls/furniture stitches unrelated ink into one
+  bogus diagonal segment (the cross-plan diagonals in the failure).
+- **Furniture/appliance blobs survive `dropSmallComponents`** (kept purely by bbox span ≥ 12% of the max dim), so
+  the dining table / sofa / fixtures get Hough'd into spurious segments — walls and furniture aren't distinguished.
+- **No global regularization:** `snapSegment` snaps each segment's ANGLE but not its POSITION; there's no
+  dominant-axis (Manhattan) clustering, no shared-grid position snap, no endpoint/junction snapping, and the
+  output never runs through `integrateWall`/`snapToWalls`, so corners overshoot/gap and duplicate segments stack.
+
+**In scope**
+- Replace the detection core with a thinning/vectorization approach: morphological skeleton (or distance-transform
+  ridge) of the ink mask, then a probabilistic-Hough-style **segment** extractor (endpoints included) OR
+  contour/centerline tracing — target **one line per wall**.
+- **Segment ink-support test:** reject any candidate whose along-length ink coverage falls below a threshold
+  (kills the grazing diagonals).
+- **Wall-vs-furniture separation:** keep thin, elongated components (high aspect ratio / low fill fraction), drop
+  bulky filled blobs — not by bbox span alone.
+- **Global regularization:** cluster angles to dominant axes (Manhattan default; allow true diagonals only when
+  strongly supported), snap positions to a shared grid, snap endpoints to shared junctions, then run the result
+  through `integrateWall` so corners join and duplicates collapse.
+- **Stronger peak NMS / looser collinear merge** tuned to wall thickness.
+- Consider raising `WORK_MAX` (640 may be too coarse for a detailed plan) with adaptive downscale.
+- **UX:** the "Detected layout" ghost step already exists — add a cleanup control (sensitivity slider and/or
+  per-wall reject) and a confidence/quality read so the user can steer instead of discard.
+
+**Out of scope.** ML/model-based detection (keep it a zero-dep pure pipeline); anything outside the
+detect → preview → commit path.
+
+**Acceptance.** On a real apartment floorplan the output tracks the actual walls with no visible
+duplicates/diagonal-beams; a synthetic fixture (thick double-line rectangle + a furniture blob) that currently
+over-detects returns the correct wall count/geometry after the fix (**failing-test-first** in `detect.test.ts`);
+`npm test` + `npm run build` green; live-verified with saved before/after screenshots (both themes). Real-floorplan
+screenshots stay local/gitignored (the demo apartment's floorplan is the owner's real home — never publish it).
+
+**KICKOFF PROMPT** — *run under the Standing Operating Protocol at the top of this file (also in CLAUDE.md, auto-loaded): multi-agent orchestration, adversarial verification of every serious finding, full implementation (no shortcuts/stubs), test everything (unit + live browser), a self-review agent pass, the full verification gate, clean-up, and honest reporting. Token/time budget is unlimited — optimize for perfection, not speed.*
+> Read `docs/ultrareview.md` and `src/engine/detect.ts` in the Phantom Lock repo and execute Session 12 of
+> `docs/master-plan.md`: overhaul the auto-detect-walls pipeline, which returns a spidery, duplicated,
+> non-orthogonal tangle on real floorplans. Diagnose from the code + a live re-run, then replace the
+> global-Hough-on-filled-walls core with a thinning/skeleton (or contour) + probabilistic-segment approach, add a
+> segment ink-support test to kill grazing diagonals, separate walls from filled furniture blobs, and add global
+> regularization (dominant-axis clustering, shared-grid position snap, endpoint/junction snap, then
+> `integrateWall`). Add failing-first fixture tests (a thick double-line rectangle + a furniture blob that
+> currently over-detects). Verify live on a real floorplan with saved before/after screenshots (kept local — the
+> floorplan is the owner's real home), run `npm test` + `npm run build`, update the checklist, and write the next
+> handoff.
+
 ## Backlog (noticed, not yet scheduled — add to a session as it fits)
+- **Auto-detect walls accuracy** — now scheduled as **Session 12** (duplicated/diagonal tangle on real floorplans);
+  see its block above. Surfaced by first-time-user clickthrough.
 - RT60 / room-mode / per-frequency acoustic output (deeper analysis to match the "real physics" framing).
 - Shareable/exportable result (PNG/PDF plan + verdict).
 - Real touch controls (on-screen rotate/nudge/delete) beyond the stacked ≤960 px layout.
@@ -543,3 +611,9 @@ sync on reconnect; signing out leaves the local IndexedDB copy intact; build + t
   a neutral placeholder across ALL git history (`git filter-repo`) for privacy, and set the standing rule to
   push after each session. README rewritten to the readme-standards bar with placeholder screenshots (real
   ones deferred — the app changes too often to keep them current).
+- **2026-07-19 — Session 4 IN PROGRESS + backlog growth:** started Session 4 (canvas interaction fixes). During it,
+  a **first-time-user clickthrough** by the owner caught that **Auto-detect walls** produces a spidery, duplicated,
+  non-orthogonal tangle on a real floorplan → scheduled as **Session 12** (auto-detect accuracy overhaul), root
+  causes diagnosed against `detect.ts`. Codified the first-time-user-testing practice into memory
+  (`first-time-user-testing`): drive each feature cold as a naive user, capture real friction, add it to this plan,
+  and hand it off to a dedicated session — rather than half-fixing inline.

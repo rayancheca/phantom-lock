@@ -131,6 +131,8 @@ efficiency only matters if the app gets slow.** It must be read-only and touch n
 
 ## Other known gaps (backlog)
 
+- **Auto-detect walls is broken on real floorplans** (spidery/duplicated/non-orthogonal tangle) — scheduled as **Session 12** (accuracy overhaul); root causes diagnosed in `docs/master-plan.md` against `src/engine/detect.ts` (global Hough on filled walls, no skeletonization, grazing diagonals, furniture blobs kept, no global regularization).
+
 - Drag-release doesn't split walls crossed mid-drag (only creation does, via `integrateWall`).
 - Proper image-source reflection off window glass / closed-door leaves (mirror the rect with its own material, not the host wall's) — S3 keeps them solid but approximates with wall absorption; a bounce landing on a coplanar door/window leaf is still governed by leg occlusion.
 - Marquee/lasso not yet visually verified in a browser (typed + tested only) — check first run.
