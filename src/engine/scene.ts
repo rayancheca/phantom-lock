@@ -2,6 +2,8 @@ import type {
   CircleObj,
   Layout,
   LayoutStore,
+  ListenerState,
+  NamedListener,
   RectObj,
   Scene,
   SceneObject,
@@ -25,11 +27,111 @@ const deg = (d: number): number => (d * Math.PI) / 180;
 
 export const ROOM_HEIGHT = 2.7;
 export const DEFAULT_SPEAKER_Z = 1.0;
+export const DEFAULT_LISTENER_Z = 1.2;
+export const DEFAULT_LISTENER_NAME = 'Listening spot';
+/** Upper bound on named seats a single scene may carry (bounds import blow-up). */
+export const MAX_LISTENERS = 32;
+
+/** Fresh copy of a position — the mirror must never alias a seat's Vec2. */
+function cloneVec(p: Vec2): Vec2 {
+  return { x: p.x, y: p.y };
+}
 export const LISTENER_PRESETS = [
   { id: 'sitting', label: 'Sitting', z: 1.2 },
   { id: 'standing', label: 'Standing', z: 1.7 },
   { id: 'lying', label: 'Lying down', z: 0.8 },
 ] as const;
+
+// ---------------------------------------------------------------------------
+// Named listening positions (seats). The source of truth is `scene.listeners`
+// + `scene.activeListenerId`; `scene.listener` is a mirror always kept equal to
+// the active seat so every engine/UI read-site works unchanged. All writes go
+// through the helpers below, and `sanitizeScene` re-derives the mirror on every
+// load, so on-disk drift self-heals.
+
+function makeNamedListener(pos: Vec2, z: number, name: string, id?: string): NamedListener {
+  return { id: id ?? createId('seat'), name, pos, z };
+}
+
+/** The scene's seats — guaranteed non-empty. Real scenes always carry
+ *  `listeners`; for a hand-built scene that only set the mirror, synthesize one. */
+export function sceneListeners(scene: Scene): NamedListener[] {
+  if (scene.listeners && scene.listeners.length > 0) return scene.listeners;
+  return [makeNamedListener(scene.listener.pos, scene.listener.z, DEFAULT_LISTENER_NAME, 'seat-active')];
+}
+
+/** The active seat (the one `scene.listener` mirrors). */
+export function activeListener(scene: Scene): NamedListener {
+  const seats = sceneListeners(scene);
+  return seats.find((l) => l.id === scene.activeListenerId) ?? seats[0];
+}
+
+/** Re-derive `scene.listener` (and normalize `activeListenerId`) from the active
+ *  seat. The single place the mirror invariant is enforced. */
+export function syncActiveListener(scene: Scene): Scene {
+  const seats = sceneListeners(scene);
+  const active = seats.find((l) => l.id === scene.activeListenerId) ?? seats[0];
+  return {
+    ...scene,
+    listeners: seats,
+    activeListenerId: active.id,
+    listener: { pos: cloneVec(active.pos), z: active.z },
+  };
+}
+
+/** New scene fields for a single seat at {pos,z}. Spread into constructors. */
+function singleSeatFields(
+  pos: Vec2,
+  z: number,
+  name = DEFAULT_LISTENER_NAME,
+): Pick<Scene, 'listeners' | 'activeListenerId' | 'listener'> {
+  const seat = makeNamedListener(pos, z, name);
+  return { listeners: [seat], activeListenerId: seat.id, listener: { pos: cloneVec(seat.pos), z: seat.z } };
+}
+
+/** Move/adjust the ACTIVE seat, keeping the mirror in sync. */
+export function updateActiveListener(scene: Scene, patch: Partial<ListenerState>): Scene {
+  const seats = sceneListeners(scene);
+  const activeId = seats.some((l) => l.id === scene.activeListenerId)
+    ? scene.activeListenerId
+    : seats[0].id;
+  const listeners = seats.map((l) => (l.id === activeId ? { ...l, ...patch } : l));
+  return syncActiveListener({ ...scene, listeners, activeListenerId: activeId });
+}
+
+/** Make a different seat active. Unknown ids are ignored. */
+export function setActiveListener(scene: Scene, id: string): Scene {
+  const seats = sceneListeners(scene);
+  if (!seats.some((l) => l.id === id)) return scene;
+  return syncActiveListener({ ...scene, listeners: seats, activeListenerId: id });
+}
+
+/** Add a new named seat (default offset from the active one) and make it active. */
+export function addListener(scene: Scene, name?: string, at?: Vec2): Scene {
+  const seats = sceneListeners(scene);
+  const src = seats.find((l) => l.id === scene.activeListenerId) ?? seats[0];
+  const pos = at ?? { x: src.pos.x + 0.6, y: src.pos.y + 0.6 };
+  const seat = makeNamedListener(pos, src.z, name?.trim() ? name.trim().slice(0, 32) : `Seat ${seats.length + 1}`);
+  return syncActiveListener({ ...scene, listeners: [...seats, seat], activeListenerId: seat.id });
+}
+
+/** Rename a seat (position/height and the mirror are unaffected). */
+export function renameListener(scene: Scene, id: string, name: string): Scene {
+  const seats = sceneListeners(scene);
+  const listeners = seats.map((l) => (l.id === id ? { ...l, name: name.slice(0, 32) } : l));
+  return { ...scene, listeners };
+}
+
+/** Remove a seat. Never drops below one; a removed active seat hands off to a survivor. */
+export function removeListener(scene: Scene, id: string): Scene {
+  const seats = sceneListeners(scene);
+  if (seats.length <= 1) return scene;
+  const listeners = seats.filter((l) => l.id !== id);
+  const activeListenerId = listeners.some((l) => l.id === scene.activeListenerId)
+    ? scene.activeListenerId
+    : listeners[0].id;
+  return syncActiveListener({ ...scene, listeners, activeListenerId });
+}
 
 export interface Material {
   id: string;
@@ -173,7 +275,7 @@ export function apartmentScene(): Scene {
     objects: [...walls, ...interior, ...furniture],
     speakers: [],
     pairs: [],
-    listener: { pos: vec(2.3, 3.9), z: 1.2 },
+    ...singleSeatFields(vec(2.3, 3.9), DEFAULT_LISTENER_Z),
   };
 }
 
@@ -182,7 +284,7 @@ export function blankScene(): Scene {
     objects: [],
     speakers: [],
     pairs: [],
-    listener: { pos: vec(2.5, 2.5), z: 1.2 },
+    ...singleSeatFields(vec(2.5, 2.5), DEFAULT_LISTENER_Z),
   };
 }
 
@@ -218,7 +320,7 @@ export function rectRoomScene(w: number, d: number): Scene {
     objects: rectRoomWalls(w, d),
     speakers: [],
     pairs: [],
-    listener: { pos: vec(w / 2, d / 2), z: 1.2 },
+    ...singleSeatFields(vec(w / 2, d / 2), DEFAULT_LISTENER_Z),
   };
 }
 
@@ -236,7 +338,13 @@ export function splitWallAt(wall: WallObj, at?: Vec2): [WallObj, WallObj] {
 }
 
 export function sceneBounds(scene: Scene): { min: Vec2; max: Vec2 } {
-  const pts: Vec2[] = [scene.listener.pos, ...scene.speakers.map((s) => s.pos)];
+  // Frame every seat (not just the active mirror) so switching seats never
+  // leaves one off-canvas; falls back to the mirror for hand-built scenes.
+  const seatPts =
+    scene.listeners && scene.listeners.length > 0
+      ? scene.listeners.map((l) => l.pos)
+      : [scene.listener.pos];
+  const pts: Vec2[] = [...seatPts, ...scene.speakers.map((s) => s.pos)];
   for (const o of scene.objects) {
     if (o.kind === 'wall') pts.push(o.a, o.b);
     else if (o.kind === 'rect') pts.push(...rectCorners(o));
@@ -323,14 +431,49 @@ export function sanitizeScene(raw: unknown): Scene | null {
     .map((o) => sanitizeObject(o, seenIds))
     .filter((o): o is SceneObject => o !== null);
 
-  // Listener: v2 shape {pos, z} with a v1 fallback ({x, y} directly).
-  let listener = { pos: vec(2, 2), z: 1.2 };
-  const rawListener = s.listener as Record<string, unknown> | undefined;
-  if (rawListener && isVec(rawListener.pos)) {
-    listener = { pos: rawListener.pos, z: clampH(rawListener.z, 1.2) };
-  } else if (isVec(s.listener)) {
-    listener = { pos: s.listener as Vec2, z: 1.2 };
+  // Listening positions. New shape: `listeners[]` + `activeListenerId`.
+  // Back-compat: v2 single `listener` {pos,z}, or v1 {x,y}. Always ≥1 seat, and
+  // `scene.listener` is re-derived as a mirror of the active seat.
+  const seats: NamedListener[] = [];
+  const rawSeats = (s as { listeners?: unknown }).listeners;
+  if (Array.isArray(rawSeats)) {
+    for (const raw2 of rawSeats) {
+      if (seats.length >= MAX_LISTENERS) break; // bound pathological imports
+      if (typeof raw2 !== 'object' || raw2 === null) continue;
+      const rl = raw2 as Record<string, unknown>;
+      if (!isVec(rl.pos)) continue; // drop malformed seats rather than crash
+      let id = typeof rl.id === 'string' ? rl.id : createId('seat');
+      if (seenIds.has(id)) id = createId('seat');
+      seenIds.add(id);
+      seats.push({
+        id,
+        name:
+          typeof rl.name === 'string' && rl.name.trim() ? rl.name.slice(0, 32) : `Seat ${seats.length + 1}`,
+        pos: rl.pos,
+        z: clampH(rl.z, DEFAULT_LISTENER_Z),
+      });
+    }
   }
+  if (seats.length === 0) {
+    // Legacy single listener: v2 {pos,z} or v1 {x,y}, else a safe default.
+    let pos = vec(2, 2);
+    let z = DEFAULT_LISTENER_Z;
+    const rawListener = s.listener as Record<string, unknown> | undefined;
+    if (rawListener && isVec(rawListener.pos)) {
+      pos = rawListener.pos;
+      z = clampH(rawListener.z, DEFAULT_LISTENER_Z);
+    } else if (isVec(s.listener)) {
+      pos = s.listener as Vec2;
+    }
+    const id = createId('seat');
+    seenIds.add(id);
+    seats.push({ id, name: DEFAULT_LISTENER_NAME, pos, z });
+  }
+  const rawActive = (s as { activeListenerId?: unknown }).activeListenerId;
+  const activeListenerId =
+    typeof rawActive === 'string' && seats.some((l) => l.id === rawActive) ? rawActive : seats[0].id;
+  const activeSeat = seats.find((l) => l.id === activeListenerId) ?? seats[0];
+  const listener: ListenerState = { pos: cloneVec(activeSeat.pos), z: activeSeat.z };
 
   // Speakers: v2 array, with a v1 fallback ({L, R} object → pair).
   const speakers: SpeakerObj[] = [];
@@ -417,7 +560,7 @@ export function sanitizeScene(raw: unknown): Scene | null {
           : [];
       })
     : [];
-  return { objects, speakers, pairs, listener, underlay, rooms };
+  return { objects, speakers, pairs, listener, listeners: seats, activeListenerId, underlay, rooms };
 }
 
 /** Append a named rectangular room shell flush with the current bounds. */
@@ -432,12 +575,13 @@ export function addRoomShell(scene: Scene, name: string, w: number, d: number): 
       : wl,
   );
   const room = { id: createId('room'), name, at: { x: ox + w / 2, y: oy + d / 2 } };
-  return {
+  const base: Scene = {
     ...scene,
     objects: [...scene.objects, ...walls],
     rooms: [...(scene.rooms ?? []), ...(name.trim() ? [room] : [])],
-    listener: hasAny ? scene.listener : { ...scene.listener, pos: { x: w / 2, y: d / 2 } },
   };
+  // A first room recenters the (single) seat; an added room leaves seats put.
+  return hasAny ? base : updateActiveListener(base, { pos: { x: w / 2, y: d / 2 } });
 }
 
 export function sanitizeSettings(raw: unknown): SimSettings | null {

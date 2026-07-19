@@ -23,30 +23,30 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">75.38% </span>
+                <span class="strong">93.84% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>98/130</span>
+                <span class='fraction'>122/130</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">87.5% </span>
+                <span class="strong">84.61% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>28/32</span>
+                <span class='fraction'>33/39</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">66.66% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>2/3</span>
+                <span class='fraction'>3/3</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">75.38% </span>
+                <span class="strong">93.84% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>98/130</span>
+                <span class='fraction'>122/130</span>
             </div>
         
             
@@ -61,7 +61,7 @@
             </div>
         </template>
     </div>
-    <div class='status-line medium'></div>
+    <div class='status-line high'></div>
     <pre><table class="coverage">
 <tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
 <a name='L2'></a><a href='#L2'>2</a>
@@ -476,26 +476,12 @@
 <span class="cline-any cline-yes">12x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -505,12 +491,26 @@
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import type { RectObj, Scene, SpeakerObj, TraceResult, Vec2 } from './types';
 import { collectSurfaces, directPath, SPEED_OF_SOUND } from './raytrace';
 import { bestPairSpot } from './pairspot';
@@ -699,13 +699,13 @@ export function computePair(
   };
 }
 &nbsp;
-export <span class="fstat-no" title="function not covered" >function computeAudio(scene: Scene, trace: TraceResult, tvAnchor = true): AudioMetrics {</span>
-<span class="cstat-no" title="statement not covered" >  const blockedById = new Map(trace.bySpeaker.map((s) =&gt; [s.id, s.direct.blocked]));</span>
-<span class="cstat-no" title="statement not covered" >  const byId = new Map(scene.speakers.map((s) =&gt; [s.id, s]));</span>
-<span class="cstat-no" title="statement not covered" >  const pairedIds = new Set&lt;string&gt;();</span>
+export function computeAudio(scene: Scene, trace: TraceResult, tvAnchor = true): AudioMetrics {
+  const blockedById = new Map(trace.bySpeaker.map((s) =&gt; [s.id, s.direct.blocked]));
+  const byId = new Map(scene.speakers.map((s) =&gt; [s.id, s]));
+  const pairedIds = new Set&lt;string&gt;();
 &nbsp;
-<span class="cstat-no" title="statement not covered" >  const pairs: PairMetrics[] = [];</span>
-<span class="cstat-no" title="statement not covered" >  for (const [idA, idB] of scene.pairs) {</span>
+  const pairs: PairMetrics[] = [];
+  for (const [idA, idB] of scene.pairs) <span class="branch-0 cbranch-no" title="branch not covered" >{</span>
 <span class="cstat-no" title="statement not covered" >    const a = byId.get(idA);</span>
 <span class="cstat-no" title="statement not covered" >    const b = byId.get(idB);</span>
 <span class="cstat-no" title="statement not covered" >    if (!a || !b) continue;</span>
@@ -715,26 +715,26 @@ export <span class="fstat-no" title="function not covered" >function computeAudi
 <span class="cstat-no" title="statement not covered" >    pairs.push(computePair(scene, a, b, losBlocked, tvAnchor));</span>
 <span class="cstat-no" title="statement not covered" >  }</span>
 &nbsp;
-<span class="cstat-no" title="statement not covered" >  const solos: SoloMetrics[] = scene.speakers</span>
-<span class="cstat-no" title="statement not covered" >    .filter((s) =&gt; !pairedIds.has(s.id))</span>
-<span class="cstat-no" title="statement not covered" >    .map((s) =&gt; {</span>
-<span class="cstat-no" title="statement not covered" >      const d = dist3dTo(s, scene.listener);</span>
-<span class="cstat-no" title="statement not covered" >      return {</span>
-<span class="cstat-no" title="statement not covered" >        id: s.id,</span>
-<span class="cstat-no" title="statement not covered" >        label: s.label,</span>
-<span class="cstat-no" title="statement not covered" >        dist3d: d,</span>
-<span class="cstat-no" title="statement not covered" >        delayMs: (d / SPEED_OF_SOUND) * 1000,</span>
-<span class="cstat-no" title="statement not covered" >        levelDb: levelAtDb(s, d),</span>
-<span class="cstat-no" title="statement not covered" >        losBlocked: Boolean(blockedById.get(s.id)),</span>
-<span class="cstat-no" title="statement not covered" >      };</span>
-<span class="cstat-no" title="statement not covered" >    });</span>
+  const solos: SoloMetrics[] = scene.speakers
+    .filter((s) =&gt; !pairedIds.has(s.id))
+    .map((s) =&gt; {
+      const d = dist3dTo(s, scene.listener);
+      return {
+        id: s.id,
+        label: s.label,
+        dist3d: d,
+        delayMs: (d / SPEED_OF_SOUND) * 1000,
+        levelDb: levelAtDb(s, d),
+        losBlocked: Boolean(blockedById.get(s.id)),
+      };
+    });
 &nbsp;
-<span class="cstat-no" title="statement not covered" >  return {</span>
-<span class="cstat-no" title="statement not covered" >    pairs,</span>
-<span class="cstat-no" title="statement not covered" >    solos,</span>
-<span class="cstat-no" title="statement not covered" >    allLocked: pairs.length &gt; 0 &amp;&amp; pairs.every((p) =&gt; p.locked),</span>
-<span class="cstat-no" title="statement not covered" >  };</span>
-<span class="cstat-no" title="statement not covered" >}</span>
+  return {
+    pairs,
+    solos,
+    allLocked: pairs.length &gt; <span class="branch-0 cbranch-no" title="branch not covered" >0 &amp;&amp; pairs.every((p) =&gt; p.locked),</span>
+  };
+}
 &nbsp;</pre></td></tr></table></pre>
 
                 <div class='push'></div><!-- for sticky footer -->
@@ -742,7 +742,7 @@ export <span class="fstat-no" title="function not covered" >function computeAudi
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-07-19T17:29:32.583Z
+                at 2026-07-19T17:59:23.390Z
             </div>
         <script src="../../prettify.js"></script>
         <script>

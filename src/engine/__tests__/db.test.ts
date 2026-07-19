@@ -14,7 +14,7 @@ import {
   saveMeta,
   __resetConnectionForTests,
 } from '../db';
-import { apartmentScene, blankScene, makeLayout } from '../scene';
+import { apartmentScene, blankScene, makeLayout, updateActiveListener } from '../scene';
 import type { LayoutStore, Underlay } from '../types';
 
 // 1×1 transparent PNG — a valid, tiny image data URL.
@@ -82,8 +82,8 @@ describe('layout persistence', () => {
     await saveLayout(layout, true);
     await saveMeta(layout.id);
 
-    // Geometry-only edit: move the listener, save without rewriting the image.
-    const moved = { ...layout, scene: { ...scene, listener: { pos: { x: 1, y: 1 }, z: 1.2 } } };
+    // Geometry-only edit: move the active seat, save without rewriting the image.
+    const moved = { ...layout, scene: updateActiveListener(scene, { pos: { x: 1, y: 1 } }) };
     await saveLayout(moved, false);
 
     const loaded = await loadFromIDB();

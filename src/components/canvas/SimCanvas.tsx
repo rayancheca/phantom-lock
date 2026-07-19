@@ -13,9 +13,9 @@ import type {
 import type { AudioMetrics } from '../../engine/stereo';
 import type { Proposal } from '../../engine/optimize';
 import type { ListeningField } from '../../engine/bestspot';
-import { hitTestNodes, hitTestObjects } from '../../engine/hit';
+import { hitInactiveSeat, hitTestNodes, hitTestObjects } from '../../engine/hit';
 import { closestPointOnSegment, distPointSegment, pointInPolygon, pointInRect } from '../../engine/geometry';
-import { createId, makeSpeaker, ROOM_HEIGHT, sceneBounds } from '../../engine/scene';
+import { createId, makeSpeaker, ROOM_HEIGHT, sceneBounds, updateActiveListener } from '../../engine/scene';
 import { integrateWall, snapToWalls } from '../../engine/joints';
 import * as v from '../../engine/vec';
 import {
@@ -60,6 +60,8 @@ interface Props {
   onRoomDrawn: (zone: { center: Vec2; w: number; h: number }) => void;
   /** Double-click on a wall: break it into two at that point. */
   onSplitWall: (id: string, at: Vec2) => void;
+  /** Clicked an inactive listening seat — make it the active one. */
+  onActivateSeat: (id: string) => void;
 }
 
 type DrawTool = 'rect' | 'circle' | 'room';
@@ -107,6 +109,7 @@ export default function SimCanvas({
   onCalibrate,
   onRoomDrawn,
   onSplitWall,
+  onActivateSeat,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -616,6 +619,15 @@ export default function SimCanvas({
       startDrag({ kind: 'node', pointerId: e.pointerId, node: { speakerId: nodeHit.id } });
       return;
     }
+    // An inactive seat: activate it (becomes the "YOU" puck) and start dragging
+    // so you can reposition it in the same gesture.
+    const seatHit = hitInactiveSeat(scene, p, tol);
+    if (seatHit) {
+      onActivateSeat(seatHit);
+      onSelection({ type: 'listener' });
+      startDrag({ kind: 'node', pointerId: e.pointerId, node: 'listener' });
+      return;
+    }
 
     if (selection?.type === 'object') {
       const sel = scene.objects.find((o) => o.id === selection.id);
@@ -756,7 +768,7 @@ export default function SimCanvas({
     if (drag.kind === 'node') {
       const sp = snap(p);
       if (drag.node === 'listener') {
-        onScene({ ...cur, listener: { ...cur.listener, pos: sp } });
+        onScene(updateActiveListener(cur, { pos: sp }));
       } else {
         const speakerId = drag.node.speakerId;
         const surf = surfaceHeightAt(sp);

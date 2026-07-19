@@ -68,6 +68,16 @@ export interface ListenerState {
   z: number;
 }
 
+/**
+ * A named listening position (seat) — e.g. "Couch", "Bed". A scene keeps one or
+ * more of these; the active one is mirrored into `Scene.listener` so every
+ * existing read-site keeps working unchanged.
+ */
+export interface NamedListener extends ListenerState {
+  id: string;
+  name: string;
+}
+
 /** An imported floorplan image used as a tracing underlay. */
 export interface Underlay {
   /** Downscaled data-URL of the image. */
@@ -97,7 +107,21 @@ export interface Scene {
   speakers: SpeakerObj[];
   /** Stereo pairs as [speakerIdA, speakerIdB]; a speaker belongs to at most one pair. */
   pairs: Array<[string, string]>;
+  /**
+   * The active seat, mirrored. ALWAYS equals the active `listeners` entry's
+   * {pos,z}. Maintained by `sanitizeScene` + the scene write helpers; every
+   * engine read-site consumes this, so tracer and verdict can never disagree.
+   * Treat as read-only — write through the scene helpers, never assign directly.
+   */
   listener: ListenerState;
+  /**
+   * Named listening positions (seats). Optional so hand-built test scenes that
+   * only set `listener` still type-check; `sanitizeScene` and every constructor
+   * always populate it with ≥1 seat for real data.
+   */
+  listeners?: NamedListener[];
+  /** Id of the active entry in `listeners`. */
+  activeListenerId?: string;
   underlay?: Underlay | null;
   rooms?: RoomLabel[];
 }

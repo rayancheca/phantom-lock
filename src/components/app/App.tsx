@@ -19,6 +19,8 @@ import { bestListeningSpot } from '../../engine/bestspot';
 import { arrangeFurniture, suggestInventory, type ArrangeItem, type ArrangeResult } from '../../engine/arrange';
 import { detectWallsFromUnderlay } from '../../engine/detect';
 import {
+  activeListener,
+  addListener,
   apartmentScene,
   blankScene,
   createId,
@@ -26,12 +28,17 @@ import {
   loadStore,
   makeLayout,
   rectRoomScene,
+  removeListener,
+  renameListener,
   sanitizeLayout,
   sanitizeScene,
   sceneBounds,
+  sceneListeners,
+  setActiveListener,
   splitWallAt,
   addRoomShell,
   STORAGE_KEY,
+  updateActiveListener,
 } from '../../engine/scene';
 import {
   bootstrapPersistence,
@@ -51,7 +58,9 @@ import ControlsCard from '../panels/ControlsCard';
 import MetricsPanel from '../panels/MetricsPanel';
 import InspectorPanel from '../panels/InspectorPanel';
 import SpeakersCard from '../panels/SpeakersCard';
+import ListenerCard from '../panels/ListenerCard';
 import Echogram from '../panels/Echogram';
+import ScenarioCompare, { type Scenario } from '../compare/ScenarioCompare';
 import OptimizeDialog from '../panels/OptimizeDialog';
 import ArrangeDialog from '../panels/ArrangeDialog';
 import UnderlayCard from '../panels/UnderlayCard';
@@ -134,6 +143,7 @@ function AppInner({ initialStore, persistMode }: AppInnerProps) {
   const [toast, setToast] = useState<ToastData | null>(null);
   const [wallProposal, setWallProposal] = useState<SceneObject[] | null>(null);
   const [galleryOpen, setGalleryOpen] = useState(false);
+  const [compare, setCompare] = useState<{ left: Scenario; right: Scenario } | null>(null);
   const [detecting, setDetecting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const lastDeletedRef = useRef<Deleted | null>(null);
@@ -489,8 +499,49 @@ function AppInner({ initialStore, persistMode }: AppInnerProps) {
   };
 
   const updateListener = (patch: Partial<Scene['listener']>) => {
-    setScene((s) => ({ ...s, listener: { ...s.listener, ...patch } }));
+    setScene((s) => updateActiveListener(s, patch));
   };
+
+  // --- listening positions (seats) -----------------------------------------
+  const switchSeat = (id: string) => {
+    setScene((s) => setActiveListener(s, id));
+    setSelection({ type: 'listener' });
+  };
+  const addSeat = () => {
+    setScene((s) => addListener(s));
+    setSelection({ type: 'listener' });
+  };
+  const renameSeat = (id: string, name: string) => {
+    setScene((s) => renameListener(s, id, name));
+  };
+  const removeSeat = (id: string) => {
+    setScene((s) => removeListener(s, id));
+  };
+
+  /** Open the 2-up compare, seeded with the two most useful scenarios: two seats
+   *  of this layout if it has them, else this layout vs another. */
+  const openCompare = () => {
+    const seats = sceneListeners(scene);
+    const here = active.id;
+    let left: Scenario;
+    let right: Scenario;
+    if (seats.length >= 2) {
+      left = { layoutId: here, seatId: seats[0].id };
+      right = { layoutId: here, seatId: seats[1].id };
+    } else if (store.layouts.length >= 2) {
+      const other = store.layouts.find((l) => l.id !== here) ?? active;
+      left = { layoutId: here, seatId: activeListener(scene).id };
+      right = { layoutId: other.id, seatId: sceneListeners(other.scene)[0].id };
+    } else {
+      const seat = activeListener(scene).id;
+      left = { layoutId: here, seatId: seat };
+      right = { layoutId: here, seatId: seat };
+    }
+    closeFloatingPanels();
+    setGalleryOpen(false);
+    setCompare({ left, right });
+  };
+  const canCompare = sceneListeners(scene).length >= 2 || store.layouts.length >= 2;
 
   /** Break a wall in two at a point (or its midpoint) and select the first half. */
   const splitWall = (id: string, at?: Vec2) => {
@@ -815,12 +866,11 @@ function AppInner({ initialStore, persistMode }: AppInnerProps) {
       .filter(([i, j]) => created[i] && created[j])
       .map(([i, j]) => [created[i].id, created[j].id] as [string, string]);
     const focus = proposal.focus;
-    setScene((s) => ({
-      ...s,
-      speakers: created,
-      pairs,
-      listener: focus ? { ...s.listener, pos: focus } : s.listener,
-    }));
+    setScene((s) => {
+      const withSpeakers = { ...s, speakers: created, pairs };
+      // Room-target proposals move YOU there — move the ACTIVE seat + mirror together.
+      return focus ? updateActiveListener(withSpeakers, { pos: focus }) : withSpeakers;
+    });
     setSettings({ ...settings, tvAnchor: proposal.mode === 'cinema' });
     setProposal(null);
     setOptimizeOpen(false);
@@ -838,7 +888,7 @@ function AppInner({ initialStore, persistMode }: AppInnerProps) {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const overlayOpen = dialog !== null || optimizeOpen || arrangeOpen;
+      const overlayOpen = dialog !== null || optimizeOpen || arrangeOpen || compare !== null;
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) {
         // Let Escape close an overlay even while typing in one of its fields.
@@ -942,10 +992,9 @@ function AppInner({ initialStore, persistMode }: AppInnerProps) {
             };
           }
           if (selection.type === 'listener') {
-            return {
-              ...s,
-              listener: { ...s.listener, pos: { x: s.listener.pos.x + d.x, y: s.listener.pos.y + d.y } },
-            };
+            return updateActiveListener(s, {
+              pos: { x: s.listener.pos.x + d.x, y: s.listener.pos.y + d.y },
+            });
           }
           if (selection.type === 'speaker') {
             return {
@@ -975,7 +1024,7 @@ function AppInner({ initialStore, persistMode }: AppInnerProps) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selection, optimizeOpen, arrangeOpen, dialog, wallProposal, mode, applyTool, scene.objects, scene.speakers, scene.pairs]);
+  }, [selection, optimizeOpen, arrangeOpen, dialog, wallProposal, compare, mode, applyTool, scene.objects, scene.speakers, scene.pairs]);
 
   // --- import / export -----------------------------------------------------------------
 
@@ -1083,6 +1132,17 @@ function AppInner({ initialStore, persistMode }: AppInnerProps) {
               Music
             </button>
           </div>
+          {canCompare && (
+            <button
+              type="button"
+              className="btn btn-compare"
+              title="Compare two seats or two layouts side by side"
+              onClick={openCompare}
+            >
+              <Icon name="grid" size={15} />
+              <span>Compare</span>
+            </button>
+          )}
           <button
             type="button"
             className="btn btn-primary btn-suggest"
@@ -1118,6 +1178,7 @@ function AppInner({ initialStore, persistMode }: AppInnerProps) {
             onCalibrate={handleCalibrate}
             onRoomDrawn={(zone) => setDialog({ kind: 'room-name', zone })}
             onSplitWall={splitWall}
+            onActivateSeat={switchSeat}
           />
           <Toolbar
             step={step}
@@ -1277,6 +1338,17 @@ function AppInner({ initialStore, persistMode }: AppInnerProps) {
             />
           )}
           {(step === 'sound' || step === 'analyze') && (
+            <ListenerCard
+              scene={scene}
+              selection={selection}
+              onSwitch={switchSeat}
+              onAdd={addSeat}
+              onRename={renameSeat}
+              onRemove={removeSeat}
+              onCompare={openCompare}
+            />
+          )}
+          {(step === 'sound' || step === 'analyze') && (
             <MetricsPanel
               audio={audio}
               trace={trace}
@@ -1370,8 +1442,17 @@ function AppInner({ initialStore, persistMode }: AppInnerProps) {
           onDuplicate={duplicateLayout}
           onExport={exportLayout}
           onExportAll={exportAll}
+          onCompare={canCompare ? openCompare : undefined}
           onDelete={deleteLayout}
           onClose={() => setGalleryOpen(false)}
+        />
+      )}
+      {compare && (
+        <ScenarioCompare
+          layouts={store.layouts}
+          initialLeft={compare.left}
+          initialRight={compare.right}
+          onClose={() => setCompare(null)}
         />
       )}
       {dialog?.kind === 'calibrate' && (

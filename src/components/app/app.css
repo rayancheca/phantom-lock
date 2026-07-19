@@ -155,6 +155,10 @@
   white-space: nowrap;
 }
 
+.btn-compare {
+  white-space: nowrap;
+}
+
 /* --- mode toggle ---------------------------------------------------------------- */
 
 .mode-toggle {

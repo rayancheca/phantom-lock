@@ -13,7 +13,7 @@ import type { ListeningField } from '../../engine/bestspot';
 import { rectCorners } from '../../engine/geometry';
 import { CAPTURE_RADIUS, wallKeptSpans } from '../../engine/raytrace';
 import { SPEAKER_MODELS } from '../../engine/speakers';
-import { sceneBounds } from '../../engine/scene';
+import { activeListener, sceneBounds, sceneListeners } from '../../engine/scene';
 import * as v from '../../engine/vec';
 
 export interface View {
@@ -842,6 +842,26 @@ function drawNodes(ctx: CanvasRenderingContext2D, st: RenderState, T: ThemeColor
       SPEAKER_MODELS[sp.model].short,
     );
   });
+
+  // Inactive seats: faint labelled ghosts so every listening spot (couch, bed…)
+  // stays visible while only the active one is the solid "YOU" puck.
+  const activeId = activeListener(scene).id;
+  for (const seat of sceneListeners(scene)) {
+    if (seat.id === activeId) continue;
+    const sp = w2s(seat.pos, view);
+    const r = Math.max(7, 0.1 * view.scale);
+    ctx.save();
+    ctx.globalAlpha = 0.55;
+    ctx.strokeStyle = `rgba(${T.listener}, 1)`;
+    ctx.setLineDash([3, 3]);
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(sp.x, sp.y, r, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+    labelPill(ctx, T, seat.name, sp.x, sp.y - r - 9, T.muted);
+  }
 
   drawNode(
     ctx,

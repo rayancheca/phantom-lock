@@ -25,7 +25,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/315</span>
+                <span class='fraction'>0/321</span>
             </div>
         
             
@@ -46,7 +46,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/315</span>
+                <span class='fraction'>0/321</span>
             </div>
         
             
@@ -448,7 +448,13 @@
 <a name='L383'></a><a href='#L383'>383</a>
 <a name='L384'></a><a href='#L384'>384</a>
 <a name='L385'></a><a href='#L385'>385</a>
-<a name='L386'></a><a href='#L386'>386</a></td><td class="line-coverage quiet"><span class="cline-any cline-no">&nbsp;</span>
+<a name='L386'></a><a href='#L386'>386</a>
+<a name='L387'></a><a href='#L387'>387</a>
+<a name='L388'></a><a href='#L388'>388</a>
+<a name='L389'></a><a href='#L389'>389</a>
+<a name='L390'></a><a href='#L390'>390</a>
+<a name='L391'></a><a href='#L391'>391</a>
+<a name='L392'></a><a href='#L392'>392</a></td><td class="line-coverage quiet"><span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -603,6 +609,12 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -835,7 +847,7 @@
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js"><span class="cstat-no" title="statement not covered" >import { useEffect, useState } from 'react';<span class="fstat-no" title="function not covered" ><span class="branch-0 cbranch-no" title="branch not covered" ></span></span></span>
 import type { Scene, SceneObject, Selection, SpeakerObj } from '../../engine/types';
-<span class="cstat-no" title="statement not covered" >import { LISTENER_PRESETS, MATERIALS } from '../../engine/scene';</span>
+<span class="cstat-no" title="statement not covered" >import { activeListener, LISTENER_PRESETS, MATERIALS, sceneListeners } from '../../engine/scene';</span>
 <span class="cstat-no" title="statement not covered" >import { dist3dTo, MODEL_IDS, SPEAKER_MODELS } from '../../engine/speakers';</span>
 <span class="cstat-no" title="statement not covered" >import * as v from '../../engine/vec';</span>
 <span class="cstat-no" title="statement not covered" >import Icon from '../ui/Icon';</span>
@@ -990,11 +1002,17 @@ interface Props {
 &nbsp;
 <span class="cstat-no" title="statement not covered" >  if (selection?.type === 'listener') {</span>
 <span class="cstat-no" title="statement not covered" >    const l = scene.listener;</span>
+<span class="cstat-no" title="statement not covered" >    const seat = activeListener(scene);</span>
+<span class="cstat-no" title="statement not covered" >    const seatCount = sceneListeners(scene).length;</span>
 <span class="cstat-no" title="statement not covered" >    return (</span>
 <span class="cstat-no" title="statement not covered" >      &lt;section className="card" aria-label="Selection inspector"&gt;</span>
-<span class="cstat-no" title="statement not covered" >        &lt;h2&gt;Listener&lt;/h2&gt;</span>
+<span class="cstat-no" title="statement not covered" >        &lt;h2&gt;</span>
+<span class="cstat-no" title="statement not covered" >          {seat.name}</span>
+<span class="cstat-no" title="statement not covered" >          &lt;span className="card-tag"&gt;seat&lt;/span&gt;</span>
+<span class="cstat-no" title="statement not covered" >        &lt;/h2&gt;</span>
 <span class="cstat-no" title="statement not covered" >        &lt;p className="card-sub"&gt;</span>
 <span class="cstat-no" title="statement not covered" >          x {l.pos.x.toFixed(2)} m · y {l.pos.y.toFixed(2)} m — drag it on the canvas.</span>
+<span class="cstat-no" title="statement not covered" >          {seatCount &gt; 1 &amp;&amp; ' Switch seats in “Listening spots”.'}</span>
 <span class="cstat-no" title="statement not covered" >        &lt;/p&gt;</span>
 <span class="cstat-no" title="statement not covered" >        &lt;NumField label="Ear height" value={l.z} min={0.2} max={2.2} onChange={(n) =&gt; onUpdateListener({ z: n })} /&gt;</span>
 <span class="cstat-no" title="statement not covered" >        &lt;div className="preset-row" role="group" aria-label="Ear height presets"&gt;</span>
@@ -1225,7 +1243,7 @@ interface Props {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-07-19T17:29:32.583Z
+                at 2026-07-19T17:59:23.390Z
             </div>
         <script src="../../../prettify.js"></script>
         <script>

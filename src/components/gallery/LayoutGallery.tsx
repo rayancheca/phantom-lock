@@ -1,75 +1,14 @@
 import { useEffect, useRef } from 'react';
 import type { Layout, Scene } from '../../engine/types';
-import { sceneBounds } from '../../engine/scene';
+import { drawMiniPlan } from '../canvas/thumb';
 import Icon from '../ui/Icon';
 import Menu, { MenuItem, MenuSeparator } from '../ui/Menu';
 import './gallery.css';
 
-/** Miniature plan: walls, furniture, speakers — enough to recognize a design. */
-function drawThumb(canvas: HTMLCanvasElement, scene: Scene) {
-  const dpr = window.devicePixelRatio || 1;
-  const W = canvas.clientWidth * dpr;
-  const H = canvas.clientHeight * dpr;
-  canvas.width = W;
-  canvas.height = H;
-  const g = canvas.getContext('2d');
-  if (!g) return;
-  g.fillStyle = '#0d1320';
-  g.fillRect(0, 0, W, H);
-  const b = sceneBounds(scene);
-  const bw = Math.max(1, b.max.x - b.min.x);
-  const bh = Math.max(1, b.max.y - b.min.y);
-  const s = Math.min((W * 0.82) / bw, (H * 0.82) / bh);
-  const ox = (W - bw * s) / 2 - b.min.x * s;
-  const oy = (H - bh * s) / 2 - b.min.y * s;
-  const px = (x: number, y: number) => [x * s + ox, y * s + oy] as const;
-
-  g.strokeStyle = 'rgba(148, 163, 184, 0.35)';
-  g.fillStyle = 'rgba(148, 163, 184, 0.12)';
-  g.lineWidth = Math.max(1, 1.2 * dpr);
-  for (const o of scene.objects) {
-    if (o.kind === 'wall') {
-      g.strokeStyle = '#8b9bb8';
-      g.lineWidth = Math.max(1.5, 2 * dpr);
-      g.beginPath();
-      g.moveTo(...px(o.a.x, o.a.y));
-      g.lineTo(...px(o.b.x, o.b.y));
-      g.stroke();
-    } else if (o.kind === 'rect') {
-      g.save();
-      g.translate(...px(o.center.x, o.center.y));
-      g.rotate(o.rotation);
-      g.strokeStyle = o.role === 'tv' ? 'rgba(79,216,255,0.8)' : 'rgba(148,163,184,0.4)';
-      g.lineWidth = dpr;
-      g.strokeRect((-o.w / 2) * s, (-o.h / 2) * s, o.w * s, o.h * s);
-      g.restore();
-    } else {
-      const [cx, cy] = px(o.center.x, o.center.y);
-      g.strokeStyle = 'rgba(148,163,184,0.4)';
-      g.lineWidth = dpr;
-      g.beginPath();
-      g.arc(cx, cy, o.r * s, 0, Math.PI * 2);
-      g.stroke();
-    }
-  }
-  for (const sp of scene.speakers) {
-    const [cx, cy] = px(sp.pos.x, sp.pos.y);
-    g.fillStyle = '#4fd8ff';
-    g.beginPath();
-    g.arc(cx, cy, 2.5 * dpr, 0, Math.PI * 2);
-    g.fill();
-  }
-  const [lx, ly] = px(scene.listener.pos.x, scene.listener.pos.y);
-  g.fillStyle = '#eef2fa';
-  g.beginPath();
-  g.arc(lx, ly, 2.5 * dpr, 0, Math.PI * 2);
-  g.fill();
-}
-
 function Thumb({ scene }: { scene: Scene }) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
-    if (ref.current) drawThumb(ref.current, scene);
+    if (ref.current) drawMiniPlan(ref.current, scene, { allSeats: true });
   }, [scene]);
   return <canvas ref={ref} className="gallery-thumb" aria-hidden="true" />;
 }
@@ -86,6 +25,7 @@ interface GalleryProps {
   onDuplicate: (id: string) => void;
   onExport: (id: string) => void;
   onExportAll: () => void;
+  onCompare?: () => void;
   onDelete: (id: string) => void;
   onClose: () => void;
 }
@@ -109,6 +49,17 @@ export default function LayoutGallery(p: GalleryProps) {
       <header className="gallery-head">
         <h2>Your layouts</h2>
         <div className="gallery-head-actions">
+          {p.onCompare && (
+            <button
+              type="button"
+              className="btn"
+              title="Compare two seats or two layouts side by side"
+              onClick={p.onCompare}
+            >
+              <Icon name="grid" size={13} />
+              Compare
+            </button>
+          )}
           <button
             type="button"
             className="btn"

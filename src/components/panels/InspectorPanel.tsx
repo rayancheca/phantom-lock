@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Scene, SceneObject, Selection, SpeakerObj } from '../../engine/types';
-import { LISTENER_PRESETS, MATERIALS } from '../../engine/scene';
+import { activeListener, LISTENER_PRESETS, MATERIALS, sceneListeners } from '../../engine/scene';
 import { dist3dTo, MODEL_IDS, SPEAKER_MODELS } from '../../engine/speakers';
 import * as v from '../../engine/vec';
 import Icon from '../ui/Icon';
@@ -155,11 +155,17 @@ export default function InspectorPanel({
 
   if (selection?.type === 'listener') {
     const l = scene.listener;
+    const seat = activeListener(scene);
+    const seatCount = sceneListeners(scene).length;
     return (
       <section className="card" aria-label="Selection inspector">
-        <h2>Listener</h2>
+        <h2>
+          {seat.name}
+          <span className="card-tag">seat</span>
+        </h2>
         <p className="card-sub">
           x {l.pos.x.toFixed(2)} m · y {l.pos.y.toFixed(2)} m — drag it on the canvas.
+          {seatCount > 1 && ' Switch seats in “Listening spots”.'}
         </p>
         <NumField label="Ear height" value={l.z} min={0.2} max={2.2} onChange={(n) => onUpdateListener({ z: n })} />
         <div className="preset-row" role="group" aria-label="Ear height presets">

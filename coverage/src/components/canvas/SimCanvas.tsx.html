@@ -25,7 +25,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/913</span>
+                <span class='fraction'>0/921</span>
             </div>
         
             
@@ -46,7 +46,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/913</span>
+                <span class='fraction'>0/921</span>
             </div>
         
             
@@ -1156,7 +1156,19 @@
 <a name='L1091'></a><a href='#L1091'>1091</a>
 <a name='L1092'></a><a href='#L1092'>1092</a>
 <a name='L1093'></a><a href='#L1093'>1093</a>
-<a name='L1094'></a><a href='#L1094'>1094</a></td><td class="line-coverage quiet"><span class="cline-any cline-no">&nbsp;</span>
+<a name='L1094'></a><a href='#L1094'>1094</a>
+<a name='L1095'></a><a href='#L1095'>1095</a>
+<a name='L1096'></a><a href='#L1096'>1096</a>
+<a name='L1097'></a><a href='#L1097'>1097</a>
+<a name='L1098'></a><a href='#L1098'>1098</a>
+<a name='L1099'></a><a href='#L1099'>1099</a>
+<a name='L1100'></a><a href='#L1100'>1100</a>
+<a name='L1101'></a><a href='#L1101'>1101</a>
+<a name='L1102'></a><a href='#L1102'>1102</a>
+<a name='L1103'></a><a href='#L1103'>1103</a>
+<a name='L1104'></a><a href='#L1104'>1104</a>
+<a name='L1105'></a><a href='#L1105'>1105</a>
+<a name='L1106'></a><a href='#L1106'>1106</a></td><td class="line-coverage quiet"><span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1246,6 +1258,9 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -1763,10 +1778,19 @@
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -2264,9 +2288,9 @@ import type {
 import type { AudioMetrics } from '../../engine/stereo';
 import type { Proposal } from '../../engine/optimize';
 import type { ListeningField } from '../../engine/bestspot';
-<span class="cstat-no" title="statement not covered" >import { hitTestNodes, hitTestObjects } from '../../engine/hit';</span>
+<span class="cstat-no" title="statement not covered" >import { hitInactiveSeat, hitTestNodes, hitTestObjects } from '../../engine/hit';</span>
 <span class="cstat-no" title="statement not covered" >import { closestPointOnSegment, distPointSegment, pointInPolygon, pointInRect } from '../../engine/geometry';</span>
-<span class="cstat-no" title="statement not covered" >import { createId, makeSpeaker, ROOM_HEIGHT, sceneBounds } from '../../engine/scene';</span>
+<span class="cstat-no" title="statement not covered" >import { createId, makeSpeaker, ROOM_HEIGHT, sceneBounds, updateActiveListener } from '../../engine/scene';</span>
 <span class="cstat-no" title="statement not covered" >import { integrateWall, snapToWalls } from '../../engine/joints';</span>
 <span class="cstat-no" title="statement not covered" >import * as v from '../../engine/vec';</span>
 <span class="cstat-no" title="statement not covered" >import {</span>
@@ -2311,6 +2335,8 @@ interface Props {
   onRoomDrawn: (zone: { center: Vec2; w: number; h: number }) =&gt; void;
   /** Double-click on a wall: break it into two at that point. */
   onSplitWall: (id: string, at: Vec2) =&gt; void;
+  /** Clicked an inactive listening seat — make it the active one. */
+  onActivateSeat: (id: string) =&gt; void;
 }
 &nbsp;
 type DrawTool = 'rect' | 'circle' | 'room';
@@ -2358,6 +2384,7 @@ interface Pinch {
 <span class="cstat-no" title="statement not covered" >  onCalibrate,</span>
 <span class="cstat-no" title="statement not covered" >  onRoomDrawn,</span>
 <span class="cstat-no" title="statement not covered" >  onSplitWall,</span>
+<span class="cstat-no" title="statement not covered" >  onActivateSeat,</span>
 <span class="cstat-no" title="statement not covered" >}: Props) {</span>
 <span class="cstat-no" title="statement not covered" >  const containerRef = useRef&lt;HTMLDivElement&gt;(null);</span>
 <span class="cstat-no" title="statement not covered" >  const canvasRef = useRef&lt;HTMLCanvasElement&gt;(null);</span>
@@ -2867,6 +2894,15 @@ interface Pinch {
 <span class="cstat-no" title="statement not covered" >      startDrag({ kind: 'node', pointerId: e.pointerId, node: { speakerId: nodeHit.id } });</span>
 <span class="cstat-no" title="statement not covered" >      return;</span>
 <span class="cstat-no" title="statement not covered" >    }</span>
+    // An inactive seat: activate it (becomes the "YOU" puck) and start dragging
+    // so you can reposition it in the same gesture.
+<span class="cstat-no" title="statement not covered" >    const seatHit = hitInactiveSeat(scene, p, tol);</span>
+<span class="cstat-no" title="statement not covered" >    if (seatHit) {</span>
+<span class="cstat-no" title="statement not covered" >      onActivateSeat(seatHit);</span>
+<span class="cstat-no" title="statement not covered" >      onSelection({ type: 'listener' });</span>
+<span class="cstat-no" title="statement not covered" >      startDrag({ kind: 'node', pointerId: e.pointerId, node: 'listener' });</span>
+<span class="cstat-no" title="statement not covered" >      return;</span>
+<span class="cstat-no" title="statement not covered" >    }</span>
 &nbsp;
 <span class="cstat-no" title="statement not covered" >    if (selection?.type === 'object') {</span>
 <span class="cstat-no" title="statement not covered" >      const sel = scene.objects.find((o) =&gt; o.id === selection.id);</span>
@@ -3007,7 +3043,7 @@ interface Pinch {
 <span class="cstat-no" title="statement not covered" >    if (drag.kind === 'node') {</span>
 <span class="cstat-no" title="statement not covered" >      const sp = snap(p);</span>
 <span class="cstat-no" title="statement not covered" >      if (drag.node === 'listener') {</span>
-<span class="cstat-no" title="statement not covered" >        onScene({ ...cur, listener: { ...cur.listener, pos: sp } });</span>
+<span class="cstat-no" title="statement not covered" >        onScene(updateActiveListener(cur, { pos: sp }));</span>
 <span class="cstat-no" title="statement not covered" >      } else {</span>
 <span class="cstat-no" title="statement not covered" >        const speakerId = drag.node.speakerId;</span>
 <span class="cstat-no" title="statement not covered" >        const surf = surfaceHeightAt(sp);</span>
@@ -3349,7 +3385,7 @@ interface Pinch {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-07-19T17:29:32.583Z
+                at 2026-07-19T17:59:23.390Z
             </div>
         <script src="../../../prettify.js"></script>
         <script>
