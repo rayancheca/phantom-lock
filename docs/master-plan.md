@@ -278,7 +278,32 @@ old single-listener export/import shape working for files already on disk.
 ---
 
 ## Session 4 — Canvas interaction fixes + dead features
-**Status:** ☐ **Depends on:** S1 **Independent**
+**Status:** ☑ DONE 2026-07-19 **Depends on:** S1 **Independent**
+> All six items shipped, each verified + adversarially refuted against the real code BEFORE coding (a
+> 13-agent verify→refute Workflow) and the implemented diff re-reviewed AFTER by three independent agents
+> (code-reviewer + silent-failure-hunter + an adversarial gesture-break skeptic). Pure, DOM-free logic was
+> extracted into **`src/components/canvas/interaction.ts`** (`wallHoverAt`/`makeOpening`/`popChainSegment`/
+> `selectionSets`/`resolveSelection`/`itemsInBand`/`selectionFromBand`/`watchDevicePixelRatio`/`isDraggableAt`/
+> `hoverCursor`/`canvasKeyAction`) — unit-tested at 98.9% (tests **140→181**, +41; ratchet held). **(1)** The
+> dead +Door/+Window chips are WIRED (select-mode hovers now reach `applyMove`); the chip anchor **latches on
+> wall identity** (skeptic caught that a naive screen-radius hold left screen-vertical walls' chips unreachable
+> AND captured neighbouring walls) + a wall-still-exists self-heal + `onPointerLeave`. **(2)** Backspace
+> chain-undo now stores **per-corner id GROUPS** (`chainWallsRef: string[][]`) so a crossing segment's whole
+> group is removed (was 1 id); `snapTargets` flattens; an empty group is pushed for too-close corners; via the
+> pure `popChainSegment`. **(3)** Marquee/lasso: empty-click **deselect parity**, clear-band-on-pinch, freeze
+> the view during a band drag (wheel/gesture/R + compass/fitView guards), and `cancelDraw` now cancels band
+> drags (skeptic caught a tool-switch-mid-band freeze leak). **(4)** A `matchMedia((resolution))` listener
+> re-rasterizes on a **DPR change** (leak-safe re-arm + legacy-MQL no-op). **(5)** A **grab/grabbing** cursor
+> via `isDraggableAt`/`hoverCursor`, reset at every teardown site. **(6)** Canvas **R/Backspace gated on
+> `overlayOpen`** via `canvasKeyAction`; `overlayOpen` is now ONE shared App definition that also includes the
+> full-screen **gallery** + the **wallProposal** confirmation (both skeptic-caught key leaks past the
+> still-mounted canvas). Gate: `npm test` **181 green**, `npm run build` green (~371 kB / 119 kB gz), `tsc`
+> clean. **Live:** Fix 6 proven end-to-end in the browser (compass N→R 15°→gallery-open R **still 15°
+> (gated)**→close R 30°), console clean; the rAF-throttled hover/drag/marquee interactions (Fix 1/3/5) could
+> not be *driven* live because the Browser-pane tab is `document.hidden` (rAF paused) — covered instead by the
+> 181 unit tests + the 3-agent code-trace (evidence: `docs/sessions/S4/live-verification.md`). Deferred to
+> backlog: the `{type:'multi'}` selection has no listener slot (a listener base is dropped from an additive
+> marquee — pre-existing, unchanged); SimCanvas is still >800 lines (S5 owns the hook decomposition).
 
 **Goal.** Repair the interaction rough edges and resolve the dead/advertised features.
 
@@ -611,9 +636,15 @@ screenshots stay local/gitignored (the demo apartment's floorplan is the owner's
   a neutral placeholder across ALL git history (`git filter-repo`) for privacy, and set the standing rule to
   push after each session. README rewritten to the readme-standards bar with placeholder screenshots (real
   ones deferred — the app changes too often to keep them current).
-- **2026-07-19 — Session 4 IN PROGRESS + backlog growth:** started Session 4 (canvas interaction fixes). During it,
-  a **first-time-user clickthrough** by the owner caught that **Auto-detect walls** produces a spidery, duplicated,
-  non-orthogonal tangle on a real floorplan → scheduled as **Session 12** (auto-detect accuracy overhaul), root
-  causes diagnosed against `detect.ts`. Codified the first-time-user-testing practice into memory
-  (`first-time-user-testing`): drive each feature cold as a naive user, capture real friction, add it to this plan,
-  and hand it off to a dedicated session — rather than half-fixing inline.
+- **2026-07-19 — Session 4 DONE:** canvas interaction fixes + dead-feature wiring — door/window hover chips
+  (wired + identity-latched), Backspace chain-undo per-corner id groups, marquee/lasso deselect + pinch-clear +
+  freeze-during-band, DPR-change matchMedia repaint, grab/grabbing cursor, and overlay-gated canvas R/Backspace
+  (now incl. gallery + wallProposal). Pure logic extracted to `interaction.ts`; a pre-code verify→refute Workflow
+  (13 agents) + a post-code 3-agent self-review (which caught the sticky-latch, the gallery/wallProposal key
+  leaks, and the tool-switch band-freeze leak — all fixed). Tests **140→181**, build green. See the Session 4
+  block. Next: **Session 5** (App.tsx decomposition + ESLint) — its kickoff prompt is in its block.
+- **2026-07-19 — Backlog growth (during S4):** a **first-time-user clickthrough** by the owner caught that
+  **Auto-detect walls** produces a spidery, duplicated, non-orthogonal tangle on a real floorplan → scheduled as
+  **Session 12** (auto-detect accuracy overhaul), root causes diagnosed against `detect.ts`. Codified the
+  first-time-user-testing practice into memory (`first-time-user-testing`): drive each feature cold as a naive
+  user, capture real friction, add it to this plan, and hand it off to a dedicated session — not half-fixed inline.

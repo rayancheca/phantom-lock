@@ -38,7 +38,7 @@ Every session MUST:
    - *Automated:* keep the suite green and ADD tests for every new behavior (failing-test-first for every
      new pure-function behavior). Run `npm run test:coverage`; paste the coverage line for every file you
      touched (≥80%, or state the exact reason). **Test count is a ratchet — it must not decrease**
-     (95 at S1 → 126 at S2 → **140** at S3, all 2026-07-19) and no test may be newly skipped/only'd/
+     (95 at S1 → 126 at S2 → 140 at S3 → **181** at S4, all 2026-07-19) and no test may be newly skipped/only'd/
      weakened; state before/after counts.
    - *Migrations:* seed an OLD-shape store/record and assert it upgrades correctly on read — not just
      fresh-fixture writes.
@@ -70,7 +70,7 @@ say so.
 ## Commands
 
 - `npm run dev` — Vite (user usually has this running on :5173 already; autoPort will move yours)
-- `npm test` — vitest, **140 tests**, all green as of 2026-07-19 (was 126 after S2; S3 added +14 engine-correctness tests across stereo/pairspot/rooms/scene/arrange). Ratchet: never let the count drop.
+- `npm test` — vitest, **181 tests**, all green as of 2026-07-19 (was 140 after S3; S4 added +41 in `src/components/canvas/__tests__/interaction.test.ts`). Ratchet: never let the count drop.
 - `npm run build` — tsc --noEmit + vite build (~369 kB / 119 kB gzip). Run all three before claiming done.
 
 **GitHub (as of 2026-07-19):** the repo is public at **github.com/rayancheca/phantom-lock** (`origin`, default
@@ -97,7 +97,8 @@ was scrubbed to the placeholder **"Maple Court"** across all history — keep it
 
 **UI:**
 - `components/app/App.tsx` — default export `App` is now a thin **async-bootstrap wrapper** (hydrates persistence via `bootstrapPersistence`, shows a splash, then mounts `AppInner`); `AppInner` is the orchestrator: 4-step workflow (Build/Furnish/Sound/Analyze), per-layout infinite undo/redo (`historyRef`, 400 ms coalescing, ⌘Z/⇧⌘Z), toasts (undo instead of confirm), dialogs, `closeFloatingPanels()`. Autosave writes per-layout to IndexedDB (`persistMode`), diffs via `persistedRef`, only re-encodes the photo blob when it changed, and shows a LOUD "Export all" toast on any save failure (no more silent quota loss). "Export all" backup lives in the gallery header.
-- `components/canvas/SimCanvas.tsx` — all pointer interaction: wall chains, marquee/lasso band select, ⌘-click toggle, group drag, speaker height auto-snap onto furniture (`surfaceHeightAt`), wall-hover door/window chips
+- `components/canvas/SimCanvas.tsx` — all pointer/keyboard interaction: wall chains, marquee/lasso band select, ⌘-click toggle, group drag, speaker height auto-snap onto furniture (`surfaceHeightAt`), wall-hover door/window chips. **(S4)** takes an `overlayOpen` prop that gates the canvas R/Backspace keys; the wall-hover chip anchor is **identity-latched** (stays put on the same wall, switches to a neighbour, self-heals on delete/`onPointerLeave`); `chainWallsRef` is now `string[][]` (per-corner id groups); a `grab`/`grabbing` cursor; a matchMedia DPR-repaint effect; the view is frozen while a marquee/lasso band is dragged. Pure logic lives in `interaction.ts`.
+- `components/canvas/interaction.ts` — **(S4)** pure, DOM-free, node-tested helpers extracted OUT of SimCanvas: `wallHoverAt`/`makeOpening` (door/window chip), `popChainSegment` (Backspace chain-undo), `selectionSets`/`resolveSelection`/`itemsInBand`/`selectionFromBand` (marquee/lasso + ⌘-click selection algebra), `watchDevicePixelRatio` (DPR-change listener, injectable `win`), `isDraggableAt`/`hoverCursor` (grab affordance), `canvasKeyAction` (R/Backspace/Space gating). 98.9% covered.
 - `components/canvas/render.ts` — pure canvas renderer; `THEMES` ('sound' dark glow / 'plan' light blueprint); `labelPill` is the single annotation primitive
 - `components/gallery/LayoutGallery.tsx` — card gallery with live thumbnails (Roomba-style home); thumbnails now use the shared `canvas/thumb.ts` `drawMiniPlan` (also used by compare) and draw every seat
 - `components/panels/ListenerCard.tsx` — **seat manager** (Session 2): a `radiogroup` of listening spots (roving tabindex + arrow keys), switch/add/rename/remove, "Compare" entry. Shown in Sound + Analyze.
@@ -123,6 +124,9 @@ motion tokens `--dur-1/2/3`, destructive actions get undo toasts never confirms,
 - **Listener mirror invariant:** `scene.listener` MUST always equal the active `listeners[]` entry. Never write `scene.listener` directly (that desyncs the tracer from the verdict — the S2 trap); go through the `scene.ts` seat helpers. `sanitizeScene` re-derives the mirror on every load, so on-disk drift self-heals; a live desync would silently show a verdict for one seat while the echogram traces another.
 - **Stereo lock lives in ONE metric space (S3):** `eqError`/apex/subtended-angle are 2D **plan** geometry; keep `dA`/`dB` 3D only for ITD + level, and gate `locked` on 3D arrival symmetry (`pathDiff ≤ 0.07 m`). Mixing a 2D `base` with 3D legs in `eqError` made elevated symmetric pairs un-lockable; a naive 2D-only fix then false-locks unequal-height pairs — you need BOTH halves.
 - **Image-source reflections must hit a SOLID span (S3):** a bounce point inside a door/window opening reflects off nothing. Check the bounce param against the wall's kept surfaces (`objectId === w.id`), not the raw a→b segment — same openings the forward tracer already respects via `wallKeptSpans`/`collectSurfaces`.
+- **`overlayOpen` must cover EVERY overlay that sits over the still-mounted canvas (S4):** `SimCanvas` stays mounted under the full-screen `LayoutGallery`/`ScenarioCompare` and the `wallProposal` card, and its `window` keydown listener stays live. `LayoutGallery` only `stopPropagation`s Escape, so R/Backspace leaked through until `overlayOpen` (ONE shared App const) was extended to include `galleryOpen` + `wallProposal`. Gate the canvas key handler on it via an `overlayOpenRef` (the keydown effect has `[]` deps, so a prop read directly would be stale).
+- **A hover chip anchored to `closestPointOnSegment` chases the cursor (S4):** on a screen-vertical wall the closest point's screen-y tracks the cursor, so the chip retreats ahead of it forever. Latch the anchor on **wall identity** (keep the same wall's anchor, switch to a different wall at once, hold briefly off-walls to stay reachable) — a plain screen-radius hold instead captures neighbouring walls and parks over empty space. Also re-check the wall still exists (self-heal on delete) and clear on `onPointerLeave` (no pointermove fires off-canvas).
+- **The Browser-pane tab is `document.hidden` → `requestAnimationFrame` is paused (S4):** `SimCanvas.onPointerMove` throttles `applyMove` through rAF, so hover/drag/marquee-band interactions **cannot be driven live** in the preview. Keyboard + pointerdown paths work (Fix 6 was proven that way). Verify rAF-gated UI via unit tests + agent code-trace, and say so.
 
 ## NEXT UP: read-only 3D view — see docs/3d-view-plan.md
 
@@ -135,6 +139,7 @@ efficiency only matters if the app gets slow.** It must be read-only and touch n
 
 - Drag-release doesn't split walls crossed mid-drag (only creation does, via `integrateWall`).
 - Proper image-source reflection off window glass / closed-door leaves (mirror the rect with its own material, not the host wall's) — S3 keeps them solid but approximates with wall absorption; a bounce landing on a coplanar door/window leaf is still governed by leg occlusion.
-- Marquee/lasso not yet visually verified in a browser (typed + tested only) — check first run.
+- Marquee/lasso band *drag* still not driven live (the Browser-pane tab runs `document.hidden`, so rAF — which throttles `applyMove` — is paused); the selection/deselect logic is unit-tested and 3-agent-traced (S4).
 - README.md predates gallery/zones/detection/multi-select — needs a rewrite eventually.
-- Hover cursors/halos on draggable canvas objects still default.
+- `{type:'multi'}` selection has no listener slot, so a `{type:'listener'}` base is silently dropped from an additive marquee/⌘-click (pre-existing; unchanged by S4). Add a `listenerId?`/`includeListener` if this ever matters.
+- **(S4 done)** grab/grabbing cursor on draggable objects; door/window hover chips wired; canvas keys overlay-gated.
