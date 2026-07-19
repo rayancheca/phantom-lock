@@ -14,7 +14,7 @@ import type { AudioMetrics } from '../../engine/stereo';
 import type { Proposal } from '../../engine/optimize';
 import type { ListeningField } from '../../engine/bestspot';
 import { hitInactiveSeat, hitTestNodes, hitTestObjects } from '../../engine/hit';
-import { closestPointOnSegment, distPointSegment, pointInPolygon, pointInRect } from '../../engine/geometry';
+import { closestPointOnSegment, distPointSegment, pointInRect } from '../../engine/geometry';
 import { createId, makeSpeaker, ROOM_HEIGHT, sceneBounds, updateActiveListener } from '../../engine/scene';
 import { integrateWall, snapToWalls } from '../../engine/joints';
 import * as v from '../../engine/vec';
@@ -29,6 +29,19 @@ import {
   type View,
   type WallChain,
 } from './render';
+import {
+  canvasKeyAction,
+  hoverCursor,
+  isDraggableAt,
+  makeOpening,
+  popChainSegment,
+  resolveSelection,
+  selectionFromBand,
+  selectionSets,
+  wallHoverAt,
+  watchDevicePixelRatio,
+  type WallHover,
+} from './interaction';
 import './sim-canvas.css';
 
 const SNAP_STEP = 0.05;
@@ -38,6 +51,13 @@ const MAX_SCALE = 500;
 const CLOSE_RADIUS = 0.25;
 /** Wall segments snap to 45° multiples when within this many degrees. */
 const ANGLE_SNAP_DEG = 7;
+/** Drag kinds that reposition scene items (→ 'grabbing' cursor). */
+const MOVE_KINDS = new Set<Drag['kind']>(['node', 'wall-end', 'move-wall', 'move-rc', 'move-multi']);
+/** Hover this near a wall (screen px) before the door/window chip appears. */
+const WALL_HOVER_APPEAR_PX = 18;
+/** Once shown, the chip stays anchored within this screen radius so it stays
+ *  reachable — otherwise its anchor chases the cursor along the wall. */
+const WALL_HOVER_HOLD_PX = 46;
 
 interface Props {
   scene: Scene;
@@ -52,6 +72,9 @@ interface Props {
   furnitureProposal: SceneObject[] | null;
   bestSpot: ListeningField | null;
   resetViewToken: number;
+  /** True while any blocking overlay (dialog, full-screen gallery/compare) is
+   *  open — gates the canvas view-rotate and chain-undo keys. */
+  overlayOpen: boolean;
   onScene: (s: Scene) => void;
   onSelection: (sel: Selection) => void;
   onDragging: (dragging: boolean) => void;
@@ -103,6 +126,7 @@ export default function SimCanvas({
   furnitureProposal,
   bestSpot,
   resetViewToken,
+  overlayOpen,
   onScene,
   onSelection,
   onDragging,
@@ -115,7 +139,11 @@ export default function SimCanvas({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [view, setView] = useState<View | null>(null);
-  const [wallHover, setWallHover] = useState<{ id: string; at: Vec2 } | null>(null);
+  const [wallHover, setWallHover] = useState<WallHover | null>(null);
+  /** Hovering something draggable in select mode (→ 'grab' cursor). */
+  const [hoverGrab, setHoverGrab] = useState(false);
+  /** A reposition drag is live (→ 'grabbing' cursor). */
+  const [grabbing, setGrabbing] = useState(false);
   /** Screen-space rubber band: 2 pts = marquee corners, 3+ = lasso path. */
   const [band, setBand] = useState<Vec2[] | null>(null);
   const bandRef = useRef<Vec2[] | null>(null);
@@ -146,8 +174,11 @@ export default function SimCanvas({
   onSceneRef.current = onScene;
   const viewRef = useRef<View | null>(null);
   viewRef.current = view;
-  /** Wall ids committed by the active chain, for Backspace-undo. */
-  const chainWallsRef = useRef<string[]>([]);
+  const overlayOpenRef = useRef(overlayOpen);
+  overlayOpenRef.current = overlayOpen;
+  /** Wall ids committed by the active chain, grouped per corner, for
+   *  Backspace-undo (a segment that crossed a wall owns multiple ids). */
+  const chainWallsRef = useRef<string[][]>([]);
   /** First click of a two-point scale calibration. */
   const calibRef = useRef<Vec2 | null>(null);
   const [redrawTick, setRedrawTick] = useState(0);
@@ -157,6 +188,11 @@ export default function SimCanvas({
     setRedrawHook(() => setRedrawTick((n) => n + 1));
     return () => setRedrawHook(null);
   }, []);
+
+  // Re-rasterize when the device pixel ratio changes (window dragged to a
+  // monitor with a different DPR — which changes neither CSS size nor any dep,
+  // so the draw effect below would otherwise keep the stale, blurry backing store).
+  useEffect(() => watchDevicePixelRatio(() => setRedrawTick((n) => n + 1)), []);
 
   /** Rotate the whole view by dr radians around the canvas centre. */
   const rotateBy = useCallback((dr: number) => {
@@ -267,6 +303,9 @@ export default function SimCanvas({
     if (!canvas) return;
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
+      // Freeze the view while dragging a marquee/lasso band — the band is stored
+      // in screen space, so a mid-drag pan/zoom would desync the selection.
+      if (dragRef.current?.kind === 'band') return;
       if (e.ctrlKey || e.metaKey) {
         // Trackpad pinch arrives as ctrlKey+wheel on macOS; ⌘/Ctrl+scroll for mice.
         const sensitivity = e.ctrlKey && !e.metaKey ? 0.012 : 0.002;
@@ -300,29 +339,44 @@ export default function SimCanvas({
     };
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
-      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
-      if (e.code === 'Space') spaceRef.current = e.type === 'keydown';
-      // R / ⇧R rotate the view in 15° steps around the canvas centre.
-      if (e.type === 'keydown' && (e.key === 'r' || e.key === 'R') && !e.metaKey && !e.ctrlKey) {
-        rotateBy(((e.shiftKey ? -15 : 15) * Math.PI) / 180);
-      }
-      // Backspace while chaining walls: undo the last corner (and its wall).
-      if (e.type === 'keydown' && e.key === 'Backspace' && chainRef.current) {
+      const action = canvasKeyAction(
+        {
+          type: e.type,
+          key: e.key,
+          code: e.code,
+          metaKey: e.metaKey,
+          ctrlKey: e.ctrlKey,
+          shiftKey: e.shiftKey,
+          targetTag: t?.tagName,
+        },
+        overlayOpenRef.current,
+        Boolean(chainRef.current),
+      );
+      if (action.kind === 'space') {
+        // Never arm pan behind an overlay; a keyup always disarms.
+        spaceRef.current = action.armed;
+      } else if (action.kind === 'rotate') {
+        if (dragRef.current?.kind === 'band') return; // freeze view during a band drag
+        rotateBy((action.deltaDeg * Math.PI) / 180);
+      } else if (action.kind === 'chainBackspace') {
+        // Undo the last corner and every wall id its segment added (a crossing
+        // splits the new wall into several chunks — remove the whole group).
         e.preventDefault();
-        const pts = [...chainRef.current.points];
-        if (pts.length > 1) {
-          pts.pop();
-          const lastId = chainWallsRef.current.pop();
-          if (lastId) {
-            onSceneRef.current({
-              ...sceneRef.current,
-              objects: sceneRef.current.objects.filter((o) => o.id !== lastId),
-            });
-          }
-          updateChain({ points: pts, cursor: chainRef.current.cursor });
-        } else {
+        const chain = chainRef.current!;
+        const res = popChainSegment(chain.points, chainWallsRef.current);
+        if (res.ended) {
           chainWallsRef.current = [];
           updateChain(null);
+        } else {
+          chainWallsRef.current = res.groups;
+          if (res.removeIds.length) {
+            const rm = new Set(res.removeIds);
+            onSceneRef.current({
+              ...sceneRef.current,
+              objects: sceneRef.current.objects.filter((o) => !rm.has(o.id)),
+            });
+          }
+          updateChain({ points: res.points, cursor: chain.cursor });
         }
       }
     };
@@ -349,6 +403,7 @@ export default function SimCanvas({
     let base: { view0: View; center: Vec2; world0: Vec2 } | null = null;
     const start = (ev: Event) => {
       ev.preventDefault();
+      if (dragRef.current?.kind === 'band') return; // freeze view during a band drag
       const e = ev as unknown as { clientX: number; clientY: number };
       const v0 = viewRef.current;
       if (!v0) return;
@@ -381,9 +436,12 @@ export default function SimCanvas({
   }, []);
 
   const cancelDraw = useCallback(() => {
-    if (dragRef.current?.kind === 'draw') {
+    // Cancel an in-flight rubber-band draw AND a marquee/lasso band — otherwise
+    // a tool switch mid-band strands dragRef, leaving the view frozen.
+    if (dragRef.current?.kind === 'draw' || dragRef.current?.kind === 'band') {
       dragRef.current = null;
       onDragging(false);
+      setGrabbing(false);
     }
     setPreview(null);
     updateChain(null);
@@ -396,6 +454,8 @@ export default function SimCanvas({
     cancelDraw();
     setWallHover(null);
     setBandBoth(null);
+    setHoverGrab(false);
+    setGrabbing(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, cancelDraw]);
 
@@ -411,6 +471,7 @@ export default function SimCanvas({
   const startDrag = (drag: Drag) => {
     dragRef.current = drag;
     onDragging(true);
+    setGrabbing(MOVE_KINDS.has(drag.kind));
   };
 
   const beginPinchIfTwoPointers = () => {
@@ -420,7 +481,10 @@ export default function SimCanvas({
       dragRef.current = null;
       onDragging(false);
       setPreview(null);
+      setGrabbing(false);
     }
+    // A 2nd finger promotes to a pinch — drop any half-drawn selection band.
+    setBandBoth(null);
     const center0 = v.scale(v.add(pts[0], pts[1]), 0.5);
     pinchRef.current = {
       d0: Math.max(12, v.dist(pts[0], pts[1])),
@@ -434,7 +498,7 @@ export default function SimCanvas({
 
   /** Existing walls the cursor may stick to — never the chain's own pieces. */
   const snapTargets = () => {
-    const exclude = new Set(chainWallsRef.current);
+    const exclude = new Set(chainWallsRef.current.flat());
     return {
       walls: sceneRef.current.objects.filter((o): o is WallObj => o.kind === 'wall'),
       exclude,
@@ -456,6 +520,7 @@ export default function SimCanvas({
     const p = closing
       ? chainNow.points[0]
       : snapToWalls(snap(angleSnap(last, snap(raw))), t.walls, t.exclude);
+    let group: string[] = [];
     if (v.dist(last, p) >= 0.15) {
       const wall: WallObj = {
         id: createId('wall'),
@@ -469,12 +534,15 @@ export default function SimCanvas({
       // Joint math: crossings and T-touches split both walls into chunks.
       const joined = integrateWall(cur.objects, wall);
       onScene({ ...cur, objects: joined.objects });
-      chainWallsRef.current.push(...joined.newIds);
+      group = joined.newIds;
     }
     if (closing) {
       chainWallsRef.current = [];
       updateChain(null);
     } else {
+      // One id-group per appended corner (empty when no wall was created), so
+      // Backspace pops exactly the walls that corner added.
+      chainWallsRef.current.push(group);
       updateChain({ points: [...chainNow.points, p], cursor: null });
     }
   };
@@ -556,13 +624,7 @@ export default function SimCanvas({
     if (e.metaKey || e.ctrlKey) {
       const nh = hitTestNodes(scene, p, tol);
       const oh = nh ? null : hitTestObjects(scene, p, tol);
-      const cur = selection;
-      const objectIds = new Set(
-        cur?.type === 'multi' ? cur.objectIds : cur?.type === 'object' ? [cur.id] : [],
-      );
-      const speakerIds = new Set(
-        cur?.type === 'multi' ? cur.speakerIds : cur?.type === 'speaker' ? [cur.id] : [],
-      );
+      const { objectIds, speakerIds } = selectionSets(selection);
       if (nh?.type === 'speaker') {
         speakerIds.has(nh.id) ? speakerIds.delete(nh.id) : speakerIds.add(nh.id);
       } else if (oh?.type === 'object') {
@@ -570,16 +632,7 @@ export default function SimCanvas({
       } else {
         return; // clicked empty space — keep the selection as is
       }
-      const total = objectIds.size + speakerIds.size;
-      onSelection(
-        total === 0
-          ? null
-          : total === 1 && speakerIds.size === 1
-            ? { type: 'speaker', id: [...speakerIds][0] }
-            : total === 1
-              ? { type: 'object', id: [...objectIds][0] }
-              : { type: 'multi', objectIds: [...objectIds], speakerIds: [...speakerIds] },
-      );
+      onSelection(resolveSelection(objectIds, speakerIds));
       return;
     }
 
@@ -677,22 +730,20 @@ export default function SimCanvas({
     }
     const drag = dragRef.current;
 
-    // Hovering a wall in select mode offers door/window insertion.
-    if (!drag && mode === 'select') {
+    // Select-mode hover: offer door/window insertion on a wall, and show a grab
+    // cursor over anything draggable. Only runs on a no-drag hover.
+    if (!drag && mode === 'select' && view) {
+      const cursorS = { x: native.offsetX, y: native.offsetY };
       const hp = s2w(native);
-      let found: { id: string; at: Vec2 } | null = null;
-      let bestD = 0.22;
-      for (const o of sceneRef.current.objects) {
-        if (o.kind !== 'wall') continue;
-        const d = distPointSegment(hp, o.a, o.b);
-        if (d < bestD) {
-          bestD = d;
-          found = { id: o.id, at: closestPointOnSegment(hp, o.a, o.b).point };
-        }
-      }
-      setWallHover((prev) =>
-        prev && found && prev.id === found.id && v.dist(prev.at, found.at) < 0.04 ? prev : found,
-      );
+      // Latch the anchor once shown so the chip stays put and stays reachable —
+      // otherwise its anchor chases the cursor along the wall (a screen-vertical
+      // wall's chip would retreat 10 px ahead forever).
+      setWallHover((prev) => {
+        if (prev && v.dist(worldToScreen(prev.at, view), cursorS) <= WALL_HOVER_HOLD_PX) return prev;
+        return wallHoverAt(sceneRef.current.objects, hp, WALL_HOVER_APPEAR_PX / view.scale);
+      });
+      const grab = isDraggableAt(sceneRef.current, hp, 10 / view.scale);
+      setHoverGrab((prev) => (prev === grab ? prev : grab));
     } else if (wallHover) {
       setWallHover(null);
     }
@@ -873,7 +924,8 @@ export default function SimCanvas({
     if (pointersRef.current.has(e.pointerId)) {
       pointersRef.current.set(e.pointerId, { x: native.offsetX, y: native.offsetY });
     }
-    if (!dragRef.current && !pinchRef.current && mode !== 'wall') return;
+    // Select-mode hovers must flow through too (wall chips + grab cursor).
+    if (!dragRef.current && !pinchRef.current && mode !== 'wall' && mode !== 'select') return;
     pendingRef.current = native;
     if (rafRef.current) return;
     rafRef.current = requestAnimationFrame(() => {
@@ -904,56 +956,24 @@ export default function SimCanvas({
 
     dragRef.current = null;
     onDragging(false);
+    setGrabbing(false);
 
     if (drag.kind === 'band') {
       const pts = bandRef.current;
       setBandBoth(null);
-      const vw = view;
-      if (!pts || pts.length < 2 || !vw) return;
-      const inBand = (world: Vec2): boolean => {
-        const s = worldToScreen(world, vw);
-        if (drag.shape === 'marquee') {
-          const [a, b] = [pts[0], pts[pts.length - 1]];
-          return (
-            s.x >= Math.min(a.x, b.x) &&
-            s.x <= Math.max(a.x, b.x) &&
-            s.y >= Math.min(a.y, b.y) &&
-            s.y <= Math.max(a.y, b.y)
-          );
-        }
-        return pts.length >= 3 && pointInPolygon(s, pts);
-      };
-      const cur = sceneRef.current;
-      const objectIds = new Set(
-        drag.additive && selection?.type === 'multi'
-          ? selection.objectIds
-          : drag.additive && selection?.type === 'object'
-            ? [selection.id]
-            : [],
-      );
-      const speakerIds = new Set(
-        drag.additive && selection?.type === 'multi'
-          ? selection.speakerIds
-          : drag.additive && selection?.type === 'speaker'
-            ? [selection.id]
-            : [],
-      );
-      for (const o of cur.objects) {
-        const c = o.kind === 'wall' ? v.lerp(o.a, o.b, 0.5) : o.center;
-        if (inBand(c)) objectIds.add(o.id);
-      }
-      for (const s of cur.speakers) {
-        if (inBand(s.pos)) speakerIds.add(s.id);
-      }
-      const total = objectIds.size + speakerIds.size;
+      if (!view) return;
+      // A click-length band (no real drag) deselects — parity with an empty
+      // select-click — unless additive, which preserves the current selection.
       onSelection(
-        total === 0
-          ? null
-          : total === 1 && speakerIds.size === 1
-            ? { type: 'speaker', id: [...speakerIds][0] }
-            : total === 1
-              ? { type: 'object', id: [...objectIds][0] }
-              : { type: 'multi', objectIds: [...objectIds], speakerIds: [...speakerIds] },
+        selectionFromBand({
+          objects: sceneRef.current.objects,
+          speakers: sceneRef.current.speakers,
+          band: pts ?? [],
+          shape: drag.shape,
+          project: (w) => worldToScreen(w, view),
+          additive: drag.additive,
+          base: selection,
+        }),
       );
       return;
     }
@@ -1005,26 +1025,13 @@ export default function SimCanvas({
     if (!wallHover) return;
     const w = sceneRef.current.objects.find((o) => o.id === wallHover.id);
     if (!w || w.kind !== 'wall') return;
-    const dir = v.norm(v.sub(w.b, w.a));
-    const obj: SceneObject = {
-      id: createId('rect'),
-      kind: 'rect',
-      center: wallHover.at,
-      w: role === 'door' ? 0.9 : 1.2,
-      h: role === 'door' ? 0.1 : 0.12,
-      rotation: Math.atan2(dir.y, dir.x),
-      absorption: role === 'door' ? 0.25 : 0.04,
-      label: role === 'door' ? 'Door' : 'Window',
-      role,
-      height: role === 'door' ? 2.05 : 2.2,
-      doorOpen: role === 'door' ? true : undefined,
-    };
+    const obj = makeOpening(w, wallHover.at, role, createId('rect'));
     onScene({ ...sceneRef.current, objects: [...sceneRef.current.objects, obj] });
     onSelection({ type: 'object', id: obj.id });
     setWallHover(null);
   };
 
-  const cursor = mode === 'select' ? 'default' : 'crosshair';
+  const cursor = hoverCursor(mode, { hoverGrab, dragging: grabbing });
   const rotDeg = view ? Math.round((((view.rot * 180) / Math.PI + 180) % 360 + 360) % 360) - 180 : 0;
 
   return (

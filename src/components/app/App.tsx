@@ -886,9 +886,13 @@ function AppInner({ initialStore, persistMode }: AppInnerProps) {
 
   // --- keyboard --------------------------------------------------------------------
 
+  // One definition of "a blocking overlay is open", shared by this handler and
+  // SimCanvas's key gate. Includes the full-screen gallery + compare (which sit
+  // OVER the still-mounted canvas), so their open state can't leak keys through.
+  const overlayOpen = dialog !== null || optimizeOpen || arrangeOpen || compare !== null || galleryOpen;
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const overlayOpen = dialog !== null || optimizeOpen || arrangeOpen || compare !== null;
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) {
         // Let Escape close an overlay even while typing in one of its fields.
@@ -1024,7 +1028,7 @@ function AppInner({ initialStore, persistMode }: AppInnerProps) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selection, optimizeOpen, arrangeOpen, dialog, wallProposal, compare, mode, applyTool, scene.objects, scene.speakers, scene.pairs]);
+  }, [selection, optimizeOpen, arrangeOpen, dialog, wallProposal, compare, galleryOpen, mode, applyTool, scene.objects, scene.speakers, scene.pairs]);
 
   // --- import / export -----------------------------------------------------------------
 
@@ -1172,6 +1176,7 @@ function AppInner({ initialStore, persistMode }: AppInnerProps) {
             furnitureProposal={wallProposal ?? furnitureProposal?.objects ?? null}
             bestSpot={bestSpot}
             resetViewToken={resetViewToken}
+            overlayOpen={overlayOpen}
             onScene={setScene}
             onSelection={setSelection}
             onDragging={setDragging}
