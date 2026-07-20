@@ -454,9 +454,13 @@ check clean on the chrome; contrast test passes; build + tests green.
 ---
 
 ## Session 8 — Design polish + onboarding + hardening + README
-**Status:** ☐ **Depends on:** S2 (so onboarding covers compare) **Independent otherwise**
+**Status:** ☐ **SUPERSEDED in part** — its **design + onboarding items are absorbed/expanded by the UI/UX overhaul
+(Sessions 13–16, `docs/ui-ux-overhaul-plan.md`)**. What remains of S8 is **security hardening (CSP + headers + import
+size cap) + the README rewrite** (do the README AFTER the overhaul lands so screenshots match). **Depends on:** the
+overhaul (for README) **Independent otherwise**.
 
-**Goal.** Make it feel like one finished premium instrument, and teach a first-timer.
+**Goal.** Make it feel like one finished premium instrument, and teach a first-timer. *(The look-and-feel/onboarding
+half now lives in the overhaul; keep only hardening + README here.)*
 
 **In scope**
 - **Split-theme fix:** light chrome ladder keyed off the plan/sound switch (or keep canvas dark in
@@ -636,6 +640,69 @@ screenshots stay local/gitignored (the demo apartment's floorplan is the owner's
 > floorplan is the owner's real home), run `npm test` + `npm run build`, update the checklist, and write the next
 > handoff.
 
+---
+
+## Sessions 13–16 — UI/UX & layout overhaul ("Anechoic Console") — see docs/ui-ux-overhaul-plan.md
+**Status:** ☐ **Depends on:** S5 (decomposed, tested App/hooks makes this safe) **Presentation-layer only**
+> **Scheduled 2026-07-19** at the owner's request ("rethink the UI/UX and layout of everything"). A 6-agent design
+> workflow (4 redesign directions + rubric judge + independent UX/IA-flow audit) + a live walkthrough produced the
+> full plan in **`docs/ui-ux-overhaul-plan.md`** — read it first. Direction: **"Anechoic Console"** — one unified dark,
+> acoustically-treated room where the glowing canvas is the only light source and **THE LOCK** (the phantom center
+> locking at your seat) is the hero moment. Evolution of the existing dark studio-console DNA (the additive ray-glow
+> is load-bearing on near-black — the dark canvas cannot be reversed). **No engine/persistence/data-model changes.**
+> **Two decisions to confirm before UX-1** (see the plan §8): (a) aesthetic sign-off on "Anechoic Console";
+> (b) the IA model — collapse the 4 steps into **DESIGN/TUNE** modes (recommended: merges Sound+Analyze so the verdict
+> is live while placing) vs keep the 4-step fader and only re-rank. Run **in order** (shared CSS/components).
+
+**Session 13 = UX-1 — Design foundations (tokens · type · theme unification · motion).** Deepen the palette ladder +
+add `--surface-4`; self-host Space Grotesk / Geist Sans / Geist Mono (woff2 subsets, preload ≤2 weights) + widen the
+scale to 11→44px + floor prose ≥13px + hardcode `Geist Mono` in `render.ts` gated on `document.fonts.load()`;
+color-role discipline + a `--signal` gradient; **recolor `THEMES.plan` cream→dark cyanotype + collapse the
+`.stage-plan` light fork** (the #1 split-personality fix); delete `capBreathe`/`nodePulse`; rename the alpha tokens.
+*Acceptance:* one coherent dark room in every step, no black↔white theme flash, fonts self-hosted with no canvas-number
+reflow, perf budget held; gate green; both-theme screenshots of all 4 steps.
+
+**Session 14 = UX-2 — Shell & IA (modes · header scope · canvas hero framing · responsive/mobile).** DESIGN/TUNE (or
+the confirmed IA); theme owned by mode; tools stop teleporting the step/theme; scope TV/Music + Suggest + Compare to
+TUNE + de-dup the toggle; **fix the mobile toolbar** (bottom rail, un-float) + pin the switcher + on-selection touch
+handles for rotate/delete/nudge + drop keyboard hints on touch.
+*Acceptance:* a tool never changes mode/theme; header shows only context-appropriate actions; ≤960px toolbar never
+overlaps the canvas + switcher always reachable + touch edit works; behavior otherwise identical; gate green.
+
+**Session 15 = UX-3 — The readout & THE LOCK (verdict hero · compare-first-class · lock moment · data-viz).** Extract
+the verdict into the pinned `--surface-4` hero at `--text-hero`, name the active seat ("At: Couch"), reuse it in
+`ScenarioCompare`; ship THE LOCK ignition (reduced-motion safe); spec-sheet metrics; Compare always present + teaches
+its unlock; Echogram/meters as first-class data-viz.
+*Acceptance:* the verdict leads TUNE and never scrolls away; THE LOCK fires on the locked transition (degrades under
+reduced-motion); Compare always reachable + self-teaching; gate green; unlocked→LOCKED + 2-up compare screenshots.
+
+**Session 16 = UX-4 — Learnability, empty states & shareable output (micro-UX).** `<Term>` tap-to-learn jargon layer +
+glossary + on-canvas legend; first-run explainer + seed the demo with a placed pair (a live verdict on boot);
+editorial empty states; "Pair these two" in Speakers; "Replace with N speakers" warning + uniform undo toasts on every
+apply; rename Room-shell vs Zone/Area + let the optimizer target walled regions; separate "Import photo" vs "Import
+JSON"; **"Export plan as image" + "Copy verdict"** shareable output.
+*Acceptance:* no load-bearing meaning hidden in a hover tooltip; a first-timer is oriented + sees a live verdict; every
+apply reversible with a toast; a plan image + verdict sentence is shareable; gate green; first-run walkthrough sequence.
+
+**Reconciliation:** these absorb/expand Session 8's design + onboarding items — **S8 shrinks to security hardening
+(CSP + headers + import size cap) + the README rewrite** (README waits until the overhaul lands so screenshots match).
+Session 7 (a11y) overlaps UX-2/UX-3 (touch parity, focus, reduced-motion) — prefer running S7 **after** UX-2/UX-3 so it
+audits the redesigned surface. Suggested order: **UX-1 → UX-2 → UX-3 → UX-4 → S7 → S8-remainder.**
+
+**KICKOFF PROMPT (UX-1, the first)** — *run under the Standing Operating Protocol at the top of this file (also in CLAUDE.md, auto-loaded): multi-agent orchestration, adversarial verification of every serious finding, full implementation (no shortcuts/stubs), test everything (unit + live browser, BOTH now-dark themes + the ≤960 px layout), a self-review agent pass, the full verification gate, clean-up, and honest reporting. Token/time budget is unlimited — optimize for perfection, not speed.*
+> Read `docs/ui-ux-overhaul-plan.md` (the whole plan) and `docs/ultrareview.md` §3.8 in the Phantom Lock repo, confirm
+> the two decisions in the plan §8 with the owner if not already confirmed, then execute **UX-1 (Session 13)**: the
+> design-foundations pass — deepen the `tokens.css` surface ladder + add `--surface-4`; self-host Space Grotesk / Geist
+> Sans / Geist Mono (woff2 subsets, preload ≤2 weights, zero runtime deps) and widen the type scale to 11→44px with a
+> `--text-hero`, flooring prose at ≥13px; hardcode `Geist Mono` in `render.ts` gated on `document.fonts.load()` so canvas
+> numerics don't reflow; impose color-role discipline (cyan/amber = L/R channel identity only, green/amber/red = status
+> only) + add the `--signal` cyan→green gradient; **recolor `render.ts` `THEMES.plan` from cream to a dark cyanotype
+> blueprint and collapse the `.stage`/`.stage-plan` light-overlay fork in `panels.css` into one dark-glass recipe**;
+> delete the `capBreathe`/`nodePulse` perpetual loops; rename the mislabelled alpha tokens. Presentation-layer only — do
+> NOT touch `src/engine`, persistence, or the scene data model. Verify `npm run lint` + `npm test` + `npm run build`,
+> live-check all four steps in the unified dark theme + the ≤960 px layout with saved screenshots, self-review the diff,
+> update `CLAUDE.md` + this checklist, and write the UX-2 handoff.
+
 ## Backlog (noticed, not yet scheduled — add to a session as it fits)
 - **Auto-detect walls accuracy** — now scheduled as **Session 12** (duplicated/diagonal tangle on real floorplans);
   see its block above. Surfaced by first-time-user clickthrough.
@@ -690,3 +757,9 @@ screenshots stay local/gitignored (the demo apartment's floorplan is the owner's
   ("1500 Bay Rd" — their real home; source/default stays the scrubbed "Maple Court", and no `1500 Bay` string is in
   `src/`/`docs/`). All S5 write-tests ran on a duplicate; the real layout was backed up and verified byte-identical
   afterward. Keep testing on duplicates, never the real active layout.
+- **2026-07-19 — UI/UX overhaul planned (owner request "rethink the UI/UX and layout of everything"):** ran a 6-agent
+  design workflow (4 complete redesign directions + a rubric judge + an independent UX/IA-flow audit) + a live
+  walkthrough → wrote **`docs/ui-ux-overhaul-plan.md`** and scheduled it as **Sessions 13–16 (UX-1…UX-4)**. Direction:
+  **"Anechoic Console"** — one unified dark room, the glowing canvas as the only light source, THE LOCK as the hero.
+  Presentation-layer only. Absorbs Session 8's design + onboarding items (S8 shrinks to hardening + README). Two
+  decisions to confirm before UX-1 (aesthetic sign-off + the DESIGN/TUNE IA model — plan §8).
