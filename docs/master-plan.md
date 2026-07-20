@@ -650,9 +650,10 @@ screenshots stay local/gitignored (the demo apartment's floorplan is the owner's
 > acoustically-treated room where the glowing canvas is the only light source and **THE LOCK** (the phantom center
 > locking at your seat) is the hero moment. Evolution of the existing dark studio-console DNA (the additive ray-glow
 > is load-bearing on near-black — the dark canvas cannot be reversed). **No engine/persistence/data-model changes.**
-> **Two decisions to confirm before UX-1** (see the plan §8): (a) aesthetic sign-off on "Anechoic Console";
-> (b) the IA model — collapse the 4 steps into **DESIGN/TUNE** modes (recommended: merges Sound+Analyze so the verdict
-> is live while placing) vs keep the 4-step fader and only re-rank. Run **in order** (shared CSS/components).
+> **Decisions CONFIRMED 2026-07-19** (plan §8): (a) aesthetic = **"Anechoic Console"** ✅; (b) IA = **DESIGN/TUNE
+> modes** ✅ — DESIGN keeps Build+Furnish as sub-steps (dark cyanotype plan canvas), TUNE merges the old Sound+Analyze
+> into one place-and-read loop (dark sound canvas) so the verdict is live while placing, and the mode owns the theme.
+> Run **in order** (shared CSS/components).
 
 **Session 13 = UX-1 — Design foundations (tokens · type · theme unification · motion).** Deepen the palette ladder +
 add `--surface-4`; self-host Space Grotesk / Geist Sans / Geist Mono (woff2 subsets, preload ≤2 weights) + widen the
@@ -761,5 +762,6 @@ audits the redesigned surface. Suggested order: **UX-1 → UX-2 → UX-3 → UX-
   design workflow (4 complete redesign directions + a rubric judge + an independent UX/IA-flow audit) + a live
   walkthrough → wrote **`docs/ui-ux-overhaul-plan.md`** and scheduled it as **Sessions 13–16 (UX-1…UX-4)**. Direction:
   **"Anechoic Console"** — one unified dark room, the glowing canvas as the only light source, THE LOCK as the hero.
-  Presentation-layer only. Absorbs Session 8's design + onboarding items (S8 shrinks to hardening + README). Two
-  decisions to confirm before UX-1 (aesthetic sign-off + the DESIGN/TUNE IA model — plan §8).
+  Presentation-layer only. Absorbs Session 8's design + onboarding items (S8 shrinks to hardening + README). Both
+  gating decisions **CONFIRMED by the owner** the same day: aesthetic = Anechoic Console; IA = DESIGN/TUNE modes
+  (DESIGN keeps Build+Furnish sub-steps, TUNE merges Sound+Analyze, mode owns the theme). See plan §8.

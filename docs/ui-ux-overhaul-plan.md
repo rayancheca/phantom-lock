@@ -239,13 +239,20 @@ creation. Session 7's systematic audit then validates the whole surface.
 
 ---
 
-## 8. The two decisions to confirm before UX-1 starts
-1. **Aesthetic sign-off:** "Anechoic Console" (deepened dark mastering-suite) — recommended, and
-   consistent with the app you already built. (Alternatives in §9 if you want a different feel.)
-2. **IA model:** collapse the 4 steps into **DESIGN / TUNE** modes (recommended — merges Sound+Analyze
-   so the verdict is live while you place), **or** keep the 4-step fader and only re-rank the sidebar +
-   scope the header. This is the highest-behavioral-change call; everything else is compatible with
-   either.
+## 8. Decisions — CONFIRMED (owner, 2026-07-19)
+1. **Aesthetic: "Anechoic Console"** ✅ (deepened dark mastering-suite) — confirmed by the owner.
+   Consistent with the app they already built. UX-1 does not re-litigate this.
+2. **IA model: DESIGN / TUNE modes** ✅ — the owner delegated this call ("whichever you believe to be
+   best"); the settled decision is the **two-mode** model:
+   - **DESIGN** (dark cyanotype plan canvas) keeps **Build** and **Furnish** as sub-steps — they're
+     genuinely different tasks (walls vs furniture), so that structure is preserved.
+   - **TUNE** (dark sound canvas) **merges the old Sound + Analyze** into one place-and-read loop so the
+     verdict is live *while* you position speakers and drag YOU.
+   - **The mode owns the canvas theme** (one controller — kills the tool-teleports-and-flips-theme bug);
+     tools never change the mode; digit shortcuts bind only to the current mode's tools; TV/Music +
+     Suggest + Compare live in TUNE.
+   The owner can still redirect at UX-2 kickoff, but UX-1's foundations are compatible with either IA,
+   so UX-1 is unblocked regardless.
 
 ---
 
