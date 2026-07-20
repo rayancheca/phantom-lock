@@ -1,0 +1,62 @@
+/* Self-hosted, zero-dependency font faces for the Anechoic Console (UX-1).
+   Three roles: Space Grotesk = display, Geist Sans = UI/body, Geist Mono = data.
+   Family names below are app-chosen aliases and MUST match the --font-* tokens
+   in tokens.css. font-display:swap → text paints immediately in the fallback,
+   then swaps when the woff2 arrives (canvas repaint is handled by font-ready.ts).
+   Files are Latin-subset woff2 in public/fonts/ (served at /fonts/…). OFL —
+   see public/fonts/LICENSE.md. */
+
+/* ---- Display: Space Grotesk (wordmark, headings, hero) --------------------- */
+@font-face {
+  font-family: 'Space Grotesk';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/fonts/space-grotesk-500.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Space Grotesk';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/space-grotesk-700.woff2') format('woff2');
+}
+
+/* ---- UI / body: Geist Sans (400 body · 500 emphasis · 600 labels) ---------- */
+@font-face {
+  font-family: 'Geist Sans';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/geist-sans-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Geist Sans';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/fonts/geist-sans-500.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Geist Sans';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/geist-sans-600.woff2') format('woff2');
+}
+
+/* ---- Data: Geist Mono (numbers, pills, kbd, canvas — 400 body · 500 md) ---- */
+@font-face {
+  font-family: 'Geist Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/geist-mono-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Geist Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/fonts/geist-mono-500.woff2') format('woff2');
+}

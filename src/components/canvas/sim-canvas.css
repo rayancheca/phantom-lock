@@ -13,8 +13,8 @@
   display: block;
 }
 
-/* Inherits the overlay palette from .stage / .stage-plan so it matches both
-   the dark sound view and the light blueprint. */
+/* Inherits the single dark-glass overlay palette from .stage — shared by both
+   the sound view and the dark cyanotype plan view. */
 .compass {
   position: absolute;
   right: 12px;

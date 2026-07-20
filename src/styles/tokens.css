@@ -1,47 +1,73 @@
 :root {
-  /* A dark "studio console" surface is deliberate: the additive ray glow is
+  /* ─────────────────────────────────────────────────────────────────────
+     ANECHOIC CONSOLE — UX-1 foundation tokens.
+     A dark "studio console" surface is deliberate: the additive ray glow is
      the product, and it only reads on a near-black canvas. Hierarchy comes
-     from a luminance ladder (surface-0 → surface-3), not from borders. */
-  --surface-0: #05070c;
-  --surface-1: #0b101b;
-  --surface-2: #121a29;
-  --surface-3: #1b2438;
+     from a luminance ladder (surface-0 → surface-4), not from borders.
+     ───────────────────────────────────────────────────────────────────── */
+
+  /* Elevation ladder — 5 rungs. surface-4 is a FOUNDATION rung for the UX-3
+     verdict hero + fader carriage; it has no UX-1 consumer yet. A named rung
+     on the ladder is a system primitive (declarative, behaviour-free CSS),
+     not a stub — it completes the 0→4 luminance ladder coherently. */
+  --surface-0: #070910;
+  --surface-1: #0d1119;
+  --surface-2: #141a26;
+  --surface-3: #1e2636;
+  --surface-4: #28324a;
   --surface-hover: rgba(148, 163, 184, 0.07);
+
+  /* The surface-0 base rendered as a top-lit vignette (not a flat fill).
+     Consumed by the app-shell root (global.css body) + the stage frame; it
+     NEVER paints over the opaque render.ts canvas (canvas is a child drawn on
+     top — a background on the host composites below it). */
+  --app-backdrop: radial-gradient(120% 100% at 50% 0%, #0c1120, #060810);
 
   /* Hairlines are reserved for inputs and focus — panels rely on elevation. */
   --border: rgba(148, 163, 184, 0.12);
   --border-strong: rgba(148, 163, 184, 0.28);
 
-  /* Three emphasis tiers instead of one "muted". text-3 stays ≥4.5:1 on the
-     surface ladder — it labels real information (headings, dims, tags). */
-  --text: #eef2fa;
-  --text-2: #9aa5bb;
-  --text-3: #7583a0;
+  /* Three emphasis tiers instead of one "muted". text-3 is the dimmest label
+     tier and is now RESERVED for text ≥12px (≥5.3:1 on surfaces 0–3; it drops
+     to ~4.4:1 on surface-4, so never use it as a <12px label colour on -4). */
+  --text: #f2f5fc;
+  --text-2: #a6b1c8;
+  --text-3: #8592ad;
 
-  /* Cyan/amber are the stereo channel identities (L/R) and double as the
-     app accent; green/amber/red are strictly acoustic status semantics. */
+  /* Cyan/amber are the stereo channel identities (L/R) and double as the app
+     accent; green/amber/red are strictly acoustic status semantics.
+     --signal is the L→R quality sweep (accent→ok), for meters/faders ONLY. */
   --accent: #4fd8ff;
-  --accent-r: #ffa04f;
+  --accent-r: #ffa95a;
   --ok: #3ee08a;
   --warn: #f5c04e;
   --bad: #ff6b6b;
+  --signal: linear-gradient(90deg, var(--accent), var(--ok));
 
   --accent-06: rgba(79, 216, 255, 0.06);
   --accent-12: rgba(79, 216, 255, 0.12);
   --accent-20: rgba(79, 216, 255, 0.2);
-  --ok-10: rgba(62, 224, 138, 0.12);
-  --warn-10: rgba(245, 192, 78, 0.12);
-  --bad-10: rgba(255, 107, 107, 0.12);
+  --ok-12: rgba(62, 224, 138, 0.12);
+  --warn-12: rgba(245, 192, 78, 0.12);
+  --bad-12: rgba(255, 107, 107, 0.12);
 
-  --font-ui: 'Avenir Next', -apple-system, 'Segoe UI', ui-sans-serif, system-ui, sans-serif;
-  --font-mono: ui-monospace, 'SF Mono', Menlo, 'Cascadia Code', monospace;
+  /* Self-hosted, zero-dep faces (see src/styles/fonts.css). Three roles:
+     display (Space Grotesk 500/700), body/UI (Geist Sans 400/500/600),
+     data/mono (Geist Mono 400/500 — the same family the canvas FONT uses). */
+  --font-ui: 'Geist Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Space Grotesk', 'Geist Sans', -apple-system, ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, 'SF Mono', Menlo, 'Cascadia Code', monospace;
 
-  --text-xs: 0.7rem;
-  --text-sm: 0.8rem;
-  --text-base: 0.875rem;
-  --text-lg: 1rem;
-  --text-xl: 1.2rem;
-  --text-display: 1.45rem;
+  /* Type scale in exact px (was rem — rounding no longer fuzzes the targets).
+     --text-xs (11px) is mono eyebrows / pills / kbd ONLY; prose floor = 13px.
+     --text-2xl + --text-hero are foundation steps for UX-3 (no UX-1 consumer). */
+  --text-xs: 11px;
+  --text-sm: 13px;
+  --text-base: 14px;
+  --text-lg: 17px;
+  --text-xl: 22px;
+  --text-2xl: 30px;
+  --text-hero: clamp(2rem, 1.2rem + 2.6vw, 2.75rem);
 
   --radius-sm: 7px;
   --radius: 10px;
@@ -65,7 +91,8 @@
   --shadow-2: 0 6px 24px rgba(0, 0, 0, 0.45);
   --shadow-3: 0 16px 48px rgba(0, 0, 0, 0.55);
 
-  /* Back-compat aliases (canvas + legacy rules). */
+  /* Back-compat aliases (canvas + legacy rules). --bg keeps working; body
+     moves to --app-backdrop so --bg is now unreferenced but harmless. */
   --bg: var(--surface-0);
   --surface: var(--surface-1);
   --muted: var(--text-2);

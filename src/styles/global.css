@@ -1,3 +1,4 @@
+@import './fonts.css';
 @import './tokens.css';
 
 *,
@@ -14,7 +15,7 @@ body,
 }
 
 body {
-  background: var(--bg);
+  background: var(--app-backdrop);
   color: var(--text);
   font-family: var(--font-ui);
   font-size: var(--text-base);

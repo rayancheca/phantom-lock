@@ -135,7 +135,7 @@
 }
 
 .room-chip button:hover {
-  background: var(--bad-10);
+  background: var(--bad-12);
   color: var(--bad);
 }
 
@@ -273,7 +273,7 @@
 .quality-fill {
   height: 100%;
   border-radius: 2px;
-  background: linear-gradient(90deg, var(--accent), var(--ok));
+  background: var(--signal);
   transition: width var(--dur-2) var(--ease-out);
 }
 
@@ -283,7 +283,7 @@
   gap: 6px;
   margin: var(--space-2) 0 0;
   color: var(--bad);
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
   line-height: 1.45;
 }
 
@@ -527,7 +527,7 @@
 
 .seat-remove:hover:not(:disabled) {
   color: var(--bad);
-  background: var(--bad-10);
+  background: var(--bad-12);
 }
 
 .seat-remove:disabled {
@@ -651,7 +651,7 @@
   margin: var(--space-3) 0 0;
   padding-left: 1.1rem;
   color: var(--text-2);
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
   line-height: 1.6;
 }
 
@@ -662,9 +662,9 @@
   margin: var(--space-3) 0 0;
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-sm);
-  background: var(--warn-10);
+  background: var(--warn-12);
   color: var(--warn);
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
   line-height: 1.5;
 }
 
@@ -806,7 +806,7 @@
 }
 
 .palette-dims {
-  font-size: 0.65rem;
+  font-size: var(--text-xs);
   color: var(--text-3);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -814,20 +814,15 @@
 
 /* --- tool strip (labeled, floats top-left of canvas) --------------------- */
 
+/* One dark-glass overlay recipe for BOTH canvas themes. Since the plan view is
+   now a dark cyanotype (not cream), .stage-plan inherits these vars — the
+   sound↔plan toggle is a gentle hue shift, not a black↔white overlay flash. */
 .stage {
   --overlay-bg: rgba(11, 16, 27, 0.88);
   --overlay-text: var(--text-2);
   --overlay-text-strong: var(--text);
   --overlay-border: var(--border);
   --overlay-warn: var(--warn);
-}
-
-.stage-plan {
-  --overlay-bg: rgba(250, 249, 244, 0.92);
-  --overlay-text: #5a6272;
-  --overlay-text-strong: #1f2635;
-  --overlay-border: rgba(31, 38, 53, 0.14);
-  --overlay-warn: #92610a;
 }
 
 .toolstrip {
@@ -890,11 +885,6 @@
 .strip-active {
   background: var(--accent-12);
   color: var(--accent);
-}
-
-.stage-plan .strip-active {
-  background: rgba(37, 99, 235, 0.12);
-  color: #2563eb;
 }
 
 .strip-kbd {
@@ -967,7 +957,7 @@
   border-radius: inherit;
   transform-origin: left center;
   transform: scaleX(calc((var(--active) + 0.5) / var(--count)));
-  background: linear-gradient(90deg, var(--accent-20), var(--accent) 82%, var(--ok));
+  background: var(--signal);
   box-shadow: 0 0 8px var(--accent-20);
   transition: transform var(--dur-3) var(--ease-spring);
 }
@@ -1021,6 +1011,9 @@
     inset 0 0 8px var(--accent-06);
   transition: transform var(--dur-2) var(--ease-spring);
 }
+/* Static accent halo behind the active fader cap. Motion is event-driven only:
+   the only ambient motion in the app is the canvas rays (the header no longer
+   breathes/pulses on a loop). Lifts a touch on :hover — see below. */
 .fader-cap-ring::after {
   content: '';
   position: absolute;
@@ -1028,16 +1021,6 @@
   border-radius: 999px;
   box-shadow: 0 0 14px 1px var(--accent);
   opacity: 0.16;
-  animation: capBreathe 2.8s var(--ease-out) infinite;
-}
-@keyframes capBreathe {
-  0%,
-  100% {
-    opacity: 0.1;
-  }
-  50% {
-    opacity: 0.34;
-  }
 }
 .steps-bar:hover .fader-cap-ring {
   transform: translateY(-50%) scale(1.08);
@@ -1108,24 +1091,15 @@
 .step[data-active] .step-label {
   color: var(--text);
 }
+/* Static accent ring marking the active step (was a perpetual nodePulse loop —
+   removed; the header carries no ambient motion now). */
 .step[data-active] .step-node::after {
   content: '';
   position: absolute;
   inset: -5px;
   border-radius: 999px;
   box-shadow: 0 0 0 1px var(--accent-20);
-  animation: nodePulse 2.4s var(--ease-out) infinite;
-}
-@keyframes nodePulse {
-  0%,
-  100% {
-    opacity: 0.25;
-    transform: scale(0.88);
-  }
-  50% {
-    opacity: 0.8;
-    transform: scale(1.06);
-  }
+  opacity: 0.5;
 }
 
 /* Armed = heuristic satisfied => tiny amber LED (Right-channel identity). */
@@ -1168,11 +1142,8 @@
   .step-label {
     transition: none;
   }
-  .fader-cap-ring::after,
-  .step[data-active] .step-node::after {
-    animation: none;
-    opacity: 0.4;
-  }
+  /* The cap/node halos are static now (no more capBreathe/nodePulse loops), so
+     they need no reduced-motion override — their base opacity already holds. */
   .steps-bar:hover .fader-cap-ring {
     transform: translateY(-50%);
   }

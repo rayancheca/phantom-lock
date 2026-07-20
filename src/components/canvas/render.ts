@@ -69,7 +69,7 @@ export interface RenderState {
 /** Ray/node colour palette. */
 export const SPEAKER_COLORS = [
   '79, 216, 255',
-  '255, 160, 79',
+  '255, 169, 90',
   '196, 143, 255',
   '110, 231, 183',
   '255, 121, 198',
@@ -180,30 +180,37 @@ const THEMES: Record<CanvasTheme, ThemeColors> = {
     rays: true,
   },
   plan: {
-    // Graph-paper blueprint view for building the room (Floorplanner-style).
-    bg: '#f5f3ec',
-    grid: 'rgba(52, 64, 92, 0.12)',
-    gridMajor: 'rgba(52, 64, 92, 0.28)',
-    gridLabel: 'rgba(52, 64, 92, 0.6)',
-    wall: '#33415c',
-    wallFill: 'rgba(51, 65, 92, 0.10)',
-    tv: '#0e7490',
-    tvFill: 'rgba(14, 116, 144, 0.12)',
-    select: '#2563eb',
-    ink: '#1d2635',
-    muted: '#5a6478',
-    pillBg: 'rgba(255, 255, 255, 0.92)',
-    pillBorder: 'rgba(31, 38, 53, 0.16)',
-    listener: '29, 38, 53',
-    tri: 'rgba(29, 38, 53, 0.45)',
-    ok: '#15803d',
-    bad: '#dc2626',
+    // Dark cyanotype blueprint — the room-building view. A cyan-tinted graph-paper
+    // sibling of `sound`: same near-black studio surface, cooler/brighter structure,
+    // no ray field. sound↔plan is a gentle hue shift, not a black↔white flash.
+    bg: '#0a1220',
+    grid: 'rgba(79, 216, 255, 0.10)',
+    gridMajor: 'rgba(79, 216, 255, 0.22)',
+    gridLabel: 'rgba(143, 199, 224, 0.65)',
+    wall: '#8fc7e0',
+    wallFill: 'rgba(143, 199, 224, 0.08)',
+    tv: '#9be8ff',
+    tvFill: 'rgba(79, 216, 255, 0.10)',
+    select: '#4fd8ff',
+    ink: 'rgba(219, 236, 246, 0.85)',
+    muted: 'rgba(143, 199, 224, 0.7)',
+    pillBg: 'rgba(10, 18, 32, 0.85)',
+    pillBorder: 'rgba(79, 216, 255, 0.22)',
+    listener: '219, 236, 246',
+    tri: 'rgba(219, 236, 246, 0.5)',
+    ok: '#3ee08a',
+    bad: '#ff6b6b',
     rays: false,
   },
 };
 
-const FONT = '11px ui-monospace, "SF Mono", Menlo, monospace';
-const FONT_MD = '600 12px ui-monospace, "SF Mono", Menlo, monospace';
+// Geist Mono leads the stack so canvas numbers share the UI's data identity;
+// ui-monospace fallback still renders the few glyphs Geist Mono lacks (★ ∠ ⌀).
+// Only 400 (FONT) + 500 (FONT_MD) are vendored — never 600/bold — so the browser
+// never faux-synthesises a heavier weight. A repaint fires when the face loads
+// (font-ready.ts) so pill widths don't reflow off fallback metrics.
+const FONT = '11px "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace';
+const FONT_MD = '500 12px "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace';
 
 export function fitView(width: number, height: number, bounds: { min: Vec2; max: Vec2 }): View {
   const bw = Math.max(1, bounds.max.x - bounds.min.x);
@@ -787,7 +794,7 @@ function drawNode(
   ctx.beginPath();
   ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
   ctx.stroke();
-  ctx.font = `bold ${FONT}`;
+  ctx.font = `500 ${FONT}`;
   ctx.fillStyle = filled ? T.bg : `rgba(${rgb}, 1)`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -905,7 +912,7 @@ function drawProposal(ctx: CanvasRenderingContext2D, st: RenderState, T: ThemeCo
     ctx.beginPath();
     ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
     ctx.stroke();
-    ctx.font = `bold ${FONT}`;
+    ctx.font = `500 ${FONT}`;
     ctx.fillStyle = T.ok;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -936,9 +943,11 @@ function drawRoomLabels(ctx: CanvasRenderingContext2D, st: RenderState, T: Theme
       ctx.lineTo(c2.x, c2.y);
       ctx.lineTo(c3.x, c3.y);
       ctx.closePath();
-      ctx.fillStyle = st.theme === 'plan' ? 'rgba(37, 99, 235, 0.05)' : 'rgba(79, 216, 255, 0.04)';
+      // Both themes are dark cyanotype now — one cyan zone tint (was a royal-blue
+      // fork for the old cream plan, which would read foreign on the dark plan).
+      ctx.fillStyle = 'rgba(79, 216, 255, 0.04)';
       ctx.fill();
-      ctx.strokeStyle = st.theme === 'plan' ? 'rgba(37, 99, 235, 0.25)' : 'rgba(79, 216, 255, 0.18)';
+      ctx.strokeStyle = 'rgba(79, 216, 255, 0.18)';
       ctx.setLineDash([6, 6]);
       ctx.lineWidth = 1;
       ctx.stroke();

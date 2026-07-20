@@ -31,15 +31,16 @@
 
 .brand h1 {
   margin: 0;
-  font-size: 0.82rem;
-  letter-spacing: 0.2em;
-  font-weight: 800;
+  font-family: var(--font-display);
+  font-size: 0.9rem;
+  letter-spacing: 0.08em;
+  font-weight: 700;
   white-space: nowrap;
 }
 
 .brand h1 span {
   color: var(--accent);
-  font-weight: 300;
+  font-weight: 500;
 }
 
 .room-trigger {
@@ -122,7 +123,7 @@
 }
 
 .btn-ok {
-  background: var(--ok-10);
+  background: var(--ok-12);
   color: var(--ok);
 }
 
@@ -142,7 +143,7 @@
 }
 
 .btn-danger:hover {
-  background: var(--bad-10);
+  background: var(--bad-12);
   color: var(--bad);
 }
 
@@ -207,6 +208,10 @@
   position: relative;
   min-width: 0;
   min-height: 0;
+  /* Top-lit vignette frame. In steady state the opaque render.ts canvas covers
+     this; it shows behind the canvas at first paint and in not-yet-canvas states,
+     matching the body backdrop so there is no seam. */
+  background: var(--app-backdrop);
 }
 
 .stage-starter {
@@ -256,7 +261,7 @@
 }
 
 .starter-btn small {
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
   color: var(--text-2);
   font-weight: 400;
 }
@@ -291,7 +296,7 @@
   backdrop-filter: blur(6px);
   border: 1px solid var(--overlay-border);
   color: var(--overlay-text);
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
   white-space: nowrap;
   max-width: calc(100% - 24px);
   overflow: hidden;

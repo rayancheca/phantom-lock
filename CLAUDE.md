@@ -38,7 +38,7 @@ Every session MUST:
    - *Automated:* keep the suite green and ADD tests for every new behavior (failing-test-first for every
      new pure-function behavior). Run `npm run test:coverage`; paste the coverage line for every file you
      touched (≥80%, or state the exact reason). **Test count is a ratchet — it must not decrease**
-     (95 at S1 → 126 at S2 → 140 at S3 → 181/182 at S4 → **239** at S5, all 2026-07-19) and no test may be newly skipped/only'd/
+     (95 at S1 → 126 at S2 → 140 at S3 → 181/182 at S4 → 239 at S5 → **245** at S13, all 2026-07-19) and no test may be newly skipped/only'd/
      weakened; state before/after counts.
    - *Migrations:* seed an OLD-shape store/record and assert it upgrades correctly on read — not just
      fresh-fixture writes.
@@ -70,9 +70,9 @@ say so.
 ## Commands
 
 - `npm run dev` — Vite (user usually has this running on :5173 already; autoPort will move yours)
-- `npm test` — vitest, **239 tests**, all green as of 2026-07-19 (S5 added +57: `history.test.ts` 14, `keyboard.test.ts` 38, `store.test.ts` 5 — all pure-logic, failing-first). Ratchet: never let the count drop.
+- `npm test` — vitest, **245 tests**, all green as of 2026-07-19 (S13 added +6: `font-ready.test.ts` — pure-logic, failing-first). Ratchet: never let the count drop (95→126→140→181→239→**245**).
 - `npm run lint` — **(S5)** flat ESLint (`eslint.config.js`): @eslint/js + typescript-eslint + eslint-plugin-react-hooks `recommended-latest`, scoped to `src`, ignoring `.claude`/`dist`/`coverage`. Clean (0 problems) as of 2026-07-19. exhaustive-deps is enforced; 5 documented survivor suppressions remain (SimCanvas:250/398 mount-once, Toast/Menu/LayoutGallery/ScenarioCompare mount-once) — see each file.
-- `npm run build` — tsc --noEmit + vite build (**~378 kB / 122.6 kB gzip** after S5 — the +3.5 kB gz is the decomposition wiring, expected). Run all four (lint/test/build) before claiming done.
+- `npm run build` — tsc --noEmit + vite build (**~379 kB / 122.7 kB gzip** JS + **35.8 kB / 7.0 kB gz** CSS after S13; JS essentially flat vs S5). Self-hosted fonts are static assets in `public/fonts/` (7 Latin-subset woff2 + `LICENSE.md`, ~148 kB total, 2 preloaded ≈36 kB — NOT in the JS/CSS bundle). Run all four (lint/test/build) before claiming done.
 
 **GitHub (as of 2026-07-19):** the repo is public at **github.com/rayancheca/phantom-lock** (`origin`, default
 branch `main`). The owner wants visible contribution activity, so **push `main` after every session lands the
@@ -107,7 +107,8 @@ was scrubbed to the placeholder **"Maple Court"** across all history — keep it
   - `app-constants.ts` (`MODE_HINT`/`PLAN_STEPS`/`TOOL_OWNER`/`initialStep`) + `app-types.ts` (`Deleted`/`DialogState`).
 - `components/canvas/SimCanvas.tsx` — all pointer/keyboard interaction: wall chains, marquee/lasso band select, ⌘-click toggle, group drag, speaker height auto-snap onto furniture (`surfaceHeightAt`), wall-hover door/window chips. **(S4)** takes an `overlayOpen` prop that gates the canvas R/Backspace keys; the wall-hover chip anchor is **identity-latched** (stays put on the same wall, switches to a neighbour, self-heals on delete/`onPointerLeave`); `chainWallsRef` is now `string[][]` (per-corner id groups); a `grab`/`grabbing` cursor; a matchMedia DPR-repaint effect; the view is frozen while a marquee/lasso band is dragged. Pure logic lives in `interaction.ts`.
 - `components/canvas/interaction.ts` — **(S4)** pure, DOM-free, node-tested helpers extracted OUT of SimCanvas: `wallHoverAt`/`makeOpening` (door/window chip), `popChainSegment` (Backspace chain-undo), `selectionSets`/`resolveSelection`/`itemsInBand`/`selectionFromBand` (marquee/lasso + ⌘-click selection algebra), `watchDevicePixelRatio` (DPR-change listener, injectable `win`), `isDraggableAt`/`hoverCursor` (grab affordance), `canvasKeyAction` (R/Backspace/Space gating). 98.9% covered.
-- `components/canvas/render.ts` — pure canvas renderer; `THEMES` ('sound' dark glow / 'plan' light blueprint); `labelPill` is the single annotation primitive
+- `components/canvas/render.ts` — pure canvas renderer; `THEMES` ('sound' dark glow / 'plan' **dark cyanotype** blueprint since S13); `labelPill` is the single annotation primitive. `FONT`/`FONT_MD` are Geist Mono (400/500), first paint gated on `document.fonts.load()` via `canvas/font-ready.ts`
+- `components/canvas/font-ready.ts` — **(S13)** `repaintOnFontLoad(onReady, specs?, fonts?)`: triggers `document.fonts.load()` then ONE `setRedrawTick` repaint so canvas Geist-Mono numbers don't reflow off fallback metrics (FOUT guard). Injectable fontset → node-testable (`__tests__/font-ready.test.ts`, 5 tests), no-ops when `document.fonts` absent
 - `components/gallery/LayoutGallery.tsx` — card gallery with live thumbnails (Roomba-style home); thumbnails now use the shared `canvas/thumb.ts` `drawMiniPlan` (also used by compare) and draw every seat
 - `components/panels/ListenerCard.tsx` — **seat manager** (Session 2): a `radiogroup` of listening spots (roving tabindex + arrow keys), switch/add/rename/remove, "Compare" entry. Shown in Sound + Analyze.
 - `components/compare/ScenarioCompare.tsx` — **2-up scenario compare** (Session 2): two `(layout, seat)` scenarios side by side, each a read-only `MetricsPanel` (`hideSuggest`) + mini preview; verdict aggregation uses the best pair's own lock state. Reachable from the header + gallery + ListenerCard.
@@ -116,10 +117,32 @@ was scrubbed to the placeholder **"Maple Court"** across all history — keep it
 
 ## Design system (do not regress)
 
-Elevation over borders (surface-0..3 ladder in `styles/tokens.css`), sentence-case titles,
-all-caps mono ONLY for tiny eyebrows + canvas pills, `--text/-2/-3` emphasis tiers (text-3 ≥4.5:1),
-motion tokens `--dur-1/2/3`, destructive actions get undo toasts never confirms, icons via
-`ui/Icon.tsx`. Canvas overlays adapt to theme via `--overlay-*` vars on `.stage`/`.stage-plan`.
+**"Anechoic Console" (UX-1 / S13):** one unified dark room — BOTH canvas themes are dark. Elevation over borders
+(`styles/tokens.css` surface-**0..4** ladder — `--surface-4` #28324a is a UX-3 hero/carriage rung, no consumer yet).
+The app shell backdrop is a top-lit vignette **`--app-backdrop`** (`radial-gradient(120% 100% at 50% 0%, #0c1120, #060810)`,
+on `body` + `.stage`; it never paints over the opaque canvas). Sentence-case titles; all-caps mono ONLY for tiny eyebrows
++ canvas pills; `--text/-2/-3` emphasis tiers (**text-3 reserved ≥12px** now); motion tokens `--dur-1/2/3`; destructive
+actions get undo toasts never confirms; icons via `ui/Icon.tsx`.
+
+**Typography (S13, self-hosted, zero runtime dep):** 3 roles — `--font-display` **Space Grotesk** (500/700: wordmark,
+UX-3 verdict hero), `--font-ui` **Geist Sans** (400/500/600: body/UI), `--font-mono` **Geist Mono** (400/500: data,
+pills, kbd, **and the canvas** `FONT`/`FONT_MD`). Latin-subset woff2 vendored in `public/fonts/` (7 faces + `LICENSE.md`,
+both OFL; ~148 kB total, Geist Mono has no 600/bold → `FONT_MD` + former-`bold` canvas sites use weight **500**). `@font-face`
+in `styles/fonts.css` (imported first in `global.css`), `font-display:swap`; **2 preloads** in `index.html` (Geist Sans 400
++ Space Grotesk 500, `crossorigin`). Canvas can't read CSS, so `canvas/font-ready.ts` `repaintOnFontLoad()` fires ONE
+repaint via `setRedrawTick` once Geist Mono loads (FOUT/reflow guard; injectable fontset → node-testable, no-ops in vitest).
+Type scale is **px** (`--text-xs 11` mono-only … `--text-2xl 30`, `--text-hero clamp(2rem,1.2rem+2.6vw,2.75rem)`); prose
+floored ≥13px (`--text-sm`).
+
+**Color-role discipline (S13):** cyan `--accent` / amber `--accent-r` (`#ffa95a`) = L/R channel identity ONLY; `--ok`
+(`#3ee08a`, one green app-wide) / `--warn` / `--bad` = acoustic status ONLY; **`--signal`** (`linear-gradient(accent→ok)`)
+is the "approaching lock" sweep on `.quality-fill` + `.fader-fill`. Alpha tokens are `--ok-12/--warn-12/--bad-12` (0.12).
+
+**Canvas themes** (`render.ts` `THEMES`): `sound` (dark `#080b12`, additive ray-glow — load-bearing, untouched) and
+`plan` (**dark cyanotype** `#0a1220`, cyan grid, steel-blue `#8fc7e0` walls, dimension ink — recolored from the old cream
+blueprint in S13; `rays:false`). The sound↔plan toggle is a **gentle hue shift, not a black↔white flash**. Canvas overlays
+adapt via `--overlay-*` vars on `.stage` — ONE dark-glass recipe; `.stage-plan` inherits it (the light fork was deleted in
+S13). Only ambient motion is the canvas rays (`capBreathe`/`nodePulse` header loops deleted).
 
 ## Hard-won lessons
 
@@ -138,6 +161,10 @@ motion tokens `--dur-1/2/3`, destructive actions get undo toasts never confirms,
 - **History coalescing is gesture-scoped, not a timer (S5):** the pre-refactor 400 ms wall-clock window coalesced ALL edits (drags AND rapid discrete taps). The new model coalesces (a) a pointer drag = one undo entry via `beginGroup`/`endGroup` on `onDragging`, and (b) a **held** key (arrow-nudge AND q/e-rotate) via `opts.coalesce = e.repeat`. Consequence (intended, documented): rapid *discrete* non-drag bursts — a fast wall-chain, placing 4 pods quickly, two quick deletes — are now **separate** undo steps (each independently undoable, which is more correct). If you touch keyboard scene-edits, wire `coalesce: e.repeat` for held keys — the self-review caught that rotate had been left without it while nudge had it.
 - **The history leak fix must keep `keepId` (S5):** `reap(liveIds, keepId)` drops undo buckets for layouts no longer in the store, but a just-deleted layout can still be un-deleted (the toast Undo), so `deleteLayout` passes `keepId = deletedId`. Dropping the bucket eagerly would silently lose the restored layout's scene-undo stack (an unsanctioned 4th behavior change). `undoDelete`'s dropped-placeholder bucket is left for the next `deleteLayout` to reap (bounded).
 - **Decouple history from the `setStore` updater (S5):** the pre-refactor `setScene`/`undo`/`redo` mutated `historyRef` INSIDE the `setStore` updater and relied on StrictMode's dev double-invoke to dedupe (and undo actually *double-popped* in dev). The fix: do all history bookkeeping in the callback body (reading `storeRef.current`) and pass React a **pure** updater. Safe because no handler fires two scene-mutating `setScene` calls in one synchronous tick (verified); if a future batched multi-edit handler is added, revisit (it would read a stale pre-edit snapshot).
+- **Theme-keyed colors can hide OUTSIDE `THEMES` (S13):** recoloring `THEMES.plan` cream→cyanotype was NOT enough — `drawRoomLabels` had a hardcoded `st.theme === 'plan' ? royalblue : cyan` zone fill/stroke (`render.ts:939/941`) that would paint a foreign royal-blue box on the new dark plan. When recoloring a theme, **grep `theme === 'plan'`/`'sound'`** for literal colors outside the `THEMES` object (the D2 agent + skeptic both caught this). The other `theme === 'plan'` sites are behavior gates (underlay opacity, ruler/dimension visibility), not colors — leave them.
+- **The canvas FONT stack MUST keep the `ui-monospace` fallback (S13):** `labelPill` draws `★` (best-spot), `∠` (angle), `⌀` (diameter) via `ctx.fillText`, and **Geist Mono lacks all three**. Canvas 2D does per-glyph font fallback, so `'Geist Mono', ui-monospace, …` renders digits/letters in Geist Mono and those 3 symbols in the fallback — correct, but only because the fallback is kept. Never reduce the canvas FONT to a single family. Geist Mono is vendored **400/500 only** (no bold), so `FONT_MD` + the former `bold ${FONT}` sites use weight **500** to avoid faux-bold synthesis.
+- **The stage-frame vignette can't live on `.stage` alone (S13):** `SimCanvas` mounts unconditionally and `renderScene` opaquely fills the whole bitmap every frame, so the canvas covers 100% of `.stage` — a `background` there is never seen. `--app-backdrop` goes on **`body` + `.stage`**; it's visible during the async-bootstrap **splash** (the wordmark "powers on" over the vignette) and behind any translucent chrome, and composites *below* the opaque canvas child so the render.ts bg is untouched.
+- **Font-load repaint is a real FOUT guard, and its error paths must not be silent (S13):** canvas pills size from `ctx.measureText`; on first mount Geist Mono may be a swap-face → pill widths computed from fallback metrics until some later repaint. `font-ready.ts` `repaintOnFontLoad` triggers `document.fonts.load()` then ONE `setRedrawTick`. A per-spec `.catch` keeps a 404'd face from blocking the repaint, and the outer `.catch` is **reachable** (an `onReady` throw lands there) — both now `console.warn`/`console.error` **only on real failure** (silent-failure-hunter caught the original silent swallows + a "this is unreachable" comment that was false). Injectable fontset → node-testable, no-ops when `document.fonts` is absent.
 
 ## NEXT UP: read-only 3D view — see docs/3d-view-plan.md
 

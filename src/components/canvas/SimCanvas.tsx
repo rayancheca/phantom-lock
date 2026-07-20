@@ -42,6 +42,7 @@ import {
   watchDevicePixelRatio,
   type WallHover,
 } from './interaction';
+import { repaintOnFontLoad } from './font-ready';
 import './sim-canvas.css';
 
 const SNAP_STEP = 0.05;
@@ -193,6 +194,11 @@ export default function SimCanvas({
   // monitor with a different DPR — which changes neither CSS size nor any dep,
   // so the draw effect below would otherwise keep the stale, blurry backing store).
   useEffect(() => watchDevicePixelRatio(() => setRedrawTick((n) => n + 1)), []);
+
+  // Repaint once Geist Mono is ready so canvas pill widths (ctx.measureText)
+  // don't reflow off fallback metrics on the first paint (FOUT guard). No-ops
+  // in the vitest node env (no document.fonts); cleanup cancels a late repaint.
+  useEffect(() => repaintOnFontLoad(() => setRedrawTick((n) => n + 1)), []);
 
   /** Rotate the whole view by dr radians around the canvas centre. */
   const rotateBy = useCallback((dr: number) => {

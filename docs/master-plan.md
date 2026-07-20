@@ -662,6 +662,12 @@ color-role discipline + a `--signal` gradient; **recolor `THEMES.plan` cream→d
 `.stage-plan` light fork** (the #1 split-personality fix); delete `capBreathe`/`nodePulse`; rename the alpha tokens.
 *Acceptance:* one coherent dark room in every step, no black↔white theme flash, fonts self-hosted with no canvas-number
 reflow, perf budget held; gate green; both-theme screenshots of all 4 steps.
+**Status:** ☑ DONE 2026-07-19 — all acceptance bullets met (Evidence in the progress log). Every item A–F landed:
+deepened ladder + `--surface-4` + `--app-backdrop` vignette; self-hosted Space Grotesk/Geist Sans/Geist Mono (Latin
+woff2 in `public/fonts/`, 2 preloaded, gated on `document.fonts.load()` via `font-ready.ts` — no canvas reflow);
+scale→px (11→44) + prose floored ≥13px; `--signal` + color-role discipline + alpha-token rename (`-10`→`-12`);
+`THEMES.plan` cream→dark cyanotype + `.stage-plan` light fork collapsed (the split-personality fix); `capBreathe`/
+`nodePulse` deleted. Next: **UX-2 (Session 14)** — kickoff below.
 
 **Session 14 = UX-2 — Shell & IA (modes · header scope · canvas hero framing · responsive/mobile).** DESIGN/TUNE (or
 the confirmed IA); theme owned by mode; tools stop teleporting the step/theme; scope TV/Music + Suggest + Compare to
@@ -704,6 +710,34 @@ audits the redesigned surface. Suggested order: **UX-1 → UX-2 → UX-3 → UX-
 > live-check all four steps in the unified dark theme + the ≤960 px layout with saved screenshots, self-review the diff,
 > update `CLAUDE.md` + this checklist, and write the UX-2 handoff.
 
+**KICKOFF PROMPT (UX-2 — Shell & IA, the NEXT session)** — *run under the Standing Operating Protocol at the top of this
+file (also in `CLAUDE.md`, auto-loaded): git-per-session (branch + baseline commit, commit again after the gate),
+read-first, a multi-agent Workflow for this heavy task (parallel understand → design → an adversarial skeptic that tries
+to REFUTE each risky change against the real code), full implementation (no stubs/TODOs/`.skip`), test everything with
+PROOF (ratchet — **245 tests** must not drop; add failing-first tests for any new pure logic; paste the literal
+`npm run lint` + `npm test` + `npm run build` tails), a self-review agent pass (`code-reviewer` + `silent-failure-hunter`)
+over the diff, and a handoff with an Evidence block. Land on `main` and `git push` after the gate. Token/time budget is
+unlimited — optimize for perfection, not speed. Confirm the next kickoff you write re-states this protocol.*
+> UX-1 (S13) is DONE — the app is now one unified dark room (dark cyanotype plan + dark sound), self-hosted fonts, the
+> `--signal`/`--surface-4`/`--text-hero`/`--font-display` foundation tokens exist (some with no consumer yet, awaiting
+> UX-3), motion is event-driven, alpha tokens renamed. **Read `docs/ui-ux-overhaul-plan.md` §3 (IA) + §6 (responsive) +
+> §8 (confirmed DESIGN/TUNE decision) and `CLAUDE.md` first.** Execute **UX-2 (Session 14) — Shell & IA:** introduce the
+> confirmed **DESIGN / TUNE** modes (DESIGN = Build+Furnish sub-steps on the dark cyanotype plan; TUNE = the old
+> Sound+Analyze merged into one place-and-read loop on the dark sound canvas); **the mode owns the canvas theme — exactly
+> ONE theme controller** (kills the current tool-teleports-and-flips-theme bug where `TOOL_OWNER` + the Toolbar toggle
+> both drive it); tools never change the mode; digit shortcuts bind only to the current mode's tools; scope **TV/Music +
+> Suggest placement + Compare into TUNE** and de-duplicate the TV/Music toggle; the global header holds only brand +
+> layout switcher (always pinned; monogram the wordmark when tight) + undo/redo + the DESIGN/TUNE switch. **Fix the two
+> named mobile breaks (§6):** at ≤960px un-float the toolbar into a bottom, full-width, horizontally-scrollable rail with
+> 40px touch targets so it never covers the canvas (see the S13 mobile screenshot for the current overlap); pin the layout
+> switcher; add on-selection touch handles for rotate/delete/nudge; drop the keyboard-referencing mode-hint on touch.
+> Mind the S4 lesson: `overlayOpen` must cover every overlay over the still-mounted canvas. Presentation-layer only — do
+> NOT touch `src/engine`, persistence, or the scene data model. Acceptance: a tool never changes the mode/theme; the
+> header shows only context-appropriate actions; on ≤960px the toolbar never overlaps the canvas and the switcher is
+> always reachable; touch rotate/delete/nudge work; behavior otherwise identical; gate green; before/after mobile
+> screenshots (both dark themes; note the S13 correction that BOTH canvas themes are dark now). Then self-review the diff,
+> update `CLAUDE.md` + this checklist, and write the UX-3 handoff.
+
 ## Backlog (noticed, not yet scheduled — add to a session as it fits)
 - **Auto-detect walls accuracy** — now scheduled as **Session 12** (duplicated/diagonal tangle on real floorplans);
   see its block above. Surfaced by first-time-user clickthrough.
@@ -713,7 +747,7 @@ audits the redesigned surface. Suggested order: **UX-1 → UX-2 → UX-3 → UX-
 - Persisted undo history across reload (currently in-memory only).
 - Multi-tab coordination policy (BroadcastChannel vs last-write-wins).
 - Periodic slim (imageless) localStorage mirror so the rollback snapshot isn't frozen at first migration (from the S1 data-loss review); surface a toast when an oversized underlay is dropped by `sanitizeScene`.
-- Alpha-token rename (`ok-10`→`ok-12`), off-ladder radii snap, header perpetual-animation trim.
+- Off-ladder radii snap. (Alpha-token rename `ok-10`→`ok-12` + header perpetual-animation trim — **DONE in S13/UX-1**.)
 
 ## Progress log
 - **2026-07-19 — Session 0 (planning):** full audit (13 agents + verification), live human testing,
@@ -754,10 +788,10 @@ audits the redesigned surface. Suggested order: **UX-1 → UX-2 → UX-3 → UX-
   lint clean, build green (~378 kB/122.6 kB gz). Live-verified on a disposable duplicate (real layout backed up +
   restored pristine). Next: **Session 6** (Web-Worker tracer + memoization) — kickoff in its block; `useSimulation`
   is now cleanly extracted to unblock it.
-- **2026-07-19 — Data-safety note (S5):** the preview browser's IndexedDB holds the owner's **real** layout
-  ("1500 Bay Rd" — their real home; source/default stays the scrubbed "Maple Court", and no `1500 Bay` string is in
-  `src/`/`docs/`). All S5 write-tests ran on a duplicate; the real layout was backed up and verified byte-identical
-  afterward. Keep testing on duplicates, never the real active layout.
+- **2026-07-19 — Data-safety note (S5):** the preview browser's IndexedDB holds the owner's **real** home layout
+  (a real street address — source/default stays the scrubbed "Maple Court", and the real address must never be
+  committed to `src/`/`docs/` or shown in published screenshots). All S5 write-tests ran on a duplicate; the real
+  layout was backed up and verified byte-identical afterward. Keep testing on duplicates, never the real active layout.
 - **2026-07-19 — UI/UX overhaul planned (owner request "rethink the UI/UX and layout of everything"):** ran a 6-agent
   design workflow (4 complete redesign directions + a rubric judge + an independent UX/IA-flow audit) + a live
   walkthrough → wrote **`docs/ui-ux-overhaul-plan.md`** and scheduled it as **Sessions 13–16 (UX-1…UX-4)**. Direction:
@@ -765,3 +799,35 @@ audits the redesigned surface. Suggested order: **UX-1 → UX-2 → UX-3 → UX-
   Presentation-layer only. Absorbs Session 8's design + onboarding items (S8 shrinks to hardening + README). Both
   gating decisions **CONFIRMED by the owner** the same day: aesthetic = Anechoic Console; IA = DESIGN/TUNE modes
   (DESIGN keeps Build+Furnish sub-steps, TUNE merges Sound+Analyze, mode owns the theme). See plan §8.
+- **2026-07-19 — Session 13 (UX-1) DONE:** design foundations ("Anechoic Console" base). The plan canvas is no longer a
+  cream blueprint — it's a **dark cyanotype**, so the whole app is one unified dark room and the sound↔plan toggle is a
+  gentle hue shift (the #1 split-personality fix). **Evidence block:**
+  - *Workflow (understand→design→refute, 7 agents, 0 errors):* U1 token-consumer/small-text map · U2 canvas/font-load
+    trace · U3 panels surgeon · D1 tokens · D2 cyanotype palette (caught the hardcoded plan-blue zone fill at
+    `render.ts:939/941` living OUTSIDE `THEMES.plan`) · D3 fonts+helper · **adversarial skeptic** — REFUTED the risky
+    changes and caught the **critical D1↔D2 green contradiction** (D1 nudged `--ok`→#40e08a, D2 kept #3ee08a; applying
+    both would re-split the green) → resolved to **one green #3ee08a app-wide**; also flagged the prose-floor migration
+    gap + the Space-Grotesk-preload-with-no-consumer warning (resolved by applying `--font-display` to the wordmark).
+  - *Self-review (2 agents over the diff):* `code-reviewer` → **APPROVE, 0 findings** (re-ran the gate, verified woff2
+    magic bytes, all token renames complete, font-ready race/StrictMode-safe, no engine coupling). `silent-failure-hunter`
+    → **2 real findings FIXED**: the outer `.catch` was NOT unreachable (silently swallowed `onReady()` throws + a
+    misleading "unreachable" comment) and the per-spec catch had zero diagnostics on a font 404 → both now `console.warn`/
+    `console.error` **only on actual failure** (happy path stays silent), +1 regression test. Re-verified green.
+  - *Gate (pasted tails):* `npm run lint` → **0 problems**; `npm test` → **245 passed (19 files)** — ratchet 239→245
+    (+6 `font-ready.test.ts`, failing-first proven RED→GREEN); `npm run build` → tsc clean, vite OK, **JS 378.76 kB /
+    122.71 kB gz** (flat vs S5) + **CSS 35.82 kB / 7.01 kB gz**; fonts are static `public/fonts/` assets (7 Latin-subset
+    woff2 + OFL `LICENSE.md`, ~148 kB, 2 preloaded ≈36 kB).
+  - *Live (one browser, real "Maple Court" fresh-origin demo):* all 4 steps render one coherent dark room — Build/Furnish
+    dark cyanotype, Sound/Analyze dark, **no black↔white flash**; `document.fonts.check` = true for all 7 self-hosted
+    faces (Geist Sans/Mono + Space Grotesk — NOT system fallback), wordmark in Space Grotesk 700; canvas numbers crisp,
+    **no FOUT reflow**; console clean (only Vite/React dev noise); ≤960px stacked layout verified. Screenshots + backup in
+    `docs/sessions/S13/` (gitignored). **Data safety:** the owner's real layout was backed up first and confirmed
+    **byte-identical** (`updatedAt` unchanged) afterward — all checks were read-only; the scrubbed "Maple Court" demo is
+    what the screenshots show. (Also scrubbed a pre-existing real-address string from this doc's S5 data-safety note.)
+  - *Acceptance → all met:* one coherent dark room every step ✓ · no theme flash ✓ · fonts self-hosted, no reflow ✓ ·
+    perf budget held (2 preloads, Latin subsets) ✓ · gate green ✓ · both-(now-dark)-theme screenshots of all 4 steps ✓.
+  - *Known follow-ups (not UX-1 scope):* the mobile toolbar still floats over the canvas (UX-2 fix); the fader-fill lost
+    its translucent-left fade when routed through `--signal` (brief-directed unification, acknowledged); the standing
+    protocol's "screenshot both the dark sound and **light** plan themes" wording is now stale (both are dark — a factual
+    correction for the owner to make to the canonical protocol); the real home address is still referenced in this repo's
+    **git history** (already public on `origin/main`) — a dedicated history-scrub is out of scope here. Next: **UX-2**.
