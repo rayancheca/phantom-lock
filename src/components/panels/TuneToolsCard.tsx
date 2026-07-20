@@ -5,6 +5,8 @@ interface Props {
   tvAnchor: boolean;
   onSetTvAnchor: (on: boolean) => void;
   onSuggest: () => void;
+  /** 0 → lead with an editorial empty state that routes to Suggest. */
+  speakerCount: number;
 }
 
 /**
@@ -12,10 +14,21 @@ interface Props {
  * DESIGN): the single TV/Music writer (MetricsPanel + OptimizeDialog only mirror
  * it now) and Suggest placement. Compare is NOT here — it already lives in
  * ListenerCard + the gallery; the header Compare was the duplicate and is gone.
+ *
+ * With zero speakers it leads with an editorial empty state ("Nothing to analyze
+ * yet…") whose primary action is the very Suggest button below — the single TUNE
+ * "Suggest placement" entry, so the empty readout always routes somewhere.
  */
-export default function TuneToolsCard({ tvAnchor, onSetTvAnchor, onSuggest }: Props) {
+export default function TuneToolsCard({ tvAnchor, onSetTvAnchor, onSuggest, speakerCount }: Props) {
+  const empty = speakerCount === 0;
   return (
     <section className="card tune-tools" aria-label="Tune tools">
+      {empty && (
+        <p className="card-sub">
+          Nothing to analyze yet — this room has no HomePods. Suggest a stereo pair and watch the
+          phantom center lock, or place them yourself with the speaker tool.
+        </p>
+      )}
       <div className="tune-tools-row">
         <div className="mode-toggle" role="group" aria-label="Listening mode">
           <button

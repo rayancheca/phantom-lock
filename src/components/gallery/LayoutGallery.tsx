@@ -85,7 +85,8 @@ export default function LayoutGallery(p: GalleryProps) {
                 <span className="gallery-meta">
                   {walls} wall{walls === 1 ? '' : 's'} · {l.scene.speakers.length} speaker
                   {l.scene.speakers.length === 1 ? '' : 's'}
-                  {(l.scene.rooms?.length ?? 0) > 0 && ` · ${l.scene.rooms!.length} rooms`}
+                  {(l.scene.rooms?.length ?? 0) > 0 &&
+                    ` · ${l.scene.rooms!.length} area${l.scene.rooms!.length === 1 ? '' : 's'}`}
                 </span>
               </button>
               <div className="gallery-kebab">
@@ -111,7 +112,7 @@ export default function LayoutGallery(p: GalleryProps) {
                     Duplicate
                   </MenuItem>
                   <MenuItem icon="export" onSelect={() => p.onExport(l.id)}>
-                    Export JSON
+                    Export layout (JSON)
                   </MenuItem>
                   <MenuSeparator />
                   <MenuItem icon="trash" danger onSelect={() => p.onDelete(l.id)}>
@@ -135,9 +136,14 @@ export default function LayoutGallery(p: GalleryProps) {
             <Icon name="home" size={18} />
             Maple Court apartment
           </button>
-          <button type="button" className="gallery-new-btn" onClick={p.onImport}>
+          <button
+            type="button"
+            className="gallery-new-btn"
+            title="Open a Phantom Lock layout file you exported before (not a floorplan photo)"
+            onClick={p.onImport}
+          >
             <Icon name="import" size={18} />
-            Import JSON…
+            Import layout (JSON)…
           </button>
         </div>
       </div>

@@ -73,20 +73,20 @@ export default function GuidePanel({
             <button
               type="button"
               className="btn btn-primary"
-              title="Drag a box over part of the plan and name it — Kitchen, Bedroom… (Roomba-style)"
+              title="Drag a box over part of the plan and label it — Kitchen, Bedroom… (Roomba-style). A label, not walls — the optimizer can target it."
               onClick={onCreateRoom}
             >
               <Icon name="plus" size={14} />
-              Create room
+              Mark an area
             </button>
             <button
               type="button"
               className="btn"
-              title="Attach a new walled room shell next to the current plan"
+              title="Attach a new walled room next to the current plan"
               onClick={onInsertRectRoom}
             >
               <Icon name="rectangle" size={14} />
-              Add a wing…
+              Add a room…
             </button>
           </div>
           {rooms.length > 0 && (

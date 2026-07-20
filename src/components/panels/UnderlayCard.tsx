@@ -1,5 +1,6 @@
 import { useRef } from 'react';
 import type { Scene, Underlay } from '../../engine/types';
+import { buildUnderlay } from './underlay-import';
 import Icon from '../ui/Icon';
 import './panels.css';
 
@@ -11,41 +12,6 @@ interface Props {
   onDetect: () => void;
   detecting: boolean;
   onError: (message: string) => void;
-}
-
-const MAX_DIM = 1600;
-
-/** Downscale + re-encode so a phone photo fits comfortably in localStorage. */
-function fileToUnderlay(file: File): Promise<{ src: string; wPx: number; hPx: number }> {
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => {
-      const k = Math.min(1, MAX_DIM / Math.max(img.naturalWidth, img.naturalHeight));
-      const w = Math.round(img.naturalWidth * k);
-      const h = Math.round(img.naturalHeight * k);
-      const canvas = document.createElement('canvas');
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) {
-        reject(new Error('no canvas'));
-        return;
-      }
-      // JPEG has no alpha — without this, transparent PNG floorplans re-encode
-      // onto a black page and both readability and wall detection suffer.
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, w, h);
-      ctx.drawImage(img, 0, 0, w, h);
-      URL.revokeObjectURL(url);
-      resolve({ src: canvas.toDataURL('image/jpeg', 0.72), wPx: w, hPx: h });
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error('bad image'));
-    };
-    img.src = url;
-  });
 }
 
 export default function UnderlayCard({
@@ -61,20 +27,8 @@ export default function UnderlayCard({
   const u = scene.underlay;
 
   const importImage = (file: File) => {
-    fileToUnderlay(file)
-      .then(({ src, wPx, hPx }) => {
-        // Assume ~8 m wide to start; the user calibrates right after.
-        const scale = 8 / wPx;
-        onUnderlay({
-          src,
-          wPx,
-          hPx,
-          center: { x: (wPx * scale) / 2, y: (hPx * scale) / 2 },
-          scale,
-          rotation: 0,
-          opacity: 0.55,
-        });
-      })
+    buildUnderlay(file)
+      .then(onUnderlay)
       .catch(() => onError('Could not read that image.'));
   };
 
@@ -84,11 +38,12 @@ export default function UnderlayCard({
       {!u && (
         <>
           <p className="card-sub">
-            Have a plan or a photo? Put it under the grid and trace your walls right over it.
+            Have a plan or a photo? Put it under the grid and trace your walls right over it. (This
+            is a picture — to open a saved layout file, use Import layout in the gallery.)
           </p>
           <button type="button" className="btn btn-primary btn-block" onClick={() => fileRef.current?.click()}>
             <Icon name="image" size={14} />
-            Import floorplan image
+            Import floorplan photo
           </button>
         </>
       )}

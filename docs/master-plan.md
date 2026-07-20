@@ -442,14 +442,53 @@ perf trace); tests + build green; results identical to the synchronous path.
 **Acceptance.** Keyboard-only user can place + adjust a speaker and read the verdict; automated a11y
 check clean on the chrome; contrast test passes; build + tests green.
 
-**KICKOFF PROMPT** — *run under the Standing Operating Protocol at the top of this file (also in CLAUDE.md, auto-loaded): multi-agent orchestration, adversarial verification of every serious finding, full implementation (no shortcuts/stubs), test everything (unit + live browser), a self-review agent pass, the full verification gate, clean-up, and honest reporting. Token/time budget is unlimited — optimize for perfection, not speed.*
-> Read `docs/ultrareview.md` §3.6 in the Phantom Lock repo and execute Session 7 of
-> `docs/master-plan.md`: make the canvas keyboard-operable (focusable + arrow-nudge/cycle/select/
-> delete, plus a keyboard-reachable object list), add an off-screen aria-live text mirror of scene
-> state + verdict announcements, fix the `--text-3` surface-3 contrast (with a contrast unit test),
-> restore input focus rings, convert the tablist to aria-current, focus-manage the detected-layout
-> dialog, make error toasts assertive, and extend reduced-motion. Verify with an automated a11y check
-> + `npm test` + `npm run build`, update the checklist, write the Session 8 handoff.
+**KICKOFF PROMPT (Session 7 — a11y audit, the NEXT session)** — *run under the Standing Operating Protocol at the top of this
+file (also in `CLAUDE.md`, auto-loaded): git-per-session (a fresh worktree branch off `main` + baseline commit, commit again
+after the gate; ⚠️ worktree-path trap — the worktree lives under `.claude/worktrees/<name>/` while a separate `main` checkout
+sits at the repo root, so ALWAYS pass worktree-relative paths to Read/Edit/Write (confirm with `git rev-parse --show-toplevel`),
+or edits silently land in the wrong checkout; land via `git -C <MAIN_REPO> merge --ff-only <branch>` then `git -C <MAIN_REPO>
+push origin main`; commit messages end `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`), read-first (map every site
+before touching it), a multi-agent Workflow for this heavy task (parallel understand → design → an adversarial skeptic that
+tries to REFUTE each risky change against the real code — this caught real bugs in UX-2/UX-3/UX-4, incl. a HIGH ignite-on-switch
+bug, a headline that dropped a genuine lock, and a `.term` CSS cascade regression), full implementation (no stubs/TODOs/`.skip`/
+`.only`/scope-narrowing), test everything with PROOF (ratchet — **340 tests** must not drop; add failing-first tests for any new
+pure logic incl. the contrast checker; paste the literal `npm run lint` (0 problems) + `npm test` (with count) + `npm run build`
+(with gz size) tails), a self-review agent pass (`code-reviewer` + `silent-failure-hunter` + `a11y-architect` over the actual
+diff — fix everything real, then re-verify), and a handoff with an Evidence block (agents + verdicts · before/after test count ·
+pasted gate output · saved screenshot paths · each Acceptance bullet → met/deferred). **Data safety (CRITICAL):** the preview's
+IndexedDB on the owner's usual origin (`localhost:5173`) holds their REAL layout ("My apartment", renamed from a real address at
+their request in S16) and they actively design their own room there — **NEVER delete the user's layouts** (that habit applied only
+to disposable fixtures YOU create). Back it up to `docs/sessions/S7/backup.json` (gitignored, FULL fidelity) BEFORE any write
+test; prefer testing on a **separate fresh headless-Chrome profile** (a fresh origin → the app's own IDB, never theirs) or on a
+disposable "Maple Court" duplicate; confirm the real layout's `updatedAt` is byte-identical afterward (before AND after a
+reload/autosave settle); keep any real address out of committable files (`git ls-files -oc --exclude-standard | xargs grep -l
+"Bay"` must be empty). Live-drive rAF-gated behavior (drag, the LOCK, canvas hover) via a zero-dep Node-25 CDP client over
+`--headless=old` + `--window-size` (NOT `Emulation.setDeviceMetricsOverride`; use `Page.captureScreenshot format:'jpeg'` — a huge
+PNG silently overruns the built-in WebSocket), since the in-app preview tab runs `document.hidden` with rAF paused. Land on `main`
+via `--ff-only` and `git push` after the gate. Token/time budget is unlimited — optimize for perfection, not speed. Confirm the
+next kickoff you write re-states this protocol.*
+> **The UX overhaul (UX-1…UX-4 / Sessions 13–16) is DONE** and built a11y in AT CREATION across every new surface — the S13
+> `--text-3` widening + ≥13px prose floor + focus rings; the S14 `SegmentSwitch`/`SelectionActions` roving-tabindex + touch
+> targets + reduced-motion; the S15 `VerdictHero` reduced-motion `lock-fade` + `forced-colors` fallback + `scroll-padding-top`;
+> the S16 `<Term>` popover (`aria-expanded`/`-controls`/`-describedby`, Escape, outside-pointerdown, `:where(.term)`), the
+> collapsible on-canvas `Legend` (disclosure ARIA + keydown/keyup swallow so it can't leak canvas keys), the `GlossaryCard`
+> `<details>`, the `FirstRunExplainer` (reuses `Dialog`'s focus-trap), and reduced-motion blocks on `.term-pop`/`.legend-body`/
+> `.glossary`. **Session 7 is now the SYSTEMATIC VALIDATION audit over the redesigned surface** (§8-reconciliation: prefer S7
+> AFTER the overhaul so it audits the shipped UI). Read `docs/ultrareview.md` §3.6 and the CLAUDE.md design-system + UX-4 lessons
+> first, then execute **Session 7:** (1) make the **canvas itself** keyboard-operable + AT-legible — it is still mouse/keyboard-
+> dispatch only with no focusable canvas element (`tabIndex=0` + `role="application"` + instructions; a keyboard model for
+> select/nudge/cycle/place/delete; at minimum a keyboard-reachable list of every object/seat extending the SpeakersCard/ListenerCard
+> pattern); (2) add the **off-screen `aria-live` text mirror** of scene state + verdict (the `VerdictHero` is deliberately NOT a
+> live region because it recomputes every drag frame — add a SEPARATE debounced polite mirror that announces the settled verdict/
+> lock/best-spot, reusing `deriveVerdict`'s sentences); (3) **automated contrast** — add a contrast unit test over the token pairs
+> and fix any `--text-3`-on-`--surface-3` (or `--overlay-text` on glass) failures; (4) audit the whole redesigned surface with an
+> automated a11y pass (axe-core or equivalent — the repo has none yet; add it as a dev dep + a test) across DESIGN/TUNE, both
+> canvas themes (both dark since S13), the gallery/compare/optimizer/arrange dialogs, and the ≤960px touch layout; validate the
+> S13–S16 a11y-at-creation claims and fix every real gap. Presentation/a11y-layer only — do NOT touch `src/engine` math,
+> persistence, or the scene data model. Acceptance: a keyboard-only user can place + adjust a speaker and READ the verdict without
+> a mouse; an automated a11y check is clean on the chrome + the new canvas affordances; the contrast test passes; reduced-motion
+> is honored everywhere; gate green (lint 0 · ≥340 tests · build). Then self-review the diff, update `CLAUDE.md` + this checklist,
+> and write the **Session 8-remainder** (security hardening: CSP + headers + import size cap; README rewrite) handoff.
 
 ---
 
@@ -985,3 +1024,31 @@ speed. Confirm the next kickoff you write re-states this protocol.*
   Presentation-layer only (zero engine/persistence/data-model change). Data-safe: real home layout backed up (gitignored, full
   fidelity) + `updatedAt 1784480211854` byte-identical before AND after (+ reload/autosave settle) + fixture removed + origin
   restored + no real address committed. Next: **UX-4 (Session 16)** — kickoff in the S16 block.
+- **2026-07-20 — Session 16 (UX-4) DONE:** Learnability, empty states & shareable output. All 9 items shipped —
+  **(A)** `<Term>` tap-to-learn jargon layer (`ui/Term.tsx`, accessible popover; base reset `:where(.term)` so the composed
+  spec-label mono styling wins) + the single pure `panels/glossary.ts` (11 terms) wired into the `MetricsPanel` spec sheet +
+  a TUNE `GlossaryCard`; **(B)** first-run seed — a fixed ±30° equilateral **LOCKED** homepod pair at the couch seat on a
+  pristine origin (`engine/seed.ts`, a leaf module; `apartmentScene()` stays audio-free) so first paint reads "Phantom center
+  locked", + a `FirstRunExplainer` gated on genuine first run (`bootstrapPersistence.firstRun` && `isPristineOrigin`, standalone
+  localStorage flag); **(C)** editorial empty states (TuneToolsCard lead → the single Suggest CTA); **(D)** "Pair X + Y as
+  stereo" one-click in Speakers; **(E)** "Replace with N speakers" + a uniform undo toast on every apply (optimizer/arrange/placed);
+  **(F)** rename Room-shell vs **Area** + the optimizer's "This room" default targets `regionOf(listener)` — a walled region with
+  no hidden zone (UI wiring only, zero engine-math change); **(G)** "Import floorplan photo" vs "Import layout (JSON)" split + a
+  first-run starter photo entry; **(H)** "Export plan image" (`canvas/export-image.ts` offscreen `renderScene`→PNG) + "Copy
+  verdict" (`ShareCard`); **(I)** collapsible on-canvas `Legend` keyed to the mode. Orchestrated: a 5-agent Understand Workflow →
+  a 4-agent adversarial Skeptic (all CONFIRMED_SAFE: seed data-safety, F engine-safety, H offscreen-render, scope/a11y) → a
+  4-lens self-review (code-reviewer + silent-failure-hunter + data-safety-scope + a11y) that caught **3 real HIGH** — a `.term`
+  CSS cascade bug silently stripping the Geist-Mono spec-sheet typography (fixed with `:where(.term)`; re-verified live: computed
+  `Geist Mono/11px/--text-2`), a non-async `renderPlanToBlob` whose sync throw escaped the caller's `.catch` (made `async`), and
+  seeding in the degraded catch branch (added a non-seeding `loadFallback`) — plus 2 LOW copy nits (fixed); all re-verified.
+  Tests **322→340** (+18: seed 10 · glossary 4 · export-image 4; none skipped). Gate: lint 0 · 340 green · build JS 126.9 kB gz /
+  CSS 8.05 kB gz. Live: fresh headless-Chrome profiles (fresh origin → seed fires) + the in-app browser → 17 screenshots in
+  `docs/sessions/S16/` (first-run explainer, seeded LOCKED verdict, legend, Term popover, glossary, ShareCard, "Replace with 2 /
+  This room" optimizer, "Pair C+D" , DESIGN "Mark an area"/starter photo, mobile). Copy-verdict proven via a real CDP mouse
+  gesture ("Verdict copied"); export image proven ("Saved the plan image"). Presentation/UI-only — zero `src/engine` math,
+  persistence schema, or data-model change (the sanctioned `seed.ts` composes existing APIs; `scene.ts` only `export`ed
+  LEGACY_KEY; `db.ts` only added a `firstRun` return field; optimize/rooms/stereo unchanged). Data-safe: the owner's real layout
+  backed up (gitignored) + `updatedAt 1784480211854` byte-identical before AND after a reload/autosave settle; all interactive
+  testing on separate fresh-origin profiles (their IDB never touched) — no fixture created on their origin, none to remove; no
+  real address in any committable file. Per owner request (2026-07-20) their layout was renamed from its real street address to
+  the placeholder "My apartment", and future sessions must never delete their layouts. Next: **Session 7 (a11y audit)** — kickoff below.

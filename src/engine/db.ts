@@ -315,29 +315,43 @@ export async function migrateFromLocalStorage(store: LayoutStore): Promise<Layou
  * Full boot sequence. Prefers IDB; migrates the localStorage blob on first run;
  * falls back to a hardened localStorage path if IDB is entirely unavailable
  * (private mode, disabled storage) so the app always renders.
+ *
+ * `firstRun` is true only when there was NO prior IDB data (the migrate branch) —
+ * a returning user with a stored layout gets `false`. The caller pairs this with a
+ * pristine-origin check to decide whether to show the first-run welcome, so an
+ * existing user (like a localStorage→IDB migration) never sees it.
+ *
+ * `loadLegacy` runs ONLY on the confirmed happy-path first-run migration (so it is
+ * the seam that may seed the demo). `loadFallback` (defaults to `loadLegacy`) runs
+ * in the DEGRADED catch branch — reached when IDB is unavailable OR when existing
+ * IDB records fail to reconstruct — where the caller should pass a NON-seeding
+ * loader so we never inject a synthetic "already-locked" demo over a user whose
+ * real data is merely temporarily unreadable.
  */
 export async function bootstrapPersistence(
   loadLegacy: () => LayoutStore,
-): Promise<{ store: LayoutStore; mode: PersistMode }> {
+  loadFallback: () => LayoutStore = loadLegacy,
+): Promise<{ store: LayoutStore; mode: PersistMode; firstRun: boolean }> {
   try {
     await openDB();
     const existing = await loadFromIDB();
-    if (existing) return { store: existing, mode: 'idb' };
+    if (existing) return { store: existing, mode: 'idb', firstRun: false };
     // First run on IDB: migrate whatever the legacy loader produces (real saved
-    // data, or the bundled default apartment).
+    // data, or the bundled default apartment / seeded demo).
     const legacy = loadLegacy();
     const migrated = await migrateFromLocalStorage(legacy);
-    return { store: migrated, mode: 'idb' };
+    return { store: migrated, mode: 'idb', firstRun: true };
   } catch {
-    // IDB unavailable — degrade to localStorage, but the caller wires the
-    // hardened (non-silent) autosave path for this mode.
+    // IDB unavailable (or records unreadable) — degrade to localStorage, but the
+    // caller wires the hardened (non-silent) autosave path for this mode. Not a
+    // first run, and NOT a place to seed synthetic data over possibly-real records.
     let store: LayoutStore;
     try {
-      store = loadLegacy();
+      store = loadFallback();
     } catch {
       store = defaultStore();
     }
-    return { store, mode: 'localStorage' };
+    return { store, mode: 'localStorage', firstRun: false };
   }
 }
 

@@ -1,5 +1,5 @@
 import type { Scene, Selection, SpeakerModel, TraceResult } from '../../engine/types';
-import { dist3dTo, SPEAKER_MODELS } from '../../engine/speakers';
+import { canPair, dist3dTo, SPEAKER_MODELS } from '../../engine/speakers';
 import { speakerColors } from '../canvas/render';
 import Icon from '../ui/Icon';
 import './panels.css';
@@ -11,6 +11,7 @@ interface Props {
   onSelect: (id: string) => void;
   onAddModel: (m: SpeakerModel) => void;
   onMatchVolumes: () => void;
+  onSetPair: (id: string, partnerId: string | null) => void;
 }
 
 export default function SpeakersCard({
@@ -20,6 +21,7 @@ export default function SpeakersCard({
   onSelect,
   onAddModel,
   onMatchVolumes,
+  onSetPair,
 }: Props) {
   const partnerOf = new Map<string, string>();
   for (const [a, b] of scene.pairs) {
@@ -32,6 +34,13 @@ export default function SpeakersCard({
   }
   const blockedById = new Map(trace.bySpeaker.map((s) => [s.id, s.direct.blocked]));
   const colors = speakerColors(scene);
+
+  // "Pair these two": the fast path to a phantom center. Only offered when there
+  // are EXACTLY two unpaired speakers and they are the same model (Apple can't
+  // stereo-pair a HomePod with a mini). This unblocks the verdict without hunting
+  // the Inspector dropdown.
+  const unpaired = scene.speakers.filter((s) => !partnerOf.has(s.id));
+  const pairable = unpaired.length === 2 && canPair(unpaired[0], unpaired[1]);
 
   return (
     <section className="card" aria-label="Speakers">
@@ -81,6 +90,17 @@ export default function SpeakersCard({
           );
         })}
       </ul>
+      {pairable && (
+        <button
+          type="button"
+          className="btn btn-primary btn-block"
+          title={`Link ${unpaired[0].label} and ${unpaired[1].label} as a left + right stereo pair`}
+          onClick={() => onSetPair(unpaired[0].id, unpaired[1].id)}
+        >
+          <Icon name="link" size={14} />
+          Pair {unpaired[0].label} + {unpaired[1].label} as stereo
+        </button>
+      )}
       <div className="preset-row">
         <button type="button" className="btn" onClick={() => onAddModel('homepod')}>
           + HomePod

@@ -645,7 +645,7 @@ export function sanitizeSettings(raw: unknown): SimSettings | null {
 // Layout store.
 
 export const STORAGE_KEY = 'phantom-lock:v2';
-const LEGACY_KEY = 'phantom-lock:v1';
+export const LEGACY_KEY = 'phantom-lock:v1';
 
 export function makeLayout(name: string, scene: Scene, settings = DEFAULT_SETTINGS): Layout {
   return { id: createId('layout'), name, scene, settings, updatedAt: Date.now() };

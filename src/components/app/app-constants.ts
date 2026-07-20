@@ -9,7 +9,7 @@ export const MODE_HINT: Record<ToolMode, string> = {
   circle: 'Drag from the centre to draw a round object',
   speaker: 'Click to place the speaker · Esc when done',
   calibrate: 'Click two points on the floorplan image whose real-world distance you know',
-  room: 'Drag a box over an area to mark it as a room · then name it (Kitchen, Bedroom…)',
+  room: 'Drag a box over part of the plan to label it as an area · then name it (Kitchen, Bedroom…)',
   marquee: 'Drag a box to select everything inside · ⇧ adds to the selection',
   lasso: 'Draw around objects to select them · ⇧ adds to the selection',
 };

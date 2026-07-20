@@ -164,12 +164,14 @@ describe('bootstrapPersistence', () => {
     const first = await bootstrapPersistence(legacy);
     expect(first.mode).toBe('idb');
     expect(first.store.layouts[0].name).toBe('Legacy');
+    expect(first.firstRun).toBe(true); // no prior IDB data → first run
     expect(legacyCalls).toBe(1);
 
     __resetConnectionForTests();
     const second = await bootstrapPersistence(legacy);
     expect(second.mode).toBe('idb');
     expect(second.store.layouts[0].name).toBe('Legacy');
+    expect(second.firstRun).toBe(false); // returning user → welcome must not re-show
     // The legacy loader must NOT be consulted again once migrated.
     expect(legacyCalls).toBe(1);
   });

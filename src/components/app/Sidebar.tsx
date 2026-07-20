@@ -15,6 +15,8 @@ import ListenerCard from '../panels/ListenerCard';
 import MetricsPanel from '../panels/MetricsPanel';
 import InspectorPanel from '../panels/InspectorPanel';
 import ControlsCard from '../panels/ControlsCard';
+import GlossaryCard from '../panels/GlossaryCard';
+import ShareCard from '../panels/ShareCard';
 import Echogram from '../panels/Echogram';
 
 interface SidebarProps {
@@ -53,6 +55,8 @@ interface SidebarProps {
   onRemoveSeat: (id: string) => void;
   onCompare: () => void;
   canCompare: boolean;
+  onExportImage: () => void;
+  onCopyVerdict: () => void;
   onSuggest: () => void;
   onUpdateObject: (id: string, patch: Partial<SceneObject>) => void;
   onDeleteObject: (id: string) => void;
@@ -99,7 +103,12 @@ export default function Sidebar(p: SidebarProps) {
         />
       )}
       {isTune && (
-        <TuneToolsCard tvAnchor={p.tvAnchor} onSetTvAnchor={p.onSetTvAnchor} onSuggest={p.onSuggest} />
+        <TuneToolsCard
+          tvAnchor={p.tvAnchor}
+          onSetTvAnchor={p.onSetTvAnchor}
+          onSuggest={p.onSuggest}
+          speakerCount={p.scene.speakers.length}
+        />
       )}
       <GuidePanel
         appMode={p.appMode}
@@ -138,6 +147,7 @@ export default function Sidebar(p: SidebarProps) {
           onSelect={p.onSelectSpeaker}
           onAddModel={p.onAddModel}
           onMatchVolumes={p.onMatchVolumes}
+          onSetPair={p.onSetPair}
         />
       )}
       {isTune && (
@@ -164,6 +174,7 @@ export default function Sidebar(p: SidebarProps) {
           hideSuggest
         />
       )}
+      {isTune && <ShareCard onExportImage={p.onExportImage} onCopyVerdict={p.onCopyVerdict} />}
       <InspectorPanel
         scene={p.scene}
         selection={p.selection}
@@ -179,6 +190,7 @@ export default function Sidebar(p: SidebarProps) {
       {isTune && (
         <>
           <ControlsCard settings={p.settings} onChange={p.onSettingsChange} />
+          <GlossaryCard />
           <Echogram trace={p.trace} scene={p.scene} />
         </>
       )}

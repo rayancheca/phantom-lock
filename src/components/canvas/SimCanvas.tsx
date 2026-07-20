@@ -917,7 +917,7 @@ export default function SimCanvas({
         h: Math.abs(b.y - a.y),
         rotation: 0,
         absorption: 0.3,
-        label: drag.tool === 'room' ? 'Room' : 'Object',
+        label: drag.tool === 'room' ? 'Area' : 'Object',
         role: 'furniture',
         height: 0.9,
       });

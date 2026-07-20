@@ -342,11 +342,87 @@
   background: var(--surface-hover);
 }
 
+/* --- term (jargon glossary popover) -------------------------------------- */
+
+.term-anchor {
+  position: relative;
+  display: inline-block;
+}
+
+/* The trigger inherits the label's font/color so it reads as text, not a button;
+   the dotted underline is the visible "this has an explanation" affordance.
+   The reset is wrapped in :where() (0 specificity) so a COMPOSED label class —
+   e.g. `class="term spec-label"` — always wins the font/color cascade regardless
+   of stylesheet source order; otherwise `.term`'s `font: inherit` (emitted after
+   panels.css) would strip the Geist-Mono spec-sheet styling from every wrapped label. */
+:where(.term) {
+  appearance: none;
+  -webkit-appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  cursor: help;
+  text-decoration: underline dotted var(--border-strong);
+  text-underline-offset: 3px;
+}
+.term:hover {
+  color: var(--text);
+  text-decoration-color: var(--accent);
+}
+.term:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+.term[aria-expanded='true'] {
+  color: var(--text);
+  text-decoration-color: var(--accent);
+}
+
+.term-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 65;
+  display: block;
+  width: max-content;
+  max-width: min(260px, 78vw);
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-2);
+  /* A spec-label trigger is uppercase + tracked; the definition must not inherit that. */
+  text-transform: none;
+  letter-spacing: normal;
+  animation: pop-in var(--dur-2) var(--ease-out);
+}
+.term-pop-name {
+  display: block;
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+.term-pop-def {
+  display: block;
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  font-weight: 400;
+  line-height: 1.45;
+  color: var(--text-2);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .menu-pop,
   .dialog-panel,
   .dialog-scrim,
-  .toast {
+  .toast,
+  .term-pop {
     animation: none;
   }
 }

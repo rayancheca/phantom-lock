@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import type {
   Scene,
   SceneObject,
@@ -14,6 +15,7 @@ import type { ArrangeItem, ArrangeResult } from '../../engine/arrange';
 import type { ListeningField } from '../../engine/bestspot';
 import SimCanvas from '../canvas/SimCanvas';
 import SelectionActions from '../canvas/SelectionActions';
+import Legend from '../canvas/Legend';
 import type { CanvasTheme } from '../canvas/render';
 import Toolbar from '../panels/Toolbar';
 import OptimizeDialog from '../panels/OptimizeDialog';
@@ -57,10 +59,12 @@ interface CanvasStageProps {
   onStarterRectRoom: () => void;
   onStarterDrawWalls: () => void;
   onStarterApartment: () => void;
+  onStarterImportPhoto: (file: File) => void;
 
   optimizeOpen: boolean;
   optimizeDefaultMode: 'cinema' | 'music';
   optimizeRooms: { id: string; name: string; at: Vec2 }[];
+  optimizeWillReplace: boolean;
   onRunOptimizer: (opts: PlacementOptions) => void;
   onApplyProposal: () => void;
   onCloseOptimize: () => void;
@@ -89,6 +93,7 @@ export default function CanvasStage(p: CanvasStageProps) {
   const canRotateSel =
     sel?.type === 'object' && p.scene.objects.find((o) => o.id === sel.id)?.kind === 'rect';
   const hudHidden = p.overlayOpen || p.mode === 'wall';
+  const photoRef = useRef<HTMLInputElement>(null);
   return (
     <section className={`stage ${p.theme === 'plan' ? 'stage-plan' : ''}`} aria-label="Room canvas">
       <SimCanvas
@@ -123,6 +128,7 @@ export default function CanvasStage(p: CanvasStageProps) {
         onResetView={p.onResetView}
       />
       <p className="mode-hint">{MODE_HINT[p.mode]}</p>
+      <Legend appMode={p.appMode} settings={p.settings} />
       <SelectionActions
         selection={p.selection}
         hidden={hudHidden}
@@ -160,6 +166,28 @@ export default function CanvasStage(p: CanvasStageProps) {
               <small>The digitized sample floorplan</small>
             </span>
           </button>
+          <button
+            type="button"
+            className="btn btn-block starter-btn"
+            onClick={() => photoRef.current?.click()}
+          >
+            <Icon name="image" size={16} />
+            <span>
+              <strong>Start from a floorplan photo</strong>
+              <small>Drop in a picture and trace over it</small>
+            </span>
+          </button>
+          <input
+            ref={photoRef}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) p.onStarterImportPhoto(f);
+              e.target.value = '';
+            }}
+          />
         </div>
       )}
       {p.optimizeOpen && (
@@ -167,6 +195,7 @@ export default function CanvasStage(p: CanvasStageProps) {
           proposal={p.proposal}
           defaultMode={p.optimizeDefaultMode}
           rooms={p.optimizeRooms}
+          willReplace={p.optimizeWillReplace}
           onRun={p.onRunOptimizer}
           onApply={p.onApplyProposal}
           onClose={p.onCloseOptimize}

@@ -58,9 +58,9 @@ export default function AppDialogs(p: AppDialogsProps) {
       {dialog?.kind === 'room-name' && (
         <RenameDialog
           name=""
-          title="Name this room"
-          fieldLabel="Room name"
-          submitLabel="Create room"
+          title="Name this area"
+          fieldLabel="Area name"
+          submitLabel="Mark area"
           placeholder="Kitchen, Bedroom…"
           onSubmit={p.onCommitRoomZone}
           onClose={p.onCloseDialog}

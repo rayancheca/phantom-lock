@@ -9,6 +9,8 @@ interface Props {
   proposal: Proposal | null;
   defaultMode: PlacementMode;
   rooms: Array<{ id: string; name: string; at: { x: number; y: number } }>;
+  /** True when the layout already has hand-placed speakers the apply will overwrite. */
+  willReplace: boolean;
   onRun: (opts: PlacementOptions) => void;
   onApply: () => void;
   onClose: () => void;
@@ -37,7 +39,15 @@ function Stepper({
   );
 }
 
-export default function OptimizeDialog({ proposal, defaultMode, rooms, onRun, onApply, onClose }: Props) {
+export default function OptimizeDialog({
+  proposal,
+  defaultMode,
+  rooms,
+  willReplace,
+  onRun,
+  onApply,
+  onClose,
+}: Props) {
   const [mode, setMode] = useState<PlacementMode>(defaultMode);
   const [counts, setCounts] = useState<Record<SpeakerModel, number>>({
     homepod: 2,
@@ -59,43 +69,51 @@ export default function OptimizeDialog({ proposal, defaultMode, rooms, onRun, on
     <div className="optimize-dialog" role="dialog" aria-label="Suggest speaker placement">
       <h2>Suggest placement</h2>
 
-      {rooms.length > 0 && (
-        <>
-          <div className="field-row">
-            <span className="field-row-label">Where</span>
-          </div>
-          <div className="where-chips" role="group" aria-label="Optimization target">
-            <button
-              type="button"
-              className={`btn ${where === 'listener' ? 'btn-active' : ''}`}
-              onClick={() => setWhere('listener')}
-            >
-              Around you
-            </button>
-            {rooms.map((r) => (
-              <button
-                key={r.id}
-                type="button"
-                className={`btn ${where === r.id ? 'btn-active' : ''}`}
-                onClick={() => setWhere(r.id)}
-              >
-                {r.name}
-              </button>
-            ))}
-            <button
-              type="button"
-              className={`btn ${where === 'house' ? 'btn-active' : ''}`}
-              onClick={() => setWhere('house')}
-            >
-              Whole house
-            </button>
-          </div>
-          {where === 'house' && (
-            <p className="card-sub">
-              One independent zone per named room — big speakers go to big rooms first.
-            </p>
-          )}
-        </>
+      <div className="field-row">
+        <span className="field-row-label">Where</span>
+      </div>
+      <div className="where-chips" role="group" aria-label="Optimization target">
+        <button
+          type="button"
+          className={`btn ${where === 'listener' ? 'btn-active' : ''}`}
+          aria-pressed={where === 'listener'}
+          title="Optimize the walled room your seat sits in — no need to mark an area first"
+          onClick={() => setWhere('listener')}
+        >
+          This room
+        </button>
+        {rooms.map((r) => (
+          <button
+            key={r.id}
+            type="button"
+            className={`btn ${where === r.id ? 'btn-active' : ''}`}
+            aria-pressed={where === r.id}
+            onClick={() => setWhere(r.id)}
+          >
+            {r.name}
+          </button>
+        ))}
+        {rooms.length > 0 && (
+          <button
+            type="button"
+            className={`btn ${where === 'house' ? 'btn-active' : ''}`}
+            aria-pressed={where === 'house'}
+            onClick={() => setWhere('house')}
+          >
+            Whole house
+          </button>
+        )}
+      </div>
+      {where === 'listener' && (
+        <p className="card-sub">
+          Fills the walled room your seat is in. Add rooms (in Build) or mark an area to target one
+          you’re not sitting in.
+        </p>
+      )}
+      {where === 'house' && (
+        <p className="card-sub">
+          One independent zone per named room or area — big speakers go to big rooms first.
+        </p>
       )}
 
       <div className="field-row">
@@ -160,9 +178,15 @@ export default function OptimizeDialog({ proposal, defaultMode, rooms, onRun, on
           {proposal ? 'Recompute' : 'Preview placement'}
         </button>
         {proposal && proposal.speakers.length > 0 && (
-          <button type="button" className="btn btn-ok" onClick={onApply}>
+          <button
+            type="button"
+            className="btn btn-ok"
+            title={willReplace ? 'Replaces your current speakers — one tap to undo afterwards' : undefined}
+            onClick={onApply}
+          >
             <Icon name="check" size={13} />
-            Apply {proposal.speakers.length} speaker{proposal.speakers.length === 1 ? '' : 's'}
+            {willReplace ? 'Replace with' : 'Apply'} {proposal.speakers.length} speaker
+            {proposal.speakers.length === 1 ? '' : 's'}
           </button>
         )}
         <button type="button" className="btn" onClick={onClose}>

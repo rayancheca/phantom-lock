@@ -1,6 +1,8 @@
 import type { TraceResult } from '../../engine/types';
 import { CLOSE_QUALITY, type AudioMetrics, type PairMetrics } from '../../engine/stereo';
 import { causeSentence } from './verdict';
+import Term from '../ui/Term';
+import type { TermKey } from './glossary';
 import Icon from '../ui/Icon';
 import './panels.css';
 
@@ -16,10 +18,28 @@ interface Props {
 
 type Tone = 'ok' | 'warn' | 'bad' | 'plain';
 
-function Row({ label, value, tone = 'plain', hint }: { label: string; value: string; tone?: Tone; hint?: string }) {
+function Row({
+  label,
+  value,
+  tone = 'plain',
+  hint,
+  term,
+}: {
+  label: string;
+  value: string;
+  tone?: Tone;
+  hint?: string;
+  term?: TermKey;
+}) {
   return (
     <div className="metric-row" title={hint}>
-      <span className="metric-label">{label}</span>
+      {term ? (
+        <Term termKey={term} className="metric-label">
+          {label}
+        </Term>
+      ) : (
+        <span className="metric-label">{label}</span>
+      )}
       <span className={`metric-value tone-${tone}`}>{value}</span>
     </div>
   );
@@ -36,6 +56,7 @@ function SpecRow({
   tone,
   fraction,
   hint,
+  term,
   signal = false,
 }: {
   label: string;
@@ -43,12 +64,19 @@ function SpecRow({
   tone: Tone;
   fraction: number;
   hint?: string;
+  term?: TermKey;
   signal?: boolean;
 }) {
   const pct = Math.round(Math.min(1, Math.max(0.04, fraction)) * 100);
   return (
     <div className="spec-row" title={hint}>
-      <span className="spec-label">{label}</span>
+      {term ? (
+        <Term termKey={term} className="spec-label">
+          {label}
+        </Term>
+      ) : (
+        <span className="spec-label">{label}</span>
+      )}
       <span className={`spec-value tone-${tone}`}>{value}</span>
       <div className={signal ? 'quality-meter' : 'meter'} aria-hidden="true">
         <div
@@ -114,6 +142,7 @@ function PairSection({
           value={`${pair.itdMs.toFixed(2)} ms`}
           tone={itdTone}
           fraction={pair.itdMs / 0.6}
+          term="itd"
           hint="Inter-channel delay at your head. Above ~0.1 ms the image starts pulling toward the nearer HomePod; 1 ms sounds fully one-sided."
         />
         <SpecRow
@@ -121,6 +150,7 @@ function PairSection({
           value={balance}
           tone={ildTone}
           fraction={Math.abs(pair.ildDb) / 4}
+          term="ild"
           hint="Loudness difference at your seat. Volume trim can fix this — it can never fix timing."
         />
         <SpecRow
@@ -128,6 +158,7 @@ function PairSection({
           value={`${pair.angleDeg.toFixed(0)}° / 60°`}
           tone={angleTone}
           fraction={angleOff / 30}
+          term="angle-60"
           hint="Angle the pair subtends at your head. 60° = equilateral reference."
         />
         <SpecRow
@@ -136,6 +167,7 @@ function PairSection({
           tone={pair.locked ? 'ok' : 'plain'}
           fraction={pair.quality}
           signal
+          term="lock"
           hint="Equilateral + on axis + clear line of sight → the phantom centre locks. The fill shows how close this pair is."
         />
         {pair.tv && (
@@ -157,6 +189,7 @@ function PairSection({
         <Row
           label="Path mismatch"
           value={`${(pair.pathDiff * 100).toFixed(1)} cm`}
+          term="path-mismatch"
           hint="Difference between the two direct paths — mismatch shifts and smears the phantom image."
         />
         <Row
@@ -169,6 +202,7 @@ function PairSection({
               : 'aligned ✓'
           }
           tone={pair.combNotchHz && pair.combNotchHz < 2000 ? 'warn' : 'ok'}
+          term="comb-notch"
           hint="First cancellation frequency caused by the pair's path mismatch when both channels carry the same signal."
         />
       </details>
@@ -202,8 +236,8 @@ export default function MetricsPanel({ audio, trace, speakerCount, tvAnchor, onS
         <h2>Audio</h2>
         <p className="card-sub">
           {hideSuggest
-            ? 'No speakers in this layout yet — place a stereo pair to get a verdict here.'
-            : 'No speakers yet. Place them one by one with the speaker tool, or let the optimizer find spots for you.'}
+            ? 'The spec sheet fills in once a matched stereo pair is playing — timing, level, angle, and the lock, live as you move.'
+            : 'Nothing to analyze yet. Drop in two matched HomePods with the speaker tool, or let the optimizer find the spots — then watch the phantom center lock.'}
         </p>
         {!hideSuggest && (
           <button type="button" className="btn btn-primary btn-block" onClick={onSuggest}>

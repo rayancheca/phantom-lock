@@ -29,6 +29,10 @@ import {
   updateActiveListener,
 } from '../../engine/scene';
 import { bootstrapPersistence, type PersistMode } from '../../engine/db';
+import { initialStoreForBoot, isPristineOrigin } from '../../engine/seed';
+import { buildUnderlay } from '../panels/underlay-import';
+import { deriveVerdict } from '../panels/verdict';
+import { renderPlanToBlob, planImageFilename } from '../canvas/export-image';
 import type { Scenario } from '../compare/ScenarioCompare';
 import type { ToastData } from '../ui/Toast';
 import { initialMode, modeTheme, subStepForTool, type AppMode, type DesignSubStep, type ModeEntry } from './mode';
@@ -44,14 +48,29 @@ import AppHeader from './AppHeader';
 import CanvasStage from './CanvasStage';
 import Sidebar from './Sidebar';
 import AppDialogs from './AppDialogs';
+import FirstRunExplainer from './FirstRunExplainer';
 import './app.css';
+
+/** Standalone localStorage flag for the one-time welcome (never the persistence
+ *  schema — see the UX-4 data-safety rule). */
+const INTRO_FLAG = 'phantom-lock:intro-dismissed';
+
+function introUnseen(): boolean {
+  try {
+    return localStorage.getItem(INTRO_FLAG) == null;
+  } catch {
+    return false; // storage unavailable → don't nag on every boot
+  }
+}
 
 interface AppInnerProps {
   initialStore: LayoutStore;
   persistMode: PersistMode;
+  /** True only on a genuine first run (no prior data + pristine origin + unseen). */
+  showFirstRun: boolean;
 }
 
-function AppInner({ initialStore, persistMode }: AppInnerProps) {
+function AppInner({ initialStore, persistMode, showFirstRun }: AppInnerProps) {
   const [store, setStore] = useState<LayoutStore>(initialStore);
   const [selection, setSelection] = useState<Selection>(null);
   const [mode, setMode] = useState<ToolMode>('select');
@@ -77,6 +96,15 @@ function AppInner({ initialStore, persistMode }: AppInnerProps) {
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [compare, setCompare] = useState<{ left: Scenario; right: Scenario } | null>(null);
   const [detecting, setDetecting] = useState(false);
+  const [showIntro, setShowIntro] = useState(() => showFirstRun && introUnseen());
+  const dismissIntro = useCallback(() => {
+    setShowIntro(false);
+    try {
+      localStorage.setItem(INTRO_FLAG, '1');
+    } catch {
+      // Non-fatal: a storage that rejects writes just re-shows the welcome next boot.
+    }
+  }, []);
   const fileRef = useRef<HTMLInputElement>(null);
   const lastDeletedRef = useRef<Deleted | null>(null);
   const toastIdRef = useRef(0);
@@ -353,6 +381,14 @@ function AppInner({ initialStore, persistMode }: AppInnerProps) {
     if (underlay) setResetViewToken((n) => n + 1);
   };
 
+  /** First-run "Start from a floorplan photo" — the DESIGN photo-import entry,
+   *  reusing the same underlay builder as UnderlayCard. */
+  const importStarterPhoto = (file: File) => {
+    buildUnderlay(file)
+      .then(setUnderlay)
+      .catch(() => showToast('Could not read that image.', { tone: 'bad' }));
+  };
+
   /** Two calibration clicks arrived — scale the underlay so they match reality. */
   const handleCalibrate = (a: Vec2, b: Vec2) => {
     const measured = Math.hypot(a.x - b.x, a.y - b.y);
@@ -437,9 +473,14 @@ function AppInner({ initialStore, persistMode }: AppInnerProps) {
 
   const applyArrange = () => {
     if (!furnitureProposal || furnitureProposal.objects.length === 0) return;
+    const n = furnitureProposal.objects.length;
     setScene((s) => ({ ...s, objects: [...s.objects, ...furnitureProposal.objects] }));
     setFurnitureProposal(null);
     setArrangeOpen(false);
+    // Every scene-mutating apply is reversible with the same undo toast deletes get.
+    showToast(`Added ${n} furniture piece${n === 1 ? '' : 's'}`, {
+      action: { label: 'Undo', run: undoScene },
+    });
   };
 
   /** Add a named rectangular room to the CURRENT layout — flush against the
@@ -489,6 +530,47 @@ function AppInner({ initialStore, persistMode }: AppInnerProps) {
     }));
   };
 
+  // --- shareable output (item H) -------------------------------------------------
+
+  /** Render the current plan to a PNG and hand it to the browser download flow.
+   *  Nothing leaves the app except via this explicit user click. */
+  const exportPlanImage = () => {
+    renderPlanToBlob({ scene, settings, trace, audio, bestSpot, theme })
+      .then((blob) => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = planImageFilename(active.name);
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        showToast('Saved the plan image', { tone: 'ok' });
+      })
+      .catch(() => showToast('Could not export the plan image.', { tone: 'bad' }));
+  };
+
+  /** Copy the verdict headline + cause + seat to the clipboard (single source:
+   *  `deriveVerdict`, same as the hero). Guards for an absent clipboard API. */
+  const copyVerdict = () => {
+    if (audio.pairs.length === 0) {
+      showToast('No verdict yet — place a stereo pair first.', { tone: 'bad' });
+      return;
+    }
+    const view = deriveVerdict(audio, trace, settings.tvAnchor);
+    const seat = activeListener(scene).name;
+    const text = `Phantom Lock — ${view.headline} at ${seat}.${view.cause ? ` ${view.cause}` : ''}`;
+    const clip = navigator.clipboard;
+    if (!clip?.writeText) {
+      showToast('Copying isn’t available in this browser.', { tone: 'bad' });
+      return;
+    }
+    clip
+      .writeText(text)
+      .then(() => showToast('Verdict copied to clipboard', { tone: 'ok' }))
+      .catch(() => showToast('Could not copy the verdict.', { tone: 'bad' }));
+  };
+
   const applyProposal = () => {
     if (!proposal || proposal.speakers.length === 0) return;
     const replacing = scene.speakers.length > 0;
@@ -522,11 +604,13 @@ function AppInner({ initialStore, persistMode }: AppInnerProps) {
     setOptimizeOpen(false);
     const n = created.length;
     const moved = proposal.targetName ? ` — moved YOU to ${proposal.targetName}` : ' — drag to fine-tune';
+    // Both branches are reversible: the optimizer overwrite AND the fresh placement
+    // are one history step, so each gets the same one-tap undo toast (item E).
     showToast(
       replacing
         ? `Replaced your speakers with ${n} suggested one${n === 1 ? '' : 's'}${proposal.targetName ? moved : ''}`
         : `Placed ${n} speaker${n === 1 ? '' : 's'}${moved}`,
-      replacing ? { action: { label: 'Undo', run: undoScene } } : { tone: 'ok' },
+      { action: { label: 'Undo', run: undoScene } },
     );
   };
 
@@ -537,7 +621,13 @@ function AppInner({ initialStore, persistMode }: AppInnerProps) {
   // "Detected layout" confirmation (wallProposal) — all sit OVER the still-mounted
   // canvas, so their open state can't leak scene/tool/rotate keys through.
   const overlayOpen =
-    dialog !== null || optimizeOpen || arrangeOpen || compare !== null || galleryOpen || wallProposal !== null;
+    dialog !== null ||
+    optimizeOpen ||
+    arrangeOpen ||
+    compare !== null ||
+    galleryOpen ||
+    wallProposal !== null ||
+    showIntro;
 
   const runKeyCommand = (cmd: KeyCommand) => {
     switch (cmd.type) {
@@ -658,9 +748,11 @@ function AppInner({ initialStore, persistMode }: AppInnerProps) {
           onStarterRectRoom={() => setDialog({ kind: 'room-size', purpose: 'add-room' })}
           onStarterDrawWalls={() => applyTool('wall')}
           onStarterApartment={() => addLayout('apartment')}
+          onStarterImportPhoto={importStarterPhoto}
           optimizeOpen={optimizeOpen}
           optimizeDefaultMode={settings.tvAnchor ? 'cinema' : 'music'}
           optimizeRooms={(scene.rooms ?? []).map((r) => ({ id: r.id, name: r.name, at: r.at }))}
+          optimizeWillReplace={scene.speakers.length > 0}
           onRunOptimizer={runOptimizer}
           onApplyProposal={applyProposal}
           onCloseOptimize={() => {
@@ -724,6 +816,8 @@ function AppInner({ initialStore, persistMode }: AppInnerProps) {
           onRemoveSeat={removeSeat}
           onCompare={openCompare}
           canCompare={canCompare}
+          onExportImage={exportPlanImage}
+          onCopyVerdict={copyVerdict}
           onSuggest={() => {
             setOptimizeOpen(true);
             setProposal(null);
@@ -777,6 +871,8 @@ function AppInner({ initialStore, persistMode }: AppInnerProps) {
         onCloseCompare={() => setCompare(null)}
         onDismissToast={dismissToast}
       />
+
+      {showIntro && <FirstRunExplainer onDismiss={dismissIntro} />}
     </div>
   );
 }
@@ -787,15 +883,27 @@ function AppInner({ initialStore, persistMode }: AppInnerProps) {
  * once the store is hydrated. A brief splash covers the async load.
  */
 export default function App() {
-  const [boot, setBoot] = useState<{ store: LayoutStore; mode: PersistMode } | null>(null);
+  const [boot, setBoot] = useState<{
+    store: LayoutStore;
+    mode: PersistMode;
+    firstRun: boolean;
+  } | null>(null);
   const startedRef = useRef(false);
 
   useEffect(() => {
     if (startedRef.current) return;
     startedRef.current = true;
-    bootstrapPersistence(() => loadStore(localStorage))
+    // On a pristine origin `initialStoreForBoot` seeds the Maple Court demo with a
+    // locked pair (a live verdict on first paint) — but ONLY on the confirmed
+    // happy-path first run. The degraded fallback (2nd arg + the outer .catch) uses
+    // the plain, NON-seeding `loadStore` so a synthetic demo is never injected over
+    // records that are merely temporarily unreadable.
+    bootstrapPersistence(
+      () => initialStoreForBoot(localStorage),
+      () => loadStore(localStorage),
+    )
       .then(setBoot)
-      .catch(() => setBoot({ store: loadStore(localStorage), mode: 'localStorage' }));
+      .catch(() => setBoot({ store: loadStore(localStorage), mode: 'localStorage', firstRun: false }));
   }, []);
 
   if (!boot) {
@@ -809,5 +917,11 @@ export default function App() {
       </div>
     );
   }
-  return <AppInner initialStore={boot.store} persistMode={boot.mode} />;
+  // The welcome shows ONLY on a genuine first run: no prior IDB data (`firstRun`)
+  // AND a pristine origin (so a localStorage→IDB migration of real data is excluded,
+  // and the "you're looking at the demo" copy is always accurate).
+  const showFirstRun = boot.firstRun && isPristineOrigin(localStorage);
+  return (
+    <AppInner initialStore={boot.store} persistMode={boot.mode} showFirstRun={showFirstRun} />
+  );
 }
