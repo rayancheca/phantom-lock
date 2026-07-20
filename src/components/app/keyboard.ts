@@ -1,5 +1,6 @@
 import type { Scene, Selection, ToolMode, Vec2 } from '../../engine/types';
 import { updateActiveListener } from '../../engine/scene';
+import { digitTool, type AppMode } from './mode';
 
 /** The subset of a KeyboardEvent the dispatcher reads — keeps it pure/testable. */
 export interface KeyEvt {
@@ -23,6 +24,8 @@ export interface KeyEnv {
   arrangeOpen: boolean;
   selection: Selection;
   mode: ToolMode;
+  /** The active app-mode — scopes which digit shortcuts are live. */
+  appMode: AppMode;
 }
 
 export type KeyCommand =
@@ -31,7 +34,7 @@ export type KeyCommand =
   | { type: 'redo' }
   | { type: 'delete' }
   | { type: 'tool'; tool: ToolMode }
-  | { type: 'theme-toggle' }
+  | { type: 'mode-toggle' }
   | { type: 'rotate'; dir: -1 | 1; coalesce: boolean }
   | { type: 'nudge'; dx: number; dy: number; coalesce: boolean };
 
@@ -80,20 +83,13 @@ export function handleKeydown(e: KeyEvt, env: KeyEnv): KeyResult | null {
     return { command: { type: 'delete' } };
   }
 
-  switch (e.key) {
-    case '1':
-      return { command: { type: 'tool', tool: 'select' } };
-    case '2':
-      return { command: { type: 'tool', tool: 'wall' } };
-    case '3':
-      return { command: { type: 'tool', tool: 'rect' } };
-    case '4':
-      return { command: { type: 'tool', tool: 'circle' } };
-    case '5':
-      return { command: { type: 'tool', tool: 'speaker' } };
-    case 't':
-      return { command: { type: 'theme-toggle' } };
-  }
+  // Digit shortcuts bind only to tools present in the CURRENT app-mode, so a
+  // DESIGN digit can never reach the speaker tool and a TUNE digit can never
+  // reach a DESIGN tool. The mode owns the theme, so 't' switches MODE (which
+  // flips the theme as a consequence) — it never toggles the theme directly.
+  const tool = digitTool(e.key, env.appMode);
+  if (tool) return { command: { type: 'tool', tool } };
+  if (e.key === 't') return { command: { type: 'mode-toggle' } };
 
   if ((e.key === 'q' || e.key === 'e') && env.selection?.type === 'object') {
     // Held-key repeat folds into one undo entry, like nudge.
@@ -110,8 +106,13 @@ export function handleKeydown(e: KeyEvt, env: KeyEnv): KeyResult | null {
   return null;
 }
 
-/** Rotate the selected rect by ±ROTATE_STEP_DEG, wrapping into (-π, π]. */
+/** Rotate the selected rect by ±ROTATE_STEP_DEG, wrapping into (-π, π]. Only
+ *  rects rotate; for any other selection (wall/circle) this returns the SAME
+ *  scene reference so a stray q/e or touch-HUD tap can't push a no-op undo
+ *  entry. (Callers should also disable the affordance — see SelectionActions.) */
 export function rotateSelectedRect(scene: Scene, id: string, dir: -1 | 1): Scene {
+  const target = scene.objects.find((o) => o.id === id);
+  if (!target || target.kind !== 'rect') return scene;
   return {
     ...scene,
     objects: scene.objects.map((o) => {

@@ -9,9 +9,8 @@ import {
   sanitizeLayout,
   sanitizeScene,
 } from '../../../engine/scene';
-import type { Step } from '../../panels/WorkflowSteps';
 import type { ToastData } from '../../ui/Toast';
-import { initialStep } from '../app-constants';
+import { initialMode, type ModeEntry } from '../mode';
 import type { Deleted } from '../app-types';
 
 interface Args {
@@ -22,7 +21,7 @@ interface Args {
   setSelection: (sel: null) => void;
   closeFloatingPanels: () => void;
   setResetViewToken: (fn: (n: number) => number) => void;
-  applyStep: (s: Step, sceneNow?: Scene) => void;
+  applyMode: (entry: ModeEntry, sceneNow?: Scene) => void;
   setDialog: (d: null) => void;
   setGalleryOpen: (b: boolean) => void;
   showToast: (message: string, opts?: Partial<Omit<ToastData, 'id' | 'message'>>) => void;
@@ -52,7 +51,7 @@ export function useLayoutActions(a: Args): LayoutActions {
     a.setSelection(null);
     a.closeFloatingPanels();
     a.setResetViewToken((n) => n + 1);
-    a.applyStep(initialStep(nextScene), nextScene);
+    a.applyMode(initialMode(nextScene), nextScene);
   };
 
   const switchLayout = (id: string) => {
@@ -102,7 +101,7 @@ export function useLayoutActions(a: Args): LayoutActions {
         return { layouts, activeId: deleted.layout.id };
       });
       a.setResetViewToken((n) => n + 1);
-      a.applyStep(initialStep(deleted.layout.scene), deleted.layout.scene);
+      a.applyMode(initialMode(deleted.layout.scene), deleted.layout.scene);
       return;
     }
 

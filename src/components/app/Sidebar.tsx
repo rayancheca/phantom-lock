@@ -1,6 +1,9 @@
 import type { Scene, SceneObject, Selection, SimSettings, SpeakerModel, SpeakerObj, TraceResult } from '../../engine/types';
 import type { AudioMetrics } from '../../engine/stereo';
-import type { Step } from '../panels/WorkflowSteps';
+import type { AppMode, DesignSubStep } from './mode';
+import { SUBSTEP_ITEMS } from './app-constants';
+import SegmentSwitch from '../panels/SegmentSwitch';
+import TuneToolsCard from '../panels/TuneToolsCard';
 import GuidePanel from '../panels/GuidePanel';
 import UnderlayCard from '../panels/UnderlayCard';
 import FurniturePalette from '../panels/FurniturePalette';
@@ -12,7 +15,12 @@ import ControlsCard from '../panels/ControlsCard';
 import Echogram from '../panels/Echogram';
 
 interface SidebarProps {
-  step: Step;
+  appMode: AppMode;
+  designSubStep: DesignSubStep;
+  onSetSubStep: (s: DesignSubStep) => void;
+  subArmed: Record<DesignSubStep, boolean>;
+  tvAnchor: boolean;
+  onSetTvAnchor: (on: boolean) => void;
   scene: Scene;
   settings: SimSettings;
   selection: Selection;
@@ -53,23 +61,40 @@ interface SidebarProps {
   onSettingsChange: (settings: SimSettings) => void;
 }
 
-/** The right-hand panel column — content is step-driven. */
+/** The right-hand panel column — content is mode-driven. DESIGN leads with the
+ *  Build/Furnish sub-step switch; TUNE leads with its re-homed TV/Music + Suggest
+ *  actions, then the place-and-read cards (Speakers, Seats, Audio, Echogram). */
 export default function Sidebar(p: SidebarProps) {
-  const isSoundOrAnalyze = p.step === 'sound' || p.step === 'analyze';
+  const isDesign = p.appMode === 'design';
+  const isTune = p.appMode === 'tune';
+  const isBuild = isDesign && p.designSubStep === 'build';
+  const isFurnish = isDesign && p.designSubStep === 'furnish';
   return (
     <aside className="sidebar" aria-label="Panels">
-      {p.step !== 'analyze' && (
-        <GuidePanel
-          step={p.step}
-          hasWalls={p.hasWalls}
-          rooms={p.scene.rooms ?? []}
-          onCreateRoom={p.onCreateRoom}
-          onDeleteRoom={p.onDeleteRoom}
-          onInsertRectRoom={p.onInsertRectRoom}
-          onDrawWalls={p.onDrawWalls}
+      {isDesign && (
+        <SegmentSwitch
+          items={SUBSTEP_ITEMS}
+          value={p.designSubStep}
+          onSelect={p.onSetSubStep}
+          armed={p.subArmed}
+          ariaLabel="Design step"
+          variant="substep"
         />
       )}
-      {p.step === 'build' && (
+      {isTune && (
+        <TuneToolsCard tvAnchor={p.tvAnchor} onSetTvAnchor={p.onSetTvAnchor} onSuggest={p.onSuggest} />
+      )}
+      <GuidePanel
+        appMode={p.appMode}
+        designSubStep={p.designSubStep}
+        hasWalls={p.hasWalls}
+        rooms={p.scene.rooms ?? []}
+        onCreateRoom={p.onCreateRoom}
+        onDeleteRoom={p.onDeleteRoom}
+        onInsertRectRoom={p.onInsertRectRoom}
+        onDrawWalls={p.onDrawWalls}
+      />
+      {isBuild && (
         <UnderlayCard
           scene={p.scene}
           onUnderlay={p.onUnderlay}
@@ -80,7 +105,7 @@ export default function Sidebar(p: SidebarProps) {
           onError={p.onError}
         />
       )}
-      {p.step === 'furnish' && (
+      {isFurnish && (
         <FurniturePalette
           onAddPreset={p.onAddPreset}
           onCustomBox={p.onCustomBox}
@@ -88,7 +113,7 @@ export default function Sidebar(p: SidebarProps) {
           onArrange={p.onArrange}
         />
       )}
-      {isSoundOrAnalyze && (
+      {isTune && (
         <SpeakersCard
           scene={p.scene}
           trace={p.trace}
@@ -98,7 +123,7 @@ export default function Sidebar(p: SidebarProps) {
           onMatchVolumes={p.onMatchVolumes}
         />
       )}
-      {isSoundOrAnalyze && (
+      {isTune && (
         <ListenerCard
           scene={p.scene}
           selection={p.selection}
@@ -109,13 +134,16 @@ export default function Sidebar(p: SidebarProps) {
           onCompare={p.onCompare}
         />
       )}
-      {isSoundOrAnalyze && (
+      {isTune && (
         <MetricsPanel
           audio={p.audio}
           trace={p.trace}
           speakerCount={p.scene.speakers.length}
           tvAnchor={p.settings.tvAnchor}
           onSuggest={p.onSuggest}
+          /* TuneToolsCard is the single TUNE "Suggest placement" entry — don't
+             render a second identical CTA in the empty-state metrics card. */
+          hideSuggest
         />
       )}
       <InspectorPanel
@@ -130,7 +158,7 @@ export default function Sidebar(p: SidebarProps) {
         onSplitWall={p.onSplitWall}
         onDeleteMulti={p.onDeleteMulti}
       />
-      {p.step === 'analyze' && (
+      {isTune && (
         <>
           <ControlsCard settings={p.settings} onChange={p.onSettingsChange} />
           <Echogram trace={p.trace} scene={p.scene} />

@@ -13,13 +13,14 @@ import type { PlacementOptions, Proposal } from '../../engine/optimize';
 import type { ArrangeItem, ArrangeResult } from '../../engine/arrange';
 import type { ListeningField } from '../../engine/bestspot';
 import SimCanvas from '../canvas/SimCanvas';
+import SelectionActions from '../canvas/SelectionActions';
 import type { CanvasTheme } from '../canvas/render';
 import Toolbar from '../panels/Toolbar';
-import type { Step } from '../panels/WorkflowSteps';
 import OptimizeDialog from '../panels/OptimizeDialog';
 import ArrangeDialog from '../panels/ArrangeDialog';
 import Icon from '../ui/Icon';
 import { MODE_HINT } from './app-constants';
+import type { AppMode, DesignSubStep } from './mode';
 
 interface CanvasStageProps {
   scene: Scene;
@@ -43,15 +44,14 @@ interface CanvasStageProps {
   onSplitWall: (id: string, at: Vec2) => void;
   onActivateSeat: (id: string) => void;
 
-  step: Step;
+  appMode: AppMode;
+  designSubStep: DesignSubStep;
   onTool: (t: ToolMode) => void;
   onPlaceSpeaker: (model: SpeakerModel) => void;
-  onTheme: (t: CanvasTheme) => void;
   onResetView: () => void;
-  canUndo: boolean;
-  canRedo: boolean;
-  onUndo: () => void;
-  onRedo: () => void;
+  onRotateSel: (dir: -1 | 1) => void;
+  onNudgeSel: (dx: number, dy: number) => void;
+  onDeleteSel: () => void;
 
   showStarter: boolean;
   onStarterRectRoom: () => void;
@@ -81,6 +81,14 @@ interface CanvasStageProps {
 /** The centre stage: the interactive canvas, its toolbar, the mode hint, the
  *  empty-state starter, and the three canvas-anchored floating dialogs. */
 export default function CanvasStage(p: CanvasStageProps) {
+  // Rotate only applies to rects; disable it for wall/circle/speaker/listener so
+  // the touch handle never silently no-ops. Hide the whole HUD behind any blocking
+  // overlay OR while drawing walls — mirroring the keyboard dispatcher's gates
+  // (handleKeydown blocks these commands on overlayOpen / wall mode).
+  const sel = p.selection;
+  const canRotateSel =
+    sel?.type === 'object' && p.scene.objects.find((o) => o.id === sel.id)?.kind === 'rect';
+  const hudHidden = p.overlayOpen || p.mode === 'wall';
   return (
     <section className={`stage ${p.theme === 'plan' ? 'stage-plan' : ''}`} aria-label="Room canvas">
       <SimCanvas
@@ -106,20 +114,23 @@ export default function CanvasStage(p: CanvasStageProps) {
         onActivateSeat={p.onActivateSeat}
       />
       <Toolbar
-        step={p.step}
+        appMode={p.appMode}
+        designSubStep={p.designSubStep}
         mode={p.mode}
         placeModel={p.placeModel}
-        theme={p.theme}
         onTool={p.onTool}
         onPlaceSpeaker={p.onPlaceSpeaker}
-        onTheme={p.onTheme}
         onResetView={p.onResetView}
-        canUndo={p.canUndo}
-        canRedo={p.canRedo}
-        onUndo={p.onUndo}
-        onRedo={p.onRedo}
       />
       <p className="mode-hint">{MODE_HINT[p.mode]}</p>
+      <SelectionActions
+        selection={p.selection}
+        hidden={hudHidden}
+        canRotate={!!canRotateSel}
+        onRotate={p.onRotateSel}
+        onNudge={p.onNudgeSel}
+        onDelete={p.onDeleteSel}
+      />
       {p.showStarter && (
         <div className="stage-starter" role="region" aria-label="Start your room">
           <h2>Start your room</h2>

@@ -903,80 +903,83 @@
   margin: 0 2px;
 }
 
-/* --- workflow "channel fader" (header stepper) --------------------------
-   The four steps read as detents on an audio-console rail. One inline integer
-   var (--active, 0..3) drives three compositor-only layers — a signal fill
-   (scaleX), a frosted carriage (translateX) and the ring handle (translateX) —
-   with a spring so it snaps like a fader into its detent. Progress is shown by
-   luminance ("reached"); the amber LED means the step has data ("armed").
-   Never a checkmark. Root keeps the .steps-bar class so app.css keeps
-   centering + reflowing it in the header grid with no app.css edits. */
+/* Mobile: un-float the toolbar into a bottom, full-width, horizontally-
+   scrollable rail so it never covers the shrunken canvas (plan §6). It's a
+   sibling of the canvas (not a child), so its swipe-scroll isn't eaten by the
+   canvas `touch-action: none`. */
+@media (max-width: 960px) {
+  .toolstrip {
+    top: auto;
+    left: 8px;
+    right: 8px;
+    bottom: calc(8px + env(safe-area-inset-bottom));
+    max-width: none;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    justify-content: flex-start;
+    scrollbar-width: none;
+  }
 
-.steps-bar {
+  .toolstrip::-webkit-scrollbar {
+    display: none;
+  }
+
+  .strip-btn {
+    flex: 0 0 auto;
+    min-height: 40px;
+    padding: 8px 12px;
+  }
+}
+
+/* Touch: the keyboard chips are dead advice on a touchscreen — reclaim the
+   rail width (the mode-hint gets the same treatment in app.css). */
+@media (hover: none) and (pointer: coarse) {
+  .strip-kbd {
+    display: none;
+  }
+}
+
+/* --- segmented switch (DESIGN/TUNE mode + Build/Furnish sub-step) --------
+   Two PARALLEL toggles, not a progression: a frosted accent thumb slides under
+   the selected segment via one compositor-only transform. Reuses the console
+   tokens + the roving-tabindex keyboard lifted from the retired fader. */
+
+.segment-switch {
   position: relative;
   display: grid;
-  grid-template-columns: repeat(var(--count), 1fr); /* equal cols => 100% == one detent */
+  grid-template-columns: repeat(var(--count), 1fr);
   align-items: center;
   gap: 0;
-  width: min(420px, 42vw);
-  padding: 4px;
+  padding: 3px;
   background: var(--surface-2);
   border-radius: 999px;
   box-shadow: inset 0 0 0 1px var(--border), var(--shadow-1);
   isolation: isolate;
-  --node-c: 9px; /* vertical center of the node row inside the padding box */
 }
 
-/* One absolute chrome layer, inset to the 4px padding box so its 100% and its
-   column coordinates line up 1:1 with the four 1fr grid columns. */
-.fader-layer {
+.segment-switch--mode {
+  width: min(300px, 40vw);
+}
+
+.segment-switch--substep {
+  width: 100%;
+}
+
+/* Frosted accent thumb — glides under the active segment (transform only). */
+.segment-thumb {
   position: absolute;
-  inset: 4px;
   z-index: 0;
-  pointer-events: none;
-}
-
-/* Rail: the dim wire the handle rides. */
-.fader-rail {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: var(--node-c);
-  height: 3px;
-  transform: translateY(-50%);
-  border-radius: 999px;
-  background: var(--surface-0);
-  box-shadow: inset 0 0 0 1px var(--border);
-  overflow: hidden;
-}
-
-/* Signal wire: scaleX only; leading edge lands on the active node's center. */
-.fader-fill {
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  transform-origin: left center;
-  transform: scaleX(calc((var(--active) + 0.5) / var(--count)));
-  background: var(--signal);
-  box-shadow: 0 0 8px var(--accent-20);
-  transition: transform var(--dur-3) var(--ease-spring);
-}
-
-/* Frosted glass carriage: the grounded selected segment, glides under active. */
-.fader-carriage {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: calc(100% / var(--count));
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: calc((100% - 6px) / var(--count));
   border-radius: 999px;
   background: linear-gradient(
     180deg,
     color-mix(in oklab, var(--surface-3) 86%, white 14%),
     var(--surface-3)
   );
-  -webkit-backdrop-filter: blur(6px);
-  backdrop-filter: blur(6px);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.05),
     inset 0 0 0 1px var(--accent-20),
@@ -986,128 +989,57 @@
   transition: transform var(--dur-3) var(--ease-spring);
 }
 
-/* Cap: the fader HANDLE — a glowing ring that rides the rail and lands
-   concentrically around the active (smaller) node. */
-.fader-cap {
-  position: absolute;
-  top: var(--node-c);
-  left: 0;
-  width: calc(100% / var(--count));
-  display: grid;
-  place-items: center;
-  transform: translateX(calc(var(--active) * 100%));
-  transition: transform var(--dur-3) var(--ease-spring);
-}
-.fader-cap-ring {
-  position: relative;
-  width: 26px;
-  height: 26px;
-  border-radius: 999px;
-  transform: translateY(-50%);
-  background: var(--accent-06);
-  box-shadow:
-    0 0 0 1.5px var(--accent),
-    0 0 12px var(--accent-20),
-    inset 0 0 8px var(--accent-06);
-  transition: transform var(--dur-2) var(--ease-spring);
-}
-/* Static accent halo behind the active fader cap. Motion is event-driven only:
-   the only ambient motion in the app is the canvas rays (the header no longer
-   breathes/pulses on a loop). Lifts a touch on :hover — see below. */
-.fader-cap-ring::after {
-  content: '';
-  position: absolute;
-  inset: -4px;
-  border-radius: 999px;
-  box-shadow: 0 0 14px 1px var(--accent);
-  opacity: 0.16;
-}
-.steps-bar:hover .fader-cap-ring {
-  transform: translateY(-50%) scale(1.08);
-}
-
-/* Step buttons — real tabs, above the chrome. */
-.step {
+.segment {
   position: relative;
   z-index: 1;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 2px;
-  min-width: 76px;
-  padding: 0;
+  justify-content: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 5px 10px;
   background: none;
   border: 0;
+  border-radius: 999px;
   cursor: pointer;
-  color: inherit;
+  color: var(--text-2);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: 0.01em;
   -webkit-tap-highlight-color: transparent;
+  transition: color var(--dur-2) var(--ease-out);
 }
 
-/* Node: dim 18px detent by default. */
-.step-node {
+.segment-node {
   position: relative;
   display: grid;
   place-items: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 999px;
-  color: var(--text-3);
-  background: var(--surface-1);
-  box-shadow: inset 0 0 0 1px var(--border);
-  transition:
-    color var(--dur-2) var(--ease-out),
-    background var(--dur-2) var(--ease-out),
-    box-shadow var(--dur-2) var(--ease-out),
-    transform var(--dur-2) var(--ease-spring);
-}
-
-.step-label {
-  font-size: var(--text-xs);
-  line-height: 1;
-  font-weight: 600;
-  letter-spacing: 0.01em;
   color: var(--text-3);
   transition: color var(--dur-2) var(--ease-out);
 }
 
-/* Reached by the signal wire => lit cyan (progress, no checkmark). */
-.step[data-reached] .step-node {
-  color: var(--accent);
-  background: var(--surface-2);
-  box-shadow: inset 0 0 0 1px var(--accent-20), 0 0 8px -2px var(--accent-20);
+.segment[data-active] {
+  color: var(--text);
 }
-.step[data-reached] .step-label {
+
+.segment[data-active] .segment-node {
+  color: var(--accent);
+}
+
+.segment:hover:not([data-active]) {
+  color: var(--text);
+}
+
+.segment:hover:not([data-active]) .segment-node {
   color: var(--text-2);
 }
 
-/* Current step => brightest + lifted + breathing halo.
-   Keep AFTER [data-reached]: equal specificity, source order wins. */
-.step[data-active] .step-node {
-  color: var(--text);
-  background: var(--surface-3);
-  box-shadow: inset 0 0 0 1px var(--accent), 0 0 12px -2px var(--accent);
-  transform: translateY(-1px);
-}
-.step[data-active] .step-label {
-  color: var(--text);
-}
-/* Static accent ring marking the active step (was a perpetual nodePulse loop —
-   removed; the header carries no ambient motion now). */
-.step[data-active] .step-node::after {
-  content: '';
-  position: absolute;
-  inset: -5px;
-  border-radius: 999px;
-  box-shadow: 0 0 0 1px var(--accent-20);
-  opacity: 0.5;
-}
-
 /* Armed = heuristic satisfied => tiny amber LED (Right-channel identity). */
-.step[data-armed] .step-node::before {
+.segment[data-armed] .segment-node::after {
   content: '';
   position: absolute;
-  top: -1px;
-  right: -1px;
+  top: -2px;
+  right: -3px;
   width: 6px;
   height: 6px;
   border-radius: 999px;
@@ -1115,47 +1047,33 @@
   box-shadow: 0 0 6px var(--accent-r);
 }
 
-/* Hover: lift the pointed-at node. */
-.step:hover .step-node {
-  transform: translateY(-1px) scale(1.04);
-  color: var(--text-2);
-}
-.step[data-active]:hover .step-node {
-  color: var(--text);
+/* Full-segment focus ring (target-sized, matching the app's global affordance). */
+.segment:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
-/* Keyboard focus (roving tabindex). */
-.step:focus-visible {
-  outline: none;
-}
-.step:focus-visible .step-node {
-  box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 3px var(--accent-20);
+/* Touch: meet the 40px target on both the header + sidebar switches. */
+@media (hover: none) and (pointer: coarse) {
+  .segment {
+    min-height: 40px;
+  }
 }
 
-/* Reduced motion: snap, never glide/pulse/breathe. */
 @media (prefers-reduced-motion: reduce) {
-  .fader-fill,
-  .fader-carriage,
-  .fader-cap,
-  .fader-cap-ring,
-  .step-node,
-  .step-label {
+  .segment-thumb,
+  .segment,
+  .segment-node {
     transition: none;
   }
-  /* The cap/node halos are static now (no more capBreathe/nodePulse loops), so
-     they need no reduced-motion override — their base opacity already holds. */
-  .steps-bar:hover .fader-cap-ring {
-    transform: translateY(-50%);
-  }
 }
 
-/* Responsive: app.css already reflows .topbar > .steps-bar to a full-width,
-   order:3, overflow-x:auto row at <=1180px — just widen + guard min-width. */
-@media (max-width: 1180px) {
-  .steps-bar {
-    width: 100%;
-    min-width: 340px;
-  }
+/* --- TUNE tools card (re-homed TV/Music writer + Suggest) ---------------- */
+
+.tune-tools-row {
+  display: flex;
+  justify-content: center;
+  margin-bottom: var(--space-2);
 }
 
 /* --- echogram --------------------------------------------------------- */

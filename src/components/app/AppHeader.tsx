@@ -1,43 +1,52 @@
 import type { RefObject } from 'react';
 import Icon from '../ui/Icon';
-import WorkflowSteps, { type Step } from '../panels/WorkflowSteps';
+import SegmentSwitch from '../panels/SegmentSwitch';
+import { MODE_ITEMS } from './app-constants';
+import type { AppMode } from './mode';
 
 interface AppHeaderProps {
   activeName: string;
   onOpenGallery: () => void;
   fileRef: RefObject<HTMLInputElement | null>;
   onImportFile: (file: File) => void;
-  step: Step;
-  onStep: (s: Step) => void;
-  stepDone: Record<Step, boolean>;
-  tvAnchor: boolean;
-  onSetTvAnchor: (on: boolean) => void;
-  canCompare: boolean;
-  onCompare: () => void;
-  onSuggest: () => void;
+  appMode: AppMode;
+  onSetMode: (m: AppMode) => void;
+  modeArmed: Record<AppMode, boolean>;
+  canUndo: boolean;
+  canRedo: boolean;
+  onUndo: () => void;
+  onRedo: () => void;
 }
 
-/** The top bar: brand, layout switcher, workflow steps, TV/Music mode, compare + suggest. */
+/** The global top bar — only what is truly global: brand, the always-pinned
+ *  layout switcher, the DESIGN/TUNE mode switch, and undo/redo. Mode-specific
+ *  actions (TV/Music, Suggest, Compare) live in the TUNE context, not here. */
 export default function AppHeader({
   activeName,
   onOpenGallery,
   fileRef,
   onImportFile,
-  step,
-  onStep,
-  stepDone,
-  tvAnchor,
-  onSetTvAnchor,
-  canCompare,
-  onCompare,
-  onSuggest,
+  appMode,
+  onSetMode,
+  modeArmed,
+  canUndo,
+  canRedo,
+  onUndo,
+  onRedo,
 }: AppHeaderProps) {
   return (
     <header className="topbar">
       <div className="topbar-left">
         <div className="brand" title="Phantom Lock — acoustic room planner">
-          <h1>
-            PHANTOM<span>LOCK</span>
+          {/* aria-label names the heading directly, so it survives the ≤560px
+              monogram swap (both spans are aria-hidden / display-toggled). */}
+          <h1 aria-label="Phantom Lock">
+            <span className="wm-full" aria-hidden="true">
+              PHANTOM<span>LOCK</span>
+            </span>
+            <span className="wm-mono" aria-hidden="true">
+              P<span>L</span>
+            </span>
           </h1>
         </div>
         <button
@@ -62,45 +71,35 @@ export default function AppHeader({
         />
       </div>
 
-      <WorkflowSteps step={step} onStep={onStep} done={stepDone} />
+      <SegmentSwitch
+        items={MODE_ITEMS}
+        value={appMode}
+        onSelect={onSetMode}
+        armed={modeArmed}
+        ariaLabel="Workspace mode"
+        variant="mode"
+      />
 
       <div className="topbar-actions">
-        <div className="mode-toggle" role="group" aria-label="Listening mode">
-          <button
-            type="button"
-            className={tvAnchor ? 'mode-on' : ''}
-            aria-pressed={tvAnchor}
-            title="Cinema: the phantom center must land on the TV — lock and sweet spot track the TV axis"
-            onClick={() => onSetTvAnchor(true)}
-          >
-            <Icon name="film" size={14} />
-            TV
-          </button>
-          <button
-            type="button"
-            className={!tvAnchor ? 'mode-on' : ''}
-            aria-pressed={!tvAnchor}
-            title="Music: the image anchors on you — the TV is ignored by locks and sweet spots"
-            onClick={() => onSetTvAnchor(false)}
-          >
-            <Icon name="music" size={14} />
-            Music
-          </button>
-        </div>
-        {canCompare && (
-          <button
-            type="button"
-            className="btn btn-compare"
-            title="Compare two seats or two layouts side by side"
-            onClick={onCompare}
-          >
-            <Icon name="grid" size={15} />
-            <span>Compare</span>
-          </button>
-        )}
-        <button type="button" className="btn btn-primary btn-suggest" onClick={onSuggest}>
-          <Icon name="sparkles" size={15} />
-          <span>Suggest placement</span>
+        <button
+          type="button"
+          className="btn btn-icon"
+          title="Undo (⌘Z)"
+          aria-label="Undo"
+          disabled={!canUndo}
+          onClick={onUndo}
+        >
+          <Icon name="undo" size={16} />
+        </button>
+        <button
+          type="button"
+          className="btn btn-icon"
+          title="Redo (⇧⌘Z)"
+          aria-label="Redo"
+          disabled={!canRedo}
+          onClick={onRedo}
+        >
+          <Icon name="redo" size={16} />
         </button>
       </div>
     </header>

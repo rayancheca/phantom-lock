@@ -23,6 +23,7 @@ const env = (over: Partial<KeyEnv> = {}): KeyEnv => ({
   arrangeOpen: false,
   selection: null,
   mode: 'select',
+  appMode: 'design',
   ...over,
 });
 
@@ -170,20 +171,37 @@ describe('handleKeydown delete/backspace', () => {
   });
 });
 
-// --- tool / theme keys ----------------------------------------------------
+// --- tool / mode keys (digit shortcuts are mode-scoped) -------------------
 
-describe('handleKeydown tool + theme keys', () => {
+describe('handleKeydown tool keys — DESIGN mode', () => {
   it.each([
     ['1', 'select'],
     ['2', 'wall'],
     ['3', 'rect'],
     ['4', 'circle'],
+  ])('key %s selects the %s tool', (k, tool) => {
+    expect(handleKeydown(key(k), env({ appMode: 'design' }))?.command).toEqual({ type: 'tool', tool });
+  });
+  it('key 5 (speaker) is unbound in DESIGN', () => {
+    expect(handleKeydown(key('5'), env({ appMode: 'design' }))).toBeNull();
+  });
+});
+
+describe('handleKeydown tool keys — TUNE mode', () => {
+  it.each([
+    ['1', 'select'],
     ['5', 'speaker'],
   ])('key %s selects the %s tool', (k, tool) => {
-    expect(handleKeydown(key(k), env())?.command).toEqual({ type: 'tool', tool });
+    expect(handleKeydown(key(k), env({ appMode: 'tune' }))?.command).toEqual({ type: 'tool', tool });
   });
-  it('t toggles theme', () => {
-    expect(handleKeydown(key('t'), env())?.command).toEqual({ type: 'theme-toggle' });
+  it.each(['2', '3', '4'])('DESIGN digit %s is unbound in TUNE (no cross-mode leak)', (k) => {
+    expect(handleKeydown(key(k), env({ appMode: 'tune' }))).toBeNull();
+  });
+});
+
+describe('handleKeydown mode key', () => {
+  it('t switches app-mode (which owns the theme) — never toggles the theme directly', () => {
+    expect(handleKeydown(key('t'), env())?.command).toEqual({ type: 'mode-toggle' });
   });
 });
 
@@ -269,6 +287,20 @@ describe('rotateSelectedRect', () => {
   it('ignores non-rect / non-matching ids', () => {
     const scene = baseScene([rect('r1')], []);
     expect(rotateSelectedRect(scene, 'nope', 1).objects[0]).toBe(scene.objects[0]);
+  });
+  it('returns the SAME scene reference for a non-rect target (no undo-stack churn)', () => {
+    const wall: SceneObject = {
+      id: 'w1',
+      kind: 'wall',
+      a: { x: 0, y: 0 },
+      b: { x: 3, y: 0 },
+      height: 2.4,
+      absorption: 0.1,
+    } as SceneObject;
+    const scene = baseScene([wall], []);
+    // Same object identity => historyPush dedups it => a stray q/e or touch-HUD
+    // tap on a wall can't push a no-op undo entry.
+    expect(rotateSelectedRect(scene, 'w1', 1)).toBe(scene);
   });
 });
 

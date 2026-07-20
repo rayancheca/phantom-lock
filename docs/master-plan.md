@@ -675,6 +675,37 @@ TUNE + de-dup the toggle; **fix the mobile toolbar** (bottom rail, un-float) + p
 handles for rotate/delete/nudge + drop keyboard hints on touch.
 *Acceptance:* a tool never changes mode/theme; header shows only context-appropriate actions; ≤960px toolbar never
 overlaps the canvas + switcher always reachable + touch edit works; behavior otherwise identical; gate green.
+**Status:** ☑ **DONE 2026-07-20** — all acceptance bullets met. The IA truth is a new pure module
+`src/components/app/mode.ts` (`modeTheme`/`toolMode`/`subStepForTool`/`digitTool`/`initialMode`, 45 failing-first tests);
+`theme` is now a DERIVED `const modeTheme(appMode)` (not state) — the SINGLE controller, so `applyStep`/`applyTool`-teleport/
+the `t`-key three-way fight is gone. `applyTool` only flips the DESIGN sub-step (never the mode); digits are mode-scoped
+(no cross-mode leak); `t`→mode-toggle. Header rescoped to brand + pinned switcher (`PL` monogram ≤560) + DESIGN/TUNE
+`SegmentSwitch` (replaced the retired `WorkflowSteps` fader) + undo/redo; TV/Music + Suggest re-homed to `TuneToolsCard`
+in TUNE (de-duped — MetricsPanel now only mirrors `tvAnchor`); Compare stays in ListenerCard + gallery. Mobile: `.toolstrip`
+un-floats to a bottom scrollable 40px rail at ≤960px, mode-hint repositions to top (hidden on touch), `SelectionActions`
+touch HUD (rotate/nudge/delete) on coarse pointers. **Evidence block:**
+- *Agents (verdict):* 8-agent design Workflow (3 map → 2 design → synth → 2 adversarial refute; refute-correctness = BLUEPRINT
+  SOUND, refute-ui = NEEDS FIXES → 4 must-fix folded in). Self-review over the diff: **code-reviewer** (1 HIGH: HUD escapes
+  `overlayOpen` → FIXED), **silent-failure-hunter** (2 HIGH: HUD rotate no-op on walls + `overlayOpen` bypass → both FIXED),
+  **a11y-architect** (HIGH empty mobile h1 + tab→radiogroup + 40px segments → FIXED). All real findings fixed + re-verified.
+- *Tests:* **245 → 296** (+51; `mode.test.ts` +45 failing-first, `keyboard.test.ts` net +6). None skipped/only'd/deleted.
+- *Gate (literal tails):* `npm run lint` → 0 problems (exit 0); `npm test` → **296 passed (20 files)**; `npm run build` →
+  tsc clean + **JS 380.16 kB / 123.05 kB gz · CSS 35.46 kB / 6.96 kB gz**.
+- *Live proof (headless-Chrome-over-CDP, zero-dep):* screenshots in `docs/sessions/S14/` (gitignored, scrubbed **Maple Court**
+  only) — `01-tune-desktop` · `02-design-desktop` (cyanotype) · `03-design-furnish-desktop` · `04-tune-mobile-390` (bottom
+  rail, no overlap) · `05-design-mobile-390` · `06-design-mobile-hud-object` (HUD, rotate ENABLED) · `07-tune-mobile-hud-listener`
+  (rotate/delete DISABLED, nudge live) · `08-header-monogram-430`. Behavioral proof (6/6 PASS): dispatched `3`/`5`/`t`/`2`/`5`
+  keydowns and read the rendered mode/theme/sub — a tool NEVER changed mode/theme; digits mode-scoped; `t` toggles mode.
+  Media-query proof: `matchMedia('(pointer:coarse)')=true` ⟹ HUD `display:flex`, mode-hint `display:none`. Console clean.
+- *Acceptance → status:* tool never changes mode/theme = **met** (6/6 behavioral PASS); header context-appropriate = **met**
+  (02/04 shots + read_page); ≤960 rail never overlaps + switcher reachable = **met** (04/05 shots); touch rotate/delete/nudge
+  = **met** (06/07 shots + HUD dispatches through `runKeyCommand`); behavior otherwise identical = **met** (parity verified
+  by 3 reviewers + 296 green). *Caveat:* live checks ran ONE browser (headless Chrome + the in-app pane); drag/marquee-band
+  stay rAF-limited in the `document.hidden` preview → covered by unit tests + agent trace (per the S4 lesson).
+- *Data safety:* the owner's **real home layout** (a real street address) backed up to `docs/sessions/S14/backup.json`
+  (gitignored) before any write; tested on a disposable Maple Court duplicate; real layout `updatedAt 1784480211854`
+  **byte-identical** afterward; origin restored to the single real layout via the app's own delete. No real address in any
+  committable file. Next: **UX-3 (Session 15)** — kickoff below.
 
 **Session 15 = UX-3 — The readout & THE LOCK (verdict hero · compare-first-class · lock moment · data-viz).** Extract
 the verdict into the pinned `--surface-4` hero at `--text-hero`, name the active seat ("At: Couch"), reuse it in
@@ -738,12 +769,43 @@ unlimited — optimize for perfection, not speed. Confirm the next kickoff you w
 > screenshots (both dark themes; note the S13 correction that BOTH canvas themes are dark now). Then self-review the diff,
 > update `CLAUDE.md` + this checklist, and write the UX-3 handoff.
 
+**KICKOFF PROMPT (UX-3 — The readout & THE LOCK, the NEXT session)** — *run under the Standing Operating Protocol at the top
+of this file (also in `CLAUDE.md`, auto-loaded): git-per-session (branch off `main` + baseline commit, commit again after
+the gate), read-first, a multi-agent Workflow for this heavy task (parallel understand → design → an adversarial skeptic
+that tries to REFUTE each risky change against the real code — this caught real bugs in UX-2), full implementation (no
+stubs/TODOs/`.skip`), test everything with PROOF (ratchet — **296 tests** must not drop; add failing-first tests for any new
+pure logic; paste the literal `npm run lint` + `npm test` + `npm run build` tails), a self-review agent pass
+(`code-reviewer` + `silent-failure-hunter` + a11y over the diff), and a handoff with an Evidence block. Data safety: the
+preview's IndexedDB on the owner's usual origin holds their REAL home layout (a real street address) — back
+it up to `docs/sessions/S15/backup.json` BEFORE any write test, test on a disposable **Maple Court** duplicate, confirm the
+real layout's `updatedAt` is byte-identical afterward, restore the origin, and verify no real address is in any committable
+file before pushing. Land on `main` and `git push` after the gate. Token/time budget is unlimited — optimize for perfection,
+not speed. Confirm the next kickoff you write re-states this protocol.*
+> UX-2 (S14) is DONE — the app is now the confirmed **DESIGN / TUNE** two-mode shell: the mode OWNS the theme (`mode.ts`
+> `modeTheme(appMode)`, `theme` is a derived const, one controller), tools never teleport the mode/theme, digits are
+> mode-scoped, the header is rescoped to brand + pinned switcher + DESIGN/TUNE `SegmentSwitch` + undo/redo, TV/Music + Suggest
+> live in `TuneToolsCard` (TUNE), the mobile toolbar is a bottom rail + `SelectionActions` touch HUD. The verdict currently
+> renders inside `MetricsPanel` in the TUNE sidebar column (NOT yet extracted/hero-styled). **Read `docs/ui-ux-overhaul-plan.md`
+> §2.5 (THE LOCK) + §4 (Verdict hero / Metrics / Speakers) + §10 UX-3 + `CLAUDE.md` first.** Execute **UX-3 (Session 15) — The
+> readout & THE LOCK:** extract the verdict into the pinned **`--surface-4`** hero at **`--text-hero`** (both foundation tokens
+> exist from UX-1 with no consumer yet), name the active seat ("At: Couch"), and **reuse the hero verbatim in
+> `ScenarioCompare`** so both scenarios show the same hero; ship **THE LOCK** ignition — when a pair transitions to `locked`,
+> the `PHANTOM CENTER LOCKED` headline ignites with the cyan→green **`--signal`** gradient sweeping the letterforms + a soft
+> green bloom (reuse the existing `verdict-in` keyframe), degrading to a cross-fade under `prefers-reduced-motion`; give the
+> metrics a **spec-sheet table** treatment (ITD / level / angle / lock in Geist Mono `tabular-nums`); make **Compare always
+> present in TUNE** and self-teaching when nothing is comparable ("add a second listening spot, or duplicate this layout")
+> instead of only living in ListenerCard at ≥2 seats; treat the Echogram + meters as first-class data-viz (`--signal` fills,
+> mono axes). Presentation-layer only — do NOT touch `src/engine`, persistence, or the scene data model. Acceptance: the
+> verdict LEADS the TUNE column and never scrolls away; THE LOCK fires on the locked transition and degrades under reduced
+> motion; Compare is always reachable + self-teaching; gate green; screenshots of unlocked→LOCKED + the 2-up compare (scrubbed
+> Maple Court, in the dark sound theme). Then self-review the diff, update `CLAUDE.md` + this checklist, and write the UX-4 handoff.
+
 ## Backlog (noticed, not yet scheduled — add to a session as it fits)
 - **Auto-detect walls accuracy** — now scheduled as **Session 12** (duplicated/diagonal tangle on real floorplans);
   see its block above. Surfaced by first-time-user clickthrough.
 - RT60 / room-mode / per-frequency acoustic output (deeper analysis to match the "real physics" framing).
 - Shareable/exportable result (PNG/PDF plan + verdict).
-- Real touch controls (on-screen rotate/nudge/delete) beyond the stacked ≤960 px layout.
+- Real touch controls (on-screen rotate/nudge/delete) — **DONE in S14/UX-2** (`SelectionActions` HUD on coarse pointers).
 - Persisted undo history across reload (currently in-memory only).
 - Multi-tab coordination policy (BroadcastChannel vs last-write-wins).
 - Periodic slim (imageless) localStorage mirror so the rollback snapshot isn't frozen at first migration (from the S1 data-loss review); surface a toast when an oversized underlay is dropped by `sanitizeScene`.
@@ -831,3 +893,17 @@ unlimited — optimize for perfection, not speed. Confirm the next kickoff you w
     protocol's "screenshot both the dark sound and **light** plan themes" wording is now stale (both are dark — a factual
     correction for the owner to make to the canonical protocol); the real home address is still referenced in this repo's
     **git history** (already public on `origin/main`) — a dedicated history-scrub is out of scope here. Next: **UX-2**.
+- **2026-07-20 — Session 14 (UX-2) DONE:** Shell & IA — the confirmed **DESIGN / TUNE** two-mode model. `theme` is now a
+  DERIVED `const modeTheme(appMode)` (the single controller) via the new pure `src/components/app/mode.ts` (45 failing-first
+  tests) — the old `applyStep`/`applyTool`-teleport/`t`-key three-way theme fight is structurally eliminated; a tool only
+  flips the DESIGN sub-step, digits are mode-scoped (no cross-mode leak), `t`→mode-toggle. Header rescoped to brand + pinned
+  switcher (`PL` monogram ≤560) + DESIGN/TUNE `SegmentSwitch` (replaced the retired `WorkflowSteps` fader) + undo/redo;
+  TV/Music + Suggest re-homed to `TuneToolsCard` in TUNE (de-duped; MetricsPanel mirrors `tvAnchor`). Mobile: `.toolstrip`
+  un-floats to a bottom scrollable 40px rail at ≤960px (never over the canvas), mode-hint→top (hidden on touch),
+  `SelectionActions` touch HUD (rotate/nudge/delete, coarse pointers) with correct disabled/hidden gating. 8-agent design
+  Workflow + 3 self-review agents (code-reviewer/silent-failure-hunter/a11y) — every real finding fixed (HUD escaping
+  `overlayOpen`; HUD rotate no-op on walls; empty mobile h1; tab→radiogroup; duplicate Suggest CTA; unified armed-LED
+  threshold). Tests **245→296** (+51, none skipped). Gate: lint 0 · 296 green · build JS 123.05 kB gz / CSS 6.96 kB gz.
+  Live: headless-Chrome-over-CDP screenshots (both dark themes + ≤960 rail + touch HUD + monogram) in `docs/sessions/S14/`
+  (gitignored, scrubbed Maple Court); 6/6 behavioral keydown assertions PASS (tool never changes mode/theme); console clean.
+  Data-safe: the owner's real home layout backed up (gitignored) + byte-identical (`updatedAt` unchanged) + origin restored. Next: **UX-3**.

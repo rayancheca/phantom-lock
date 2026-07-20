@@ -40,6 +40,15 @@
   color: var(--overlay-text-strong);
 }
 
+/* Mobile: the bottom tool rail owns the bottom edge — lift the compass to the
+   top-right of the canvas so they don't collide. */
+@media (max-width: 960px) {
+  .compass {
+    top: 8px;
+    bottom: auto;
+  }
+}
+
 .compass-off {
   border-color: var(--overlay-warn);
   color: var(--overlay-warn);
@@ -95,6 +104,78 @@
 @media (prefers-reduced-motion: reduce) {
   .wall-actions {
     animation: none;
+  }
+}
+
+/* On-selection touch handles (rotate / nudge / delete). Touch-only; pinned at
+   the bottom of the stage ABOVE the mobile tool rail (rail sits at ~8px + safe
+   area, ~40px tall, so 64px clears it). Non-blocking: the container ignores
+   pointer events so canvas keys/gestures stay live — only the buttons catch
+   taps. It is deliberately NOT part of overlayOpen. */
+.selection-actions {
+  position: absolute;
+  left: 50%;
+  bottom: calc(64px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  display: none;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  max-width: calc(100% - 16px);
+  border-radius: 999px;
+  border: 1px solid var(--overlay-border);
+  background: var(--overlay-bg);
+  backdrop-filter: blur(6px);
+  box-shadow: var(--shadow-2);
+  pointer-events: none;
+  z-index: 7;
+}
+
+.sel-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.sel-action {
+  pointer-events: auto;
+  display: grid;
+  place-items: center;
+  min-width: 40px;
+  min-height: 40px;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  color: var(--overlay-text-strong);
+  cursor: pointer;
+  transition: background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
+}
+
+.sel-action:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.sel-action:hover:not(:disabled) {
+  background: var(--accent-12);
+  color: var(--accent);
+}
+
+.sel-action-ico {
+  display: flex;
+}
+
+/* Divider between the rotate / nudge / delete clusters. */
+.selection-actions .sel-group + .sel-group,
+.selection-actions .sel-group + .sel-action {
+  border-left: 1px solid var(--overlay-border);
+  padding-left: 6px;
+  margin-left: 2px;
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .selection-actions {
+    display: flex;
   }
 }
 

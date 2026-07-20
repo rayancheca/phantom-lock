@@ -1,21 +1,15 @@
 import type { SpeakerModel, ToolMode } from '../../engine/types';
-import type { CanvasTheme } from '../canvas/render';
-import type { Step } from './WorkflowSteps';
+import type { AppMode, DesignSubStep } from '../app/mode';
 import './panels.css';
 
 interface Props {
-  step: Step;
+  appMode: AppMode;
+  designSubStep: DesignSubStep;
   mode: ToolMode;
   placeModel: SpeakerModel;
-  theme: CanvasTheme;
   onTool: (m: ToolMode) => void;
   onPlaceSpeaker: (m: SpeakerModel) => void;
-  onTheme: (t: CanvasTheme) => void;
   onResetView: () => void;
-  canUndo: boolean;
-  canRedo: boolean;
-  onUndo: () => void;
-  onRedo: () => void;
 }
 
 const ICONS: Record<string, string> = {
@@ -24,12 +18,9 @@ const ICONS: Record<string, string> = {
   rect: 'M5 7 h14 v10 h-14 Z',
   circle: 'M12 5 a7 7 0 1 0 0.001 0 Z',
   speaker: 'M12 4 a8 8 0 0 1 8 8 M12 8 a4 4 0 0 1 4 4 M12 12 m-1.6 0 a1.6 1.6 0 1 0 3.2 0 a1.6 1.6 0 1 0 -3.2 0',
-  plan: 'M4 4 h16 v16 h-16 Z M9 4 v16 M15 4 v16 M4 9 h16 M4 15 h16',
   fit: 'M4 9 V4 h5 M15 4 h5 v5 M20 15 v5 h-5 M9 20 H4 v-5',
   marquee: 'M5 5 h4 M11 5 h4 M17 5 h2 v2 M19 11 v4 M19 17 v2 h-2 M13 19 h-4 M7 19 H5 v-2 M5 13 V9',
   lasso: 'M12 4 c4.5 0 8 2.2 8 5 s-3.5 5 -8 5 -8 -2.2 -8 -5 3.5 -5 8 -5 Z M8.5 13.5 C7 16 7 18.5 8.5 20.5',
-  undo: 'M8 5 L4 9 l4 4 M4 9 h10 a5 5 0 0 1 0 10 h-4',
-  redo: 'M16 5 l4 4 -4 4 M20 9 H10 a5 5 0 0 0 0 10 h-4',
 };
 
 function ToolButton({
@@ -65,20 +56,17 @@ function ToolButton({
 }
 
 export default function Toolbar({
-  step,
+  appMode,
+  designSubStep,
   mode,
   placeModel,
-  theme,
   onTool,
   onPlaceSpeaker,
-  onTheme,
   onResetView,
-  canUndo,
-  canRedo,
-  onUndo,
-  onRedo,
 }: Props) {
   const isSpeakerTool = (m: SpeakerModel) => mode === 'speaker' && placeModel === m;
+  const isBuild = appMode === 'design' && designSubStep === 'build';
+  const isFurnish = appMode === 'design' && designSubStep === 'furnish';
 
   return (
     <div className="toolstrip" role="toolbar" aria-label="Canvas tools">
@@ -104,7 +92,7 @@ export default function Toolbar({
         active={mode === 'lasso'}
         onClick={() => onTool('lasso')}
       />
-      {step === 'build' && (
+      {isBuild && (
         <ToolButton
           icon={ICONS.wall}
           label="Draw walls"
@@ -114,7 +102,7 @@ export default function Toolbar({
           onClick={() => onTool('wall')}
         />
       )}
-      {step === 'furnish' && (
+      {isFurnish && (
         <>
           <ToolButton
             icon={ICONS.rect}
@@ -134,7 +122,7 @@ export default function Toolbar({
           />
         </>
       )}
-      {step === 'sound' && (
+      {appMode === 'tune' && (
         <>
           <ToolButton
             icon={ICONS.speaker}
@@ -154,40 +142,7 @@ export default function Toolbar({
         </>
       )}
       <div className="strip-sep" aria-hidden="true" />
-      <ToolButton
-        icon={ICONS.plan}
-        label={theme === 'plan' ? 'Blueprint' : 'Sound view'}
-        kbd="T"
-        title="Toggle blueprint / glowing sound view (T)"
-        active={theme === 'plan'}
-        onClick={() => onTheme(theme === 'plan' ? 'sound' : 'plan')}
-      />
       <ToolButton icon={ICONS.fit} label="Fit" title="Fit the room to the view" onClick={onResetView} />
-      <div className="strip-sep" aria-hidden="true" />
-      <button
-        type="button"
-        className="strip-btn"
-        title="Undo (⌘Z)"
-        aria-label="Undo"
-        disabled={!canUndo}
-        onClick={onUndo}
-      >
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d={ICONS.undo} />
-        </svg>
-      </button>
-      <button
-        type="button"
-        className="strip-btn"
-        title="Redo (⇧⌘Z)"
-        aria-label="Redo"
-        disabled={!canRedo}
-        onClick={onRedo}
-      >
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d={ICONS.redo} />
-        </svg>
-      </button>
     </div>
   );
 }

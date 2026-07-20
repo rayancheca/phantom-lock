@@ -16,9 +16,13 @@
   padding: var(--space-2) var(--space-4);
   background: var(--surface-1);
   border-bottom: 1px solid var(--border);
+  /* The body must never scroll horizontally; clip-margin keeps the rightmost
+     button's focus ring from being shaved. */
+  overflow-x: clip;
+  overflow-clip-margin: 4px;
 }
 
-.topbar > .steps-bar {
+.topbar > .segment-switch {
   justify-self: center;
 }
 
@@ -38,7 +42,14 @@
   white-space: nowrap;
 }
 
-.brand h1 span {
+/* The wordmark collapses to a "PL" monogram when the header is tight, so the
+   layout switcher beside it is never squeezed out (swap in the ≤560 media). */
+.wm-mono {
+  display: none;
+}
+
+.brand h1 .wm-full > span,
+.brand h1 .wm-mono > span {
   color: var(--accent);
   font-weight: 500;
 }
@@ -152,12 +163,9 @@
   margin-top: var(--space-1);
 }
 
-.btn-suggest {
-  white-space: nowrap;
-}
-
-.btn-compare {
-  white-space: nowrap;
+/* Icon-only header button (undo / redo). */
+.btn-icon {
+  padding: 6px 9px;
 }
 
 /* --- mode toggle ---------------------------------------------------------------- */
@@ -304,23 +312,8 @@
   pointer-events: none;
 }
 
-@media (max-width: 1180px) {
-  .topbar {
-    grid-template-columns: auto 1fr;
-  }
-
-  .topbar > .steps-bar {
-    order: 3;
-    grid-column: 1 / -1;
-    justify-self: start;
-    max-width: 100%;
-    overflow-x: auto;
-  }
-
-  .topbar-actions {
-    justify-self: end;
-  }
-}
+/* The lightened header (a 2-item switch, no TV/Music/Compare/Suggest) fits the
+   `auto 1fr auto` grid well below 1180px, so the old two-row reflow is gone. */
 
 @media (max-width: 960px) {
   .workspace {
@@ -333,7 +326,32 @@
     border-top: 1px solid var(--border);
   }
 
-  .btn-suggest span {
+  /* Keep the canvas hint clear of the re-docked bottom tool rail (§6). */
+  .mode-hint {
+    top: 8px;
+    bottom: auto;
+  }
+
+  /* The header undo/redo are the ONLY undo/redo on mobile — 40px touch target. */
+  .topbar-actions .btn {
+    min-width: 40px;
+    min-height: 40px;
+  }
+}
+
+/* Collapse the wordmark to a "PL" monogram on the narrowest headers. */
+@media (max-width: 560px) {
+  .wm-full {
+    display: none;
+  }
+  .wm-mono {
+    display: inline;
+  }
+}
+
+/* Touch: the mode-hint references ⌘ / ⌥ / Esc — dead advice without a keyboard. */
+@media (hover: none) and (pointer: coarse) {
+  .mode-hint {
     display: none;
   }
 }

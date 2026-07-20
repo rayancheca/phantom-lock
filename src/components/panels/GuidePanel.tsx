@@ -1,10 +1,13 @@
-import type { Step } from './WorkflowSteps';
 import type { RoomLabel } from '../../engine/types';
+import type { AppMode, DesignSubStep } from '../app/mode';
 import Icon from '../ui/Icon';
 import './panels.css';
 
+type GuideKey = DesignSubStep | 'tune';
+
 interface Props {
-  step: Step;
+  appMode: AppMode;
+  designSubStep: DesignSubStep;
   hasWalls: boolean;
   rooms: RoomLabel[];
   onCreateRoom: () => void;
@@ -14,7 +17,7 @@ interface Props {
 }
 
 /** One sentence up front; the full how-to hides behind a disclosure. */
-const GUIDES: Record<Step, { title: string; hint: string; lines: string[] }> = {
+const GUIDES: Record<GuideKey, { title: string; hint: string; lines: string[] }> = {
   build: {
     title: 'Build the room',
     hint: 'Trace your walls corner by corner — or drop in a rectangle and edit from there.',
@@ -35,30 +38,36 @@ const GUIDES: Record<Step, { title: string; hint: string; lines: string[] }> = {
       'Windows and doors snap onto walls and change how sound escapes.',
     ],
   },
-  sound: {
-    title: 'Place the sound',
-    hint: 'Add your HomePods, then drag YOU to where you actually sit or lie.',
+  tune: {
+    title: 'Place & tune the sound',
+    hint: 'Add your HomePods and drag YOU to where you sit — the verdict updates live as you move.',
     lines: [
       'Add speakers below, then click the canvas to place each one.',
       'Set your ear height — sitting, standing, or lying changes what reaches you.',
       'Select a speaker to link two of the same model as a stereo pair.',
+      'Drag yourself or any speaker and watch the verdict update live.',
       'Or let Suggest placement find the spots for you.',
     ],
   },
-  analyze: {
-    title: 'Read the room',
-    hint: 'Drag yourself or any speaker and watch the verdict update live.',
-    lines: [],
-  },
 };
 
-export default function GuidePanel({ step, hasWalls, rooms, onCreateRoom, onDeleteRoom, onInsertRectRoom, onDrawWalls }: Props) {
-  const guide = GUIDES[step];
+export default function GuidePanel({
+  appMode,
+  designSubStep,
+  hasWalls,
+  rooms,
+  onCreateRoom,
+  onDeleteRoom,
+  onInsertRectRoom,
+  onDrawWalls,
+}: Props) {
+  const isBuild = appMode === 'design' && designSubStep === 'build';
+  const guide = GUIDES[appMode === 'tune' ? 'tune' : designSubStep];
   return (
     <section className="card card-guide" aria-label={`Guide: ${guide.title}`}>
       <h2>{guide.title}</h2>
       <p className="guide-hint">{guide.hint}</p>
-      {step === 'build' && hasWalls && (
+      {isBuild && hasWalls && (
         <>
           <div className="preset-row">
             <button
@@ -98,7 +107,7 @@ export default function GuidePanel({ step, hasWalls, rooms, onCreateRoom, onDele
           )}
         </>
       )}
-      {step === 'build' && !hasWalls && (
+      {isBuild && !hasWalls && (
         <div className="preset-row">
           <button type="button" className="btn btn-primary" onClick={onInsertRectRoom}>
             <Icon name="rectangle" size={14} />

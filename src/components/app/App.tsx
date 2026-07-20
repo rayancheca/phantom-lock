@@ -29,11 +29,9 @@ import {
   updateActiveListener,
 } from '../../engine/scene';
 import { bootstrapPersistence, type PersistMode } from '../../engine/db';
-import type { CanvasTheme } from '../canvas/render';
-import type { Step } from '../panels/WorkflowSteps';
 import type { Scenario } from '../compare/ScenarioCompare';
 import type { ToastData } from '../ui/Toast';
-import { PLAN_STEPS, TOOL_OWNER, initialStep } from './app-constants';
+import { initialMode, modeTheme, subStepForTool, type AppMode, type DesignSubStep, type ModeEntry } from './mode';
 import type { Deleted, DialogState } from './app-types';
 import { nudgeSelection, rotateSelectedRect, type KeyCommand } from './keyboard';
 import { useLayoutStore } from './hooks/useLayoutStore';
@@ -57,12 +55,15 @@ function AppInner({ initialStore, persistMode }: AppInnerProps) {
   const [store, setStore] = useState<LayoutStore>(initialStore);
   const [selection, setSelection] = useState<Selection>(null);
   const [mode, setMode] = useState<ToolMode>('select');
-  const [step, setStep] = useState<Step>(() => {
+  // The IA axis: the app-mode OWNS the canvas theme (exactly one controller), with
+  // a DESIGN-only Build/Furnish sub-step. `theme` is derived — never state.
+  const [appMode, setAppMode] = useState<AppMode>(() => {
     const active =
       initialStore.layouts.find((l) => l.id === initialStore.activeId) ?? initialStore.layouts[0];
-    return active ? initialStep(active.scene) : 'build';
+    return active ? initialMode(active.scene).mode : 'design';
   });
-  const [theme, setTheme] = useState<CanvasTheme>(() => (PLAN_STEPS.includes(step) ? 'plan' : 'sound'));
+  const [designSubStep, setDesignSubStep] = useState<DesignSubStep>('build');
+  const theme = modeTheme(appMode);
   const [placeModel, setPlaceModel] = useState<SpeakerModel>('homepod');
   const [dragging, setDragging] = useState(false);
   const [resetViewToken, setResetViewToken] = useState(0);
@@ -122,27 +123,34 @@ function AppInner({ initialStore, persistMode }: AppInnerProps) {
     setWallProposal(null);
   }, []);
 
-  const applyStep = useCallback(
-    (s: Step, sceneNow: Scene = scene) => {
-      setStep(s);
-      setTheme(PLAN_STEPS.includes(s) ? 'plan' : 'sound');
+  /** Enter a mode + sub-step (the single theme controller: theme derives from
+   *  the mode). Re-arms the wall tool on a fresh DESIGN/Build canvas, mirroring
+   *  the old build-with-no-walls behaviour. */
+  const applyMode = useCallback(
+    (entry: ModeEntry, sceneNow: Scene = scene) => {
+      setAppMode(entry.mode);
+      setDesignSubStep(entry.designSubStep);
       const wallsExist = sceneNow.objects.some((o) => o.kind === 'wall');
-      setMode(s === 'build' && !wallsExist ? 'wall' : 'select');
+      setMode(entry.mode === 'design' && entry.designSubStep === 'build' && !wallsExist ? 'wall' : 'select');
       closeFloatingPanels();
     },
     [scene, closeFloatingPanels],
   );
+  // Header switch PRESERVES the last DESIGN sub-step; the sub-step switch always
+  // means DESIGN. Both read fresh `designSubStep` from the render closure.
+  const setModeTo = (m: AppMode) => applyMode({ mode: m, designSubStep });
+  const setSubStep = (s: DesignSubStep) => applyMode({ mode: 'design', designSubStep: s });
 
+  /** A tool NEVER changes the app-mode/theme. Within DESIGN it MAY flip the
+   *  Build/Furnish sub-step so the digit shortcuts feel like the old 4-step muscle
+   *  memory — but it can't cross into TUNE (subStepForTool('speaker') === null). */
   const applyTool = useCallback(
     (t: ToolMode) => {
       setMode(t);
-      const owner = TOOL_OWNER[t];
-      if (owner && owner !== step) {
-        setStep(owner);
-        setTheme(PLAN_STEPS.includes(owner) ? 'plan' : 'sound');
-      }
+      const sub = subStepForTool(t);
+      if (sub && appMode === 'design') setDesignSubStep(sub);
     },
-    [step],
+    [appMode],
   );
 
   const startPlacing = (model: SpeakerModel) => {
@@ -150,11 +158,22 @@ function AppInner({ initialStore, persistMode }: AppInnerProps) {
     applyTool('speaker');
   };
 
-  const stepDone: Record<Step, boolean> = {
-    build: scene.objects.filter((o) => o.kind === 'wall').length >= 3,
+  /** The single TV/Music writer (moved out of the header into TUNE). */
+  const setTvAnchor = (on: boolean) => {
+    setSettings({ ...settings, tvAnchor: on });
+    closeFloatingPanels();
+  };
+
+  // "Armed" = the mode/sub-step's heuristic has data (drives the amber LED). The
+  // DESIGN mode LED and its Build sub-step LED share one threshold (any wall), so
+  // they never contradict each other with 1–2 walls drawn.
+  const modeArmed: Record<AppMode, boolean> = {
+    design: hasWalls,
+    tune: scene.speakers.length > 0,
+  };
+  const subArmed: Record<DesignSubStep, boolean> = {
+    build: hasWalls,
     furnish: scene.objects.some((o) => o.kind !== 'wall'),
-    sound: scene.speakers.length > 0,
-    analyze: audio.pairs.some((p) => p.locked),
   };
 
   // --- scene edits ----------------------------------------------------------
@@ -449,7 +468,7 @@ function AppInner({ initialStore, persistMode }: AppInnerProps) {
       setSelection,
       closeFloatingPanels,
       setResetViewToken,
-      applyStep,
+      applyMode,
       setDialog,
       setGalleryOpen,
       showToast,
@@ -551,8 +570,8 @@ function AppInner({ initialStore, persistMode }: AppInnerProps) {
       case 'tool':
         applyTool(cmd.tool);
         return;
-      case 'theme-toggle':
-        setTheme((th) => (th === 'plan' ? 'sound' : 'plan'));
+      case 'mode-toggle':
+        setModeTo(appMode === 'design' ? 'tune' : 'design');
         return;
       case 'rotate':
         if (selection?.type !== 'object') return;
@@ -574,13 +593,20 @@ function AppInner({ initialStore, persistMode }: AppInnerProps) {
       arrangeOpen,
       selection,
       mode,
+      appMode,
     },
     run: runKeyCommand,
   });
 
   // The starter hands off once a floorplan is imported or a detection is up.
   const showStarter =
-    step === 'build' && !hasWalls && mode !== 'wall' && !scene.underlay && !wallProposal && !detecting;
+    appMode === 'design' &&
+    designSubStep === 'build' &&
+    !hasWalls &&
+    mode !== 'wall' &&
+    !scene.underlay &&
+    !wallProposal &&
+    !detecting;
 
   return (
     <div className="app">
@@ -589,20 +615,13 @@ function AppInner({ initialStore, persistMode }: AppInnerProps) {
         onOpenGallery={() => setGalleryOpen(true)}
         fileRef={fileRef}
         onImportFile={importLayout}
-        step={step}
-        onStep={(s) => applyStep(s)}
-        stepDone={stepDone}
-        tvAnchor={settings.tvAnchor}
-        onSetTvAnchor={(on) => {
-          setSettings({ ...settings, tvAnchor: on });
-          closeFloatingPanels();
-        }}
-        canCompare={canCompare}
-        onCompare={openCompare}
-        onSuggest={() => {
-          setOptimizeOpen(true);
-          setProposal(null);
-        }}
+        appMode={appMode}
+        onSetMode={setModeTo}
+        modeArmed={modeArmed}
+        canUndo={canUndo}
+        canRedo={canRedo}
+        onUndo={undoScene}
+        onRedo={redoScene}
       />
 
       <main className="workspace">
@@ -627,15 +646,14 @@ function AppInner({ initialStore, persistMode }: AppInnerProps) {
           onRoomDrawn={(zone) => setDialog({ kind: 'room-name', zone })}
           onSplitWall={splitWall}
           onActivateSeat={switchSeat}
-          step={step}
+          appMode={appMode}
+          designSubStep={designSubStep}
           onTool={applyTool}
           onPlaceSpeaker={startPlacing}
-          onTheme={setTheme}
           onResetView={() => setResetViewToken((n) => n + 1)}
-          canUndo={canUndo}
-          canRedo={canRedo}
-          onUndo={undoScene}
-          onRedo={redoScene}
+          onRotateSel={(dir) => runKeyCommand({ type: 'rotate', dir, coalesce: false })}
+          onNudgeSel={(dx, dy) => runKeyCommand({ type: 'nudge', dx, dy, coalesce: false })}
+          onDeleteSel={() => runKeyCommand({ type: 'delete' })}
           showStarter={showStarter}
           onStarterRectRoom={() => setDialog({ kind: 'room-size', purpose: 'add-room' })}
           onStarterDrawWalls={() => applyTool('wall')}
@@ -668,7 +686,12 @@ function AppInner({ initialStore, persistMode }: AppInnerProps) {
         />
 
         <Sidebar
-          step={step}
+          appMode={appMode}
+          designSubStep={designSubStep}
+          onSetSubStep={setSubStep}
+          subArmed={subArmed}
+          tvAnchor={settings.tvAnchor}
+          onSetTvAnchor={setTvAnchor}
           scene={scene}
           settings={settings}
           selection={selection}

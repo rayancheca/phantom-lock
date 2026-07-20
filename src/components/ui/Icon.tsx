@@ -28,6 +28,8 @@ export type IconName =
   | 'image'
   | 'rectangle'
   | 'undo'
+  | 'redo'
+  | 'rotate'
   | 'ear'
   | 'layers';
 
@@ -60,6 +62,8 @@ const PATHS: Record<IconName, string[]> = {
   image: ['M4 5 h16 v14 h-16 Z', 'M8.5 10.5 a1.5 1.5 0 1 0 0.001 0 Z', 'M4 16 l5 -4.5 4 3.5 3 -2.5 4 3.5'],
   rectangle: ['M4 7 h16 v10 h-16 Z'],
   undo: ['M8 5 L4 9 l4 4', 'M4 9 h10 a5 5 0 0 1 0 10 h-4'],
+  redo: ['M16 5 L20 9 l-4 4', 'M20 9 H10 a5 5 0 0 0 0 10 h4'],
+  rotate: ['M19 12 a7 7 0 1 1 -2.1 -5', 'M17 4.2 v3.2 h-3.2'],
   ear: ['M8 18 a3.5 3.5 0 0 0 6 -1 c0.6 -1.6 2.8 -2.4 2.8 -5.5 A5.4 5.4 0 0 0 6 11', 'M9.4 11.2 a2.8 2.8 0 0 1 5.3 1'],
   layers: ['M12 4 l8 4.5 -8 4.5 -8 -4.5 Z', 'M4.6 13 L12 17 l7.4 -4'],
 };

@@ -1,5 +1,6 @@
-import type { Scene, ToolMode } from '../../engine/types';
-import type { Step } from '../panels/WorkflowSteps';
+import type { ToolMode } from '../../engine/types';
+import type { IconName } from '../ui/Icon';
+import type { AppMode, DesignSubStep } from './mode';
 
 export const MODE_HINT: Record<ToolMode, string> = {
   select: 'Drag to move · scroll = pan · pinch / ⌘-scroll = zoom · twist / ⌥-scroll = rotate view',
@@ -13,20 +14,14 @@ export const MODE_HINT: Record<ToolMode, string> = {
   lasso: 'Draw around objects to select them · ⇧ adds to the selection',
 };
 
-export const PLAN_STEPS: Step[] = ['build', 'furnish'];
+/** Header DESIGN/TUNE switch items. */
+export const MODE_ITEMS: Array<{ id: AppMode; label: string; icon: IconName }> = [
+  { id: 'design', label: 'Design', icon: 'wall' },
+  { id: 'tune', label: 'Tune', icon: 'speaker' },
+];
 
-export const TOOL_OWNER: Partial<Record<ToolMode, Step>> = {
-  wall: 'build',
-  room: 'build',
-  rect: 'furnish',
-  circle: 'furnish',
-  speaker: 'sound',
-  calibrate: 'build',
-};
-
-export function initialStep(scene: Scene): Step {
-  const hasWalls = scene.objects.some((o) => o.kind === 'wall');
-  if (!hasWalls) return 'build';
-  if (scene.speakers.length === 0) return 'sound';
-  return 'analyze';
-}
+/** DESIGN sub-step switch items (Build vs Furnish). */
+export const SUBSTEP_ITEMS: Array<{ id: DesignSubStep; label: string; icon: IconName }> = [
+  { id: 'build', label: 'Build', icon: 'wall' },
+  { id: 'furnish', label: 'Furnish', icon: 'box' },
+];
