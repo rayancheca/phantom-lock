@@ -155,9 +155,55 @@
 }
 
 .metric-value {
+  font-family: var(--font-mono); /* one numeric identity for all data (UX-3 spec sheet) */
   font-size: var(--text-sm);
-  font-weight: 600;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
+}
+
+/* --- spec sheet: the four pair metrics (ITD / level / angle / lock) as a
+   Geist-Mono tabular readout with a right-aligned value column (UX-3). --------- */
+
+.spec-sheet {
+  margin: var(--space-2) 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.spec-row {
+  display: grid;
+  grid-template-columns: 1fr auto; /* label | right-aligned value */
+  align-items: baseline;
+  column-gap: var(--space-2);
+}
+
+.spec-label {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs); /* 11px mono micro-label */
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-2); /* not --text-3 */
+  /* A VISIBLE (not hover-only) "this term has an explanation" affordance; the
+     focusable <Term> popover is UX-4. The title tooltip is kept alongside. */
+  text-decoration: underline dotted var(--border-strong);
+  text-underline-offset: 3px;
+  cursor: help;
+}
+
+.spec-value {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* The meter sits on its own full-width row beneath the label/value. */
+.spec-row .meter,
+.spec-row .quality-meter {
+  grid-column: 1 / -1;
+  margin: 3px 0 0;
 }
 
 .tone-ok {
@@ -277,6 +323,150 @@
   transition: width var(--dur-2) var(--ease-out);
 }
 
+/* --- verdict hero (UX-3, shared: pinned sidebar + compare column) -------- */
+
+/* The readout lifted onto the opaque --surface-4 hero rung — one step above every
+   TUNE card — at --text-hero. Additive: the shared verdict-in keyframe and the
+   per-pair .verdict blocks (multi-pair detail) are untouched. */
+.verdict-hero {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius);
+  background: var(--surface-4);
+}
+
+/* Sidebar: pinned so the payoff never scrolls away. Opaque bg + z-index keep the
+   later-DOM cards from painting over it; a full-bleed over the sidebar's 8px
+   padding avoids a seam above the pinned edge (NOT a negative `top`, which would
+   unstick it early). */
+.verdict-hero--sidebar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  box-shadow: var(--shadow-2);
+  margin: calc(-1 * var(--space-2)) calc(-1 * var(--space-2)) 0;
+  padding-top: calc(var(--space-3) + var(--space-2));
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+
+/* Compare: a static in-column block replacing the deleted .compare-verdict. */
+.verdict-hero--compare {
+  border: 1px solid var(--surface-3);
+}
+
+.verdict-hero__seat {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs); /* 11px mono eyebrow */
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-2); /* never --text-3 <12px on --surface-4 */
+}
+
+.verdict-hero__headline {
+  margin: 0;
+  font-family: var(--font-display); /* Space Grotesk */
+  font-size: var(--text-hero); /* clamp(2rem, 1.2rem + 2.6vw, 2.75rem) */
+  font-weight: 700;
+  line-height: 1.03;
+  letter-spacing: -0.01em;
+}
+
+/* State colours are scoped to the hero's own modifier (verdict-hero--locked/
+   -close/-searching) so they never collide with the per-pair .verdict-* blocks in
+   MetricsPanel — no reliance on source order to win a same-specificity clash. */
+.verdict-hero__headline-text {
+  display: inline-block;
+  color: var(--text);
+}
+
+.verdict-hero--close .verdict-hero__headline-text {
+  color: var(--warn);
+}
+
+.verdict-hero--searching .verdict-hero__headline-text {
+  color: var(--text-2);
+}
+
+/* Resting LOCKED headline: --signal gradient clipped to the letterforms, parked at
+   the green end, with a soft green bloom — but NO animation, so loading an
+   already-locked layout is calm. The opaque surface lives on the parent
+   .verdict-hero, so clipping this element's own box background is safe. */
+.verdict-hero--locked .verdict-hero__headline-text {
+  background-image: var(--signal); /* linear-gradient(90deg, accent, ok) */
+  background-size: 220% 100%; /* oversized so the gradient can slide across */
+  background-repeat: no-repeat;
+  background-position: 100% 0; /* rest = the green (ok) end */
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  text-shadow: 0 0 18px rgba(62, 224, 138, 0.5); /* the soft green bloom */
+}
+
+/* THE LOCK ignition: play the cyan→green sweep ONLY on the transition (the
+   .is-igniting class is applied for one keyed remount), never on the resting
+   locked style above. One-shot; the key remount replays it on each re-lock. */
+.verdict-hero--locked .verdict-hero__headline-text.is-igniting {
+  animation: lock-sweep 620ms var(--ease-spring);
+}
+
+@keyframes lock-sweep {
+  from {
+    background-position: 0% 0; /* cyan side visible … */
+    filter: brightness(1.25);
+  }
+  to {
+    background-position: 100% 0; /* … sweeps through to green */
+    filter: none;
+  }
+}
+
+/* Windows High Contrast / forced-colors strips the gradient background and would
+   leave the transparent-fill text invisible — restore a solid system colour and
+   drop the clip so the headline stays readable. */
+@media (forced-colors: active) {
+  .verdict-hero--locked .verdict-hero__headline-text {
+    background: none;
+    -webkit-text-fill-color: CanvasText;
+    color: CanvasText;
+    text-shadow: none;
+  }
+}
+
+.verdict-hero__cause {
+  margin: 0;
+  color: var(--text-2); /* ≥12px-safe on --surface-4 */
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.verdict-hero .quality-meter {
+  margin-top: var(--space-2);
+}
+
+/* Reduced motion: an OPACITY-only cross-fade (no positional sweep, no transform —
+   lock-fade avoids verdict-in's translateY). Park the gradient at green so the
+   clipped text stays legible. .quality-fill already inherits the transition:none
+   guard below — no duplication needed. */
+@media (prefers-reduced-motion: reduce) {
+  .verdict-hero--locked .verdict-hero__headline-text.is-igniting {
+    animation: lock-fade var(--dur-3) var(--ease-out);
+    background-position: 100% 0;
+  }
+}
+
+@keyframes lock-fade {
+  from {
+    opacity: 0.35;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 .warn-line {
   display: flex;
   align-items: flex-start;
@@ -349,6 +539,15 @@
 .preset-row .btn {
   font-size: var(--text-xs);
   padding: 4px 10px;
+}
+
+/* The always-present Compare + Add-spot card actions need a 40px touch target on
+   coarse pointers (UX-2 mobile bar sets this for the toolbar; these sidebar-card
+   buttons were below it). */
+@media (hover: none) and (pointer: coarse) {
+  .preset-row .btn {
+    min-height: 40px;
+  }
 }
 
 /* --- speakers card ----------------------------------------------------- */

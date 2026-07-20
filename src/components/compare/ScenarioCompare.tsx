@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Layout, Scene } from '../../engine/types';
 import { traceScene } from '../../engine/raytrace';
-import { CLOSE_QUALITY, computeAudio, type AudioMetrics } from '../../engine/stereo';
+import { computeAudio, type AudioMetrics } from '../../engine/stereo';
 import { activeListener, sceneListeners, setActiveListener } from '../../engine/scene';
 import { drawMiniPlan } from '../canvas/thumb';
 import MetricsPanel from '../panels/MetricsPanel';
+import VerdictHero from '../panels/VerdictHero';
+import { deriveVerdict, type VerdictView } from '../panels/verdict';
 import Icon from '../ui/Icon';
 import './compare.css';
 
@@ -29,37 +31,8 @@ interface Computed {
   seatName: string;
   audio: AudioMetrics;
   trace: ReturnType<typeof traceScene>;
-  verdict: { label: string; quality: number; locked: boolean; state: 'locked' | 'close' | 'searching' };
-}
-
-function verdictOf(audio: AudioMetrics): Computed['verdict'] {
-  if (audio.pairs.length === 0) {
-    return {
-      label: audio.solos.length > 0 ? 'No stereo pair' : 'No speakers',
-      quality: 0,
-      locked: false,
-      state: 'searching',
-    };
-  }
-  // Report the BEST pair's quality, but only call the seat "locked" when EVERY
-  // pair is locked — and keep quality tied to the same pair so a 100% meter can
-  // never sit under a "not locked" headline without an explanation.
-  const best = audio.pairs.reduce((a, b) => (b.quality > a.quality ? b : a));
-  const quality = best.quality;
-  const locked = audio.allLocked; // all pairs locked
-  const state: Computed['verdict']['state'] = locked
-    ? 'locked'
-    : quality > CLOSE_QUALITY
-      ? 'close'
-      : 'searching';
-  const label = locked
-    ? 'Phantom center locked'
-    : best.locked
-      ? 'One pair locks, another doesn’t'
-      : quality > CLOSE_QUALITY
-        ? 'Almost there'
-        : 'No lock yet';
-  return { label, quality, locked, state };
+  /** The shared aggregate verdict — the SAME view-model the sidebar hero renders. */
+  verdict: VerdictView;
 }
 
 function useComputed(layouts: Layout[], scenario: Scenario): Computed {
@@ -79,7 +52,7 @@ function useComputed(layouts: Layout[], scenario: Scenario): Computed {
       seatName: activeListener(scene).name,
       audio,
       trace,
-      verdict: verdictOf(audio),
+      verdict: deriveVerdict(audio, trace, layout.settings.tvAnchor),
     };
   }, [layouts, scenario.layoutId, scenario.seatId]);
 }
@@ -146,12 +119,7 @@ function Column({ data }: { data: Computed }) {
   return (
     <div className="compare-col">
       <Preview scene={data.scene} />
-      <div className={`compare-verdict verdict-${data.verdict.state}`}>
-        <span className="verdict-state">{data.verdict.label}</span>
-        <div className="quality-meter" aria-hidden="true">
-          <div className="quality-fill" style={{ width: `${Math.round(data.verdict.quality * 100)}%` }} />
-        </div>
-      </div>
+      <VerdictHero view={data.verdict} seatName={data.seatName} variant="compare" />
       <MetricsPanel
         audio={data.audio}
         trace={data.trace}
@@ -218,8 +186,11 @@ export default function ScenarioCompare({ layouts, initialLeft, initialRight, on
         <ScenarioPicker layouts={layouts} scenario={right} onChange={setRight} label="Right" />
       </div>
       <div className="compare-grid">
-        <Column data={l} />
-        <Column data={r} />
+        {/* Key each column on its scenario so changing the picker to an already-locked
+            layout/seat remounts the hero (no spurious LOCK ignition — compare is a
+            static snapshot, never a live drag-to-lock). */}
+        <Column key={`${left.layoutId}:${left.seatId}`} data={l} />
+        <Column key={`${right.layoutId}:${right.seatId}`} data={r} />
       </div>
     </div>
   );

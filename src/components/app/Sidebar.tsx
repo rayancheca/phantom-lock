@@ -1,8 +1,11 @@
 import type { Scene, SceneObject, Selection, SimSettings, SpeakerModel, SpeakerObj, TraceResult } from '../../engine/types';
 import type { AudioMetrics } from '../../engine/stereo';
+import { activeListener } from '../../engine/scene';
 import type { AppMode, DesignSubStep } from './mode';
 import { SUBSTEP_ITEMS } from './app-constants';
 import SegmentSwitch from '../panels/SegmentSwitch';
+import VerdictHero from '../panels/VerdictHero';
+import { deriveVerdict } from '../panels/verdict';
 import TuneToolsCard from '../panels/TuneToolsCard';
 import GuidePanel from '../panels/GuidePanel';
 import UnderlayCard from '../panels/UnderlayCard';
@@ -49,6 +52,7 @@ interface SidebarProps {
   onRenameSeat: (id: string, name: string) => void;
   onRemoveSeat: (id: string) => void;
   onCompare: () => void;
+  canCompare: boolean;
   onSuggest: () => void;
   onUpdateObject: (id: string, patch: Partial<SceneObject>) => void;
   onDeleteObject: (id: string) => void;
@@ -79,6 +83,19 @@ export default function Sidebar(p: SidebarProps) {
           armed={p.subArmed}
           ariaLabel="Design step"
           variant="substep"
+        />
+      )}
+      {isTune && (
+        // Key on the active seat id so switching to a *different* already-locked seat
+        // remounts the hero (reseeding the ignition to that seat's current lock → no
+        // spurious celebration); a genuine in-place drag-to-lock keeps the same key,
+        // so the false→true edge still ignites. Seat ids are layout-unique, so this
+        // also covers switching to a locked layout.
+        <VerdictHero
+          key={activeListener(p.scene).id}
+          view={deriveVerdict(p.audio, p.trace, p.settings.tvAnchor)}
+          seatName={activeListener(p.scene).name}
+          variant="sidebar"
         />
       )}
       {isTune && (
@@ -132,6 +149,7 @@ export default function Sidebar(p: SidebarProps) {
           onRename={p.onRenameSeat}
           onRemove={p.onRemoveSeat}
           onCompare={p.onCompare}
+          canCompare={p.canCompare}
         />
       )}
       {isTune && (

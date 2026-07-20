@@ -723,6 +723,7 @@ function AppInner({ initialStore, persistMode }: AppInnerProps) {
           onRenameSeat={renameSeat}
           onRemoveSeat={removeSeat}
           onCompare={openCompare}
+          canCompare={canCompare}
           onSuggest={() => {
             setOptimizeOpen(true);
             setProposal(null);

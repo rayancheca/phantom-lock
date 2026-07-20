@@ -286,6 +286,10 @@
   gap: var(--space-2);
   padding: var(--space-2);
   overflow-y: auto;
+  /* Reserve room at the top so a card focused via keyboard scrolls clear of the
+     pinned TUNE verdict hero rather than landing under it (WCAG 2.2 SC 2.4.11
+     Focus Not Obscured). Harmless in DESIGN, where there is no sticky hero. */
+  scroll-padding-top: 150px;
   border-left: 1px solid var(--border);
   background: var(--surface-0);
 }

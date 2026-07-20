@@ -73,22 +73,6 @@
   border: 1px solid var(--surface-3);
 }
 
-.compare-verdict {
-  padding: var(--space-3);
-  border-radius: var(--radius);
-  background: var(--surface-1);
-  border: 1px solid var(--surface-3);
-}
-
-.compare-verdict .verdict-state {
-  display: block;
-  margin-bottom: var(--space-2);
-}
-
-.compare-verdict .quality-meter {
-  margin: 0;
-}
-
 @media (max-width: 960px) {
   .compare-pickers,
   .compare-grid {

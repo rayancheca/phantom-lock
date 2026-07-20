@@ -12,6 +12,8 @@ interface Props {
   onRename: (id: string, name: string) => void;
   onRemove: (id: string) => void;
   onCompare: () => void;
+  /** True when there are ≥2 seats OR ≥2 layouts to compare (App's canCompare). */
+  canCompare: boolean;
 }
 
 /**
@@ -22,7 +24,7 @@ interface Props {
  * The seat list is a proper `radiogroup`: only the active radio is a tab stop and
  * the arrow keys move selection between seats (matching the app's ARIA bar).
  */
-export default function ListenerCard({ scene, selection, onSwitch, onAdd, onRename, onRemove, onCompare }: Props) {
+export default function ListenerCard({ scene, selection, onSwitch, onAdd, onRename, onRemove, onCompare, canCompare }: Props) {
   const seats = sceneListeners(scene);
   const activeId = activeListener(scene).id;
   const listenerSelected = selection?.type === 'listener';
@@ -104,16 +106,25 @@ export default function ListenerCard({ scene, selection, onSwitch, onAdd, onRena
           <Icon name="plus" size={13} />
           Add spot
         </button>
-        {seats.length >= 2 && (
-          <button type="button" className="btn" onClick={onCompare} title="See two seats side by side">
-            <Icon name="grid" size={13} />
-            Compare
-          </button>
-        )}
+        {/* Always present in TUNE. Gated on canCompare (≥2 seats OR ≥2 layouts) so
+            the degenerate same-seat compare is never reachable; when it can't fire
+            the card-sub below teaches how to unlock it. Mode-neutral title covers
+            both the two-seats and two-layouts cases. */}
+        <button
+          type="button"
+          className="btn"
+          onClick={onCompare}
+          disabled={!canCompare}
+          title={canCompare ? 'Compare two setups side by side' : 'Add a second listening spot, or duplicate this layout, to compare'}
+        >
+          <Icon name="grid" size={13} />
+          Compare
+        </button>
       </div>
       <p className="card-sub">
-        Add a spot for each place you actually sit — couch, bed — then switch between them and drag the
-        YOU puck to position each. Compare shows both verdicts side by side.
+        {canCompare
+          ? 'Add a spot for each place you actually sit — couch, bed — then switch between them and drag the YOU puck to position each. Compare shows both verdicts side by side.'
+          : 'Compare weighs two readouts side by side. Add a second listening spot, or duplicate this layout, and Compare lights up.'}
       </p>
     </section>
   );

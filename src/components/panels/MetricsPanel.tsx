@@ -1,5 +1,6 @@
 import type { TraceResult } from '../../engine/types';
 import { CLOSE_QUALITY, type AudioMetrics, type PairMetrics } from '../../engine/stereo';
+import { causeSentence } from './verdict';
 import Icon from '../ui/Icon';
 import './panels.css';
 
@@ -24,79 +25,52 @@ function Row({ label, value, tone = 'plain', hint }: { label: string; value: str
   );
 }
 
-/** A metric with a meter bar: fill shows where the value sits against its
- *  audible threshold, colored by the same tone as the number. */
-function MeterRow({
+/** One spec-sheet row: a mono label with a visible dotted-underline "this has an
+ *  explanation" affordance, a right-aligned tabular value, and a full-width meter
+ *  beneath it. The `signal` variant uses the --signal lock-approach fill (the Lock
+ *  row); the three status rows keep their ok/warn/bad tone fill (color-role
+ *  discipline: green/amber/red = acoustic status, --signal = approaching lock). */
+function SpecRow({
   label,
   value,
   tone,
   fraction,
   hint,
+  signal = false,
 }: {
   label: string;
   value: string;
   tone: Tone;
   fraction: number;
   hint?: string;
+  signal?: boolean;
 }) {
+  const pct = Math.round(Math.min(1, Math.max(0.04, fraction)) * 100);
   return (
-    <div title={hint}>
-      <div className="metric-row">
-        <span className="metric-label">{label}</span>
-        <span className={`metric-value tone-${tone}`}>{value}</span>
-      </div>
-      <div className="meter" aria-hidden="true">
+    <div className="spec-row" title={hint}>
+      <span className="spec-label">{label}</span>
+      <span className={`spec-value tone-${tone}`}>{value}</span>
+      <div className={signal ? 'quality-meter' : 'meter'} aria-hidden="true">
         <div
-          className={`meter-fill tone-${tone === 'plain' ? 'ok' : tone}`}
-          style={{ width: `${Math.round(Math.min(1, Math.max(0.04, fraction)) * 100)}%` }}
+          className={signal ? 'quality-fill' : `meter-fill tone-${tone === 'plain' ? 'ok' : tone}`}
+          style={{ width: `${pct}%` }}
         />
       </div>
     </div>
   );
 }
 
-/** One plain-English sentence naming the dominant problem (or the win). */
-function causeSentence(pair: PairMetrics, blockedA: boolean | undefined, blockedB: boolean | undefined, tvAnchor: boolean): string {
-  if (pair.modelMismatch) {
-    return 'These two are different models — Apple won’t stereo-pair a HomePod with a mini. Unpair or swap one.';
-  }
-  if (blockedA && blockedB) return 'Neither speaker can see your ears — only reflections arrive. Clear the paths first.';
-  if (blockedA) return `${pair.aLabel} has no line of sight to your ears — move it, or lower whatever blocks it.`;
-  if (blockedB) return `${pair.bLabel} has no line of sight to your ears — move it, or lower whatever blocks it.`;
-
-  if (pair.locked) {
-    return tvAnchor && pair.tv
-      ? 'Equal paths, a 60° triangle, and the image lands dead-center on the TV.'
-      : 'Equal paths and a 60° triangle — the phantom center sits right where it should.';
-  }
-
-  const nearer = pair.dA < pair.dB ? pair.aLabel : pair.bLabel;
-  const farther = pair.dA < pair.dB ? pair.bLabel : pair.aLabel;
-  if (pair.itdMs > 0.3) {
-    return `The image pulls hard toward ${nearer} — its sound arrives ${pair.itdMs.toFixed(2)} ms earlier. Pull ${nearer} back or bring ${farther} closer.`;
-  }
-  if (tvAnchor && pair.tv && !pair.tv.aligned) {
-    return `The phantom center misses the TV by ${(pair.tv.offAxis * 100).toFixed(0)} cm — slide the pair (or the TV) until they share an axis.`;
-  }
-  if (Math.abs(pair.angleDeg - 60) > 15) {
-    return pair.angleDeg < 60
-      ? `The pair only subtends ${pair.angleDeg.toFixed(0)}° at your head — widen it toward 60° for a real stereo stage.`
-      : `The pair subtends ${pair.angleDeg.toFixed(0)}° — that’s wider than the 60° reference; pull the speakers together or sit farther back.`;
-  }
-  if (pair.itdMs > 0.1) {
-    return `${nearer} arrives ${pair.itdMs.toFixed(2)} ms early — a few centimetres of nudging will centre the image.`;
-  }
-  if (Math.abs(pair.ildDb) > 1.5) {
-    const louder = pair.ildDb > 0 ? pair.aLabel : pair.bLabel;
-    return `${louder} is ${Math.abs(pair.ildDb).toFixed(1)} dB louder at your seat — Match volumes fixes the level (timing is separate).`;
-  }
-  return 'Close — nudge a speaker or your seat a few centimetres and watch the meters.';
-}
-
-function PairSection({ pair, trace, tvAnchor }: { pair: PairMetrics; trace: TraceResult; tvAnchor: boolean }) {
-  const state = pair.locked ? 'locked' : pair.quality > CLOSE_QUALITY ? 'close' : 'searching';
-  const stateText = state === 'locked' ? 'Phantom center locked' : state === 'close' ? 'Almost there' : 'No lock yet';
-
+function PairSection({
+  pair,
+  trace,
+  tvAnchor,
+  pairCount,
+}: {
+  pair: PairMetrics;
+  trace: TraceResult;
+  tvAnchor: boolean;
+  pairCount: number;
+}) {
   const itdTone: Tone = pair.itdMs <= 0.1 ? 'ok' : pair.itdMs <= 0.3 ? 'warn' : 'bad';
   const angleOff = Math.abs(pair.angleDeg - 60);
   const angleTone: Tone = angleOff <= 5 ? 'ok' : angleOff <= 15 ? 'warn' : 'bad';
@@ -110,51 +84,70 @@ function PairSection({ pair, trace, tvAnchor }: { pair: PairMetrics; trace: Trac
   const blockedA = trace.bySpeaker.find((s) => s.id === pair.aId)?.direct.blocked;
   const blockedB = trace.bySpeaker.find((s) => s.id === pair.bId)?.direct.blocked;
 
+  // The aggregate verdict now leads the column as the VerdictHero, so a single-pair
+  // scene shows it once. Multiple pairs still get a per-pair verdict here as detail
+  // (its own headline + cause), keeping the .verdict styles live and per-pair.
+  const showPairVerdict = pairCount > 1;
+  const state = pair.locked ? 'locked' : pair.quality > CLOSE_QUALITY ? 'close' : 'searching';
+  const stateText = state === 'locked' ? 'Phantom center locked' : state === 'close' ? 'Almost there' : 'No lock yet';
+
   return (
     <div className="pair-section">
       <h3 className="pair-title">
         Pair {pair.aLabel} + {pair.bLabel}
       </h3>
-      {/* Deliberately not a live region: it recomputes on every drag frame,
-          which would flood screen readers with queued announcements. */}
-      <div className={`verdict verdict-${state}`}>
-        <span className="verdict-state">{stateText}</span>
-        <p className="verdict-cause">{causeSentence(pair, blockedA, blockedB, tvAnchor)}</p>
-        <div className="quality-meter" aria-hidden="true">
-          <div className="quality-fill" style={{ width: `${Math.round(pair.quality * 100)}%` }} />
+      {showPairVerdict && (
+        // Not a live region: it recomputes on every drag frame, which would flood
+        // screen readers with queued announcements.
+        <div className={`verdict verdict-${state}`}>
+          <span className="verdict-state">{stateText}</span>
+          <p className="verdict-cause">{causeSentence(pair, blockedA, blockedB, tvAnchor)}</p>
+          <div className="quality-meter" aria-hidden="true">
+            <div className="quality-fill" style={{ width: `${Math.round(pair.quality * 100)}%` }} />
+          </div>
         </div>
-      </div>
-
-      <MeterRow
-        label="Timing (ITD)"
-        value={`${pair.itdMs.toFixed(2)} ms`}
-        tone={itdTone}
-        fraction={pair.itdMs / 0.6}
-        hint="Inter-channel delay at your head. Above ~0.1 ms the image starts pulling toward the nearer HomePod; 1 ms sounds fully one-sided."
-      />
-      <MeterRow
-        label="Level balance"
-        value={balance}
-        tone={ildTone}
-        fraction={Math.abs(pair.ildDb) / 4}
-        hint="Loudness difference at your seat. Volume trim can fix this — it can never fix timing."
-      />
-      <MeterRow
-        label="Listening angle"
-        value={`${pair.angleDeg.toFixed(0)}° / 60°`}
-        tone={angleTone}
-        fraction={angleOff / 30}
-        hint="Angle the pair subtends at your head. 60° = equilateral reference."
-      />
-      {pair.tv && (
-        <MeterRow
-          label="TV on axis"
-          value={`${(pair.tv.offAxis * 100).toFixed(0)} cm off`}
-          tone={pair.tv.aligned ? 'ok' : 'bad'}
-          fraction={Math.min(1, pair.tv.offAxis / 0.6)}
-          hint="Distance from the TV to the pair's centre axis. Cinema mode wants the image on the screen."
-        />
       )}
+
+      <div className="spec-sheet">
+        <SpecRow
+          label="Timing (ITD)"
+          value={`${pair.itdMs.toFixed(2)} ms`}
+          tone={itdTone}
+          fraction={pair.itdMs / 0.6}
+          hint="Inter-channel delay at your head. Above ~0.1 ms the image starts pulling toward the nearer HomePod; 1 ms sounds fully one-sided."
+        />
+        <SpecRow
+          label="Level balance"
+          value={balance}
+          tone={ildTone}
+          fraction={Math.abs(pair.ildDb) / 4}
+          hint="Loudness difference at your seat. Volume trim can fix this — it can never fix timing."
+        />
+        <SpecRow
+          label="Listening angle"
+          value={`${pair.angleDeg.toFixed(0)}° / 60°`}
+          tone={angleTone}
+          fraction={angleOff / 30}
+          hint="Angle the pair subtends at your head. 60° = equilateral reference."
+        />
+        <SpecRow
+          label="Lock"
+          value={pair.locked ? 'LOCKED' : 'open'}
+          tone={pair.locked ? 'ok' : 'plain'}
+          fraction={pair.quality}
+          signal
+          hint="Equilateral + on axis + clear line of sight → the phantom centre locks. The fill shows how close this pair is."
+        />
+        {pair.tv && (
+          <SpecRow
+            label="TV on axis"
+            value={`${(pair.tv.offAxis * 100).toFixed(0)} cm off`}
+            tone={pair.tv.aligned ? 'ok' : 'bad'}
+            fraction={Math.min(1, pair.tv.offAxis / 0.6)}
+            hint="Distance from the TV to the pair's centre axis. Cinema mode wants the image on the screen."
+          />
+        )}
+      </div>
 
       <details className="metric-details">
         <summary>Distances & detail</summary>
@@ -229,7 +222,7 @@ export default function MetricsPanel({ audio, trace, speakerCount, tvAnchor, onS
         <span className="card-tag">{tvAnchor ? 'TV mode' : 'Music mode'}</span>
       </h2>
       {audio.pairs.map((pair) => (
-        <PairSection key={`${pair.aId}-${pair.bId}`} pair={pair} trace={trace} tvAnchor={tvAnchor} />
+        <PairSection key={`${pair.aId}-${pair.bId}`} pair={pair} trace={trace} tvAnchor={tvAnchor} pairCount={audio.pairs.length} />
       ))}
 
       {audio.solos.length > 0 && (

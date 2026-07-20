@@ -705,14 +705,53 @@ touch HUD (rotate/nudge/delete) on coarse pointers. **Evidence block:**
 - *Data safety:* the owner's **real home layout** (a real street address) backed up to `docs/sessions/S14/backup.json`
   (gitignored) before any write; tested on a disposable Maple Court duplicate; real layout `updatedAt 1784480211854`
   **byte-identical** afterward; origin restored to the single real layout via the app's own delete. No real address in any
-  committable file. Next: **UX-3 (Session 15)** — kickoff below.
+  committable file. Next: **UX-3 (Session 15) — ✅ DONE (see its block below)**. Then **UX-4 (Session 16)** — kickoff below.
 
-**Session 15 = UX-3 — The readout & THE LOCK (verdict hero · compare-first-class · lock moment · data-viz).** Extract
-the verdict into the pinned `--surface-4` hero at `--text-hero`, name the active seat ("At: Couch"), reuse it in
-`ScenarioCompare`; ship THE LOCK ignition (reduced-motion safe); spec-sheet metrics; Compare always present + teaches
-its unlock; Echogram/meters as first-class data-viz.
-*Acceptance:* the verdict leads TUNE and never scrolls away; THE LOCK fires on the locked transition (degrades under
-reduced-motion); Compare always reachable + self-teaching; gate green; unlocked→LOCKED + 2-up compare screenshots.
+**Session 15 = UX-3 — The readout & THE LOCK — ✅ DONE (2026-07-20).** Extracted the verdict into the pinned `--surface-4`
+`VerdictHero` at `--text-hero` (names the active seat "At: Couch"), reused verbatim in `ScenarioCompare`; shipped THE LOCK
+ignition (`--signal` letterform sweep + green bloom, reduced-motion → opacity cross-fade); spec-sheet metrics (Geist-Mono
+tabular); Compare always present in TUNE + self-teaching; extracted the single-source pure `verdict.ts`.
+
+*Acceptance → outcome (all MET):*
+- **The verdict LEADS the TUNE column and never scrolls away** → MET. `VerdictHero` is the first TUNE child, `position:sticky;
+  top:0;z-index:1` on `--surface-4`. Live-proven (`04-sticky-specsheet-desktop.jpg`): after scrolling, heroTop 61 ≈ sidebarTop
+  53 (pinned) while Speakers/Seats/Audio scroll beneath it.
+- **THE LOCK fires on the locked transition + degrades under reduced-motion** → MET. Genuine in-place lock (nudge YOU off apex
+  then back, same seat) → `igniting:true, anim:lock-sweep` (`03-locked-sweep-desktop.jpg`); switching TO an already-locked seat
+  → `igniting:false` (self-review-caught bug, fixed by keying the hero to the seat id); mount-of-locked → `igniting:false`.
+  Reduced-motion → `anim:lock-fade` (opacity-only, no movement) (`06-reduced-motion-desktop.jpg`). Pure edge detector unit-tested
+  (the `stepIgnition(initIgnition(true), true).token===0` mount-no-ignite assertion).
+- **The same hero renders in `ScenarioCompare`** → MET. `05-compare-2up-desktop.jpg`: both columns render `VerdictHero
+  variant="compare"` (Bed "No lock yet" vs Couch "Phantom center locked"); the divergent `.compare-verdict` + local `verdictOf`
+  deleted.
+- **Compare always reachable in TUNE + self-teaching** → MET. `ListenerCard` Compare button always shown, `disabled` on
+  `!canCompare` with teach copy ("Add a second listening spot, or duplicate this layout, and Compare lights up"); enabled title
+  is mode-neutral ("Compare two setups side by side").
+- **Metrics read as a Geist-Mono spec sheet** → MET. `SpecRow`/`.spec-sheet` (ITD/level/angle/lock + TV), mono tabular, dotted-
+  underline labels, tone fills on status rows + `--signal` on the Lock row.
+- **Behavior otherwise identical** → MET (presentation-layer only; zero `src/engine`/persistence/data-model change).
+- **Echogram/meters first-class data-viz** → MET (as-was; `.echo-tick` already Geist-Mono; no bar fills to recolor).
+
+**Evidence block (S15):**
+- *Agents spawned (all verdicts recorded):* **pre-code design Workflow** (6 agents) — 3 parallel Understand (data-flow · css+lock ·
+  compare+spec-sheet), 2 diverse Design proposals (minimal-diff · pure-core), 1 adversarial Skeptic → produced the reconciled
+  hybrid (Skeptic verdict "sound; take specific halves": RISK-1 gate the sweep on `.is-igniting` not the resting class = HIGH
+  CONFIRMED_PROBLEM adopted; RISK-2/3/4/6 CONFIRMED_SAFE; RISK-5/7 low fixes adopted). **post-code self-review Workflow** (10
+  agents) — 4 reviewers (code-reviewer · silent-failure-hunter · a11y-architect · domain-skeptic) each finding adversarially
+  verified → **2 CONFIRMED_REAL** (HIGH: ignite-on-switch; MEDIUM: `best.locked` headline gap) + 4 MEDIUM/LOW a11y — **all fixed
+  and re-verified**.
+- *Test count:* **296 → 322** (+26 in `verdict.test.ts`, failing-first; none skipped/only'd/deleted).
+- *Gate (literal tails):* `npm run lint` → clean (0 problems); `npm test` → **Tests 322 passed (21 files)**; `npm run build` →
+  `index-*.js 382.23 kB / gzip 123.79 kB` + `index-*.css 37.99 kB / gzip 7.41 kB` (tsc --noEmit + vite, ✓ built).
+- *Screenshots (gitignored `docs/sessions/S15/`):* `01-unlocked-desktop.jpg` · `02-locked-rest-desktop.jpg` (switch → no
+  ignite) · `03-locked-sweep-desktop.jpg` (in-place ignite) · `04-sticky-specsheet-desktop.jpg` · `05-compare-2up-desktop.jpg` ·
+  `06-reduced-motion-desktop.jpg`; plus `design-workflow-output.json` + `implementation.diff`. Live checks ran ONE browser
+  (in-app pane for DOM/state proofs; a zero-dep Node-25 CDP client over classic headless for the desktop-layout + drag-driven
+  ignition + reduced-motion visuals that the rAF-paused preview tab can't).
+- *Data safety:* the owner's real home layout backed up to `docs/sessions/S15/backup.json` (gitignored, full 24-object fidelity)
+  before any write; all tests ran on a disposable "Maple Court (S15 test)" layout; real layout `updatedAt 1784480211854`
+  **byte-identical** before AND after (+ reload/autosave settle); the fixture removed and the origin restored to the single real
+  layout; the disposable did not reappear. No real address in any committable file (`git ls-files -oc | grep "<real-address>"` empty).
 
 **Session 16 = UX-4 — Learnability, empty states & shareable output (micro-UX).** `<Term>` tap-to-learn jargon layer +
 glossary + on-canvas legend; first-run explainer + seed the demo with a placed pair (a live verdict on boot);
@@ -769,36 +808,55 @@ unlimited — optimize for perfection, not speed. Confirm the next kickoff you w
 > screenshots (both dark themes; note the S13 correction that BOTH canvas themes are dark now). Then self-review the diff,
 > update `CLAUDE.md` + this checklist, and write the UX-3 handoff.
 
-**KICKOFF PROMPT (UX-3 — The readout & THE LOCK, the NEXT session)** — *run under the Standing Operating Protocol at the top
-of this file (also in `CLAUDE.md`, auto-loaded): git-per-session (branch off `main` + baseline commit, commit again after
-the gate), read-first, a multi-agent Workflow for this heavy task (parallel understand → design → an adversarial skeptic
-that tries to REFUTE each risky change against the real code — this caught real bugs in UX-2), full implementation (no
-stubs/TODOs/`.skip`), test everything with PROOF (ratchet — **296 tests** must not drop; add failing-first tests for any new
-pure logic; paste the literal `npm run lint` + `npm test` + `npm run build` tails), a self-review agent pass
-(`code-reviewer` + `silent-failure-hunter` + a11y over the diff), and a handoff with an Evidence block. Data safety: the
-preview's IndexedDB on the owner's usual origin holds their REAL home layout (a real street address) — back
-it up to `docs/sessions/S15/backup.json` BEFORE any write test, test on a disposable **Maple Court** duplicate, confirm the
-real layout's `updatedAt` is byte-identical afterward, restore the origin, and verify no real address is in any committable
-file before pushing. Land on `main` and `git push` after the gate. Token/time budget is unlimited — optimize for perfection,
-not speed. Confirm the next kickoff you write re-states this protocol.*
-> UX-2 (S14) is DONE — the app is now the confirmed **DESIGN / TUNE** two-mode shell: the mode OWNS the theme (`mode.ts`
-> `modeTheme(appMode)`, `theme` is a derived const, one controller), tools never teleport the mode/theme, digits are
-> mode-scoped, the header is rescoped to brand + pinned switcher + DESIGN/TUNE `SegmentSwitch` + undo/redo, TV/Music + Suggest
-> live in `TuneToolsCard` (TUNE), the mobile toolbar is a bottom rail + `SelectionActions` touch HUD. The verdict currently
-> renders inside `MetricsPanel` in the TUNE sidebar column (NOT yet extracted/hero-styled). **Read `docs/ui-ux-overhaul-plan.md`
-> §2.5 (THE LOCK) + §4 (Verdict hero / Metrics / Speakers) + §10 UX-3 + `CLAUDE.md` first.** Execute **UX-3 (Session 15) — The
-> readout & THE LOCK:** extract the verdict into the pinned **`--surface-4`** hero at **`--text-hero`** (both foundation tokens
-> exist from UX-1 with no consumer yet), name the active seat ("At: Couch"), and **reuse the hero verbatim in
-> `ScenarioCompare`** so both scenarios show the same hero; ship **THE LOCK** ignition — when a pair transitions to `locked`,
-> the `PHANTOM CENTER LOCKED` headline ignites with the cyan→green **`--signal`** gradient sweeping the letterforms + a soft
-> green bloom (reuse the existing `verdict-in` keyframe), degrading to a cross-fade under `prefers-reduced-motion`; give the
-> metrics a **spec-sheet table** treatment (ITD / level / angle / lock in Geist Mono `tabular-nums`); make **Compare always
-> present in TUNE** and self-teaching when nothing is comparable ("add a second listening spot, or duplicate this layout")
-> instead of only living in ListenerCard at ≥2 seats; treat the Echogram + meters as first-class data-viz (`--signal` fills,
-> mono axes). Presentation-layer only — do NOT touch `src/engine`, persistence, or the scene data model. Acceptance: the
-> verdict LEADS the TUNE column and never scrolls away; THE LOCK fires on the locked transition and degrades under reduced
-> motion; Compare is always reachable + self-teaching; gate green; screenshots of unlocked→LOCKED + the 2-up compare (scrubbed
-> Maple Court, in the dark sound theme). Then self-review the diff, update `CLAUDE.md` + this checklist, and write the UX-4 handoff.
+**KICKOFF PROMPT (UX-4 — Learnability, empty states & shareable output, the NEXT session)** — *run under the Standing
+Operating Protocol at the top of this file (also in `CLAUDE.md`, auto-loaded): git-per-session (fresh worktree branch off
+`main` + baseline commit, commit again after the gate; ⚠️ worktree-path trap — the worktree lives under
+`.claude/worktrees/<name>/` while a separate `main` checkout sits at the repo root, so always pass worktree-relative paths to
+Read/Edit/Write, or edits silently land in the wrong checkout; land via `git -C <MAIN_REPO> merge --ff-only <branch>` then
+`git -C <MAIN_REPO> push origin main`), read-first (map every site before touching it), a multi-agent Workflow for this heavy
+task (parallel understand → design → an adversarial skeptic that tries to REFUTE each risky change against the real code —
+this caught real bugs in UX-2 AND UX-3, incl. a HIGH ignite-on-switch bug and a headline that dropped a genuine lock), full
+implementation (no stubs/TODOs/`.skip`/`.only`/scope-narrowing), test everything with PROOF (ratchet — **322 tests** must not
+drop; add failing-first tests for any new pure logic; paste the literal `npm run lint` + `npm test` + `npm run build` tails),
+a self-review agent pass (`code-reviewer` + `silent-failure-hunter` + an a11y reviewer over the actual diff — fix everything
+real, then re-verify), and a handoff with an Evidence block (agents + verdicts · before/after test count · pasted gate output ·
+saved screenshot paths · each Acceptance bullet → met/deferred). Data safety: the preview's IndexedDB on the owner's usual
+origin holds their REAL home layout (a real street address) — back it up to `docs/sessions/S16/backup.json` (gitignored,
+FULL fidelity) BEFORE any write test, test on a disposable **Maple Court** duplicate, confirm the real layout's `updatedAt` is
+byte-identical afterward (before AND after a reload/autosave settle), remove the fixture and restore the origin to the single
+real layout, and verify no real address is in any committable file (`git ls-files -oc --exclude-standard | xargs grep -l
+"<address>"` must be empty). Live-drive rAF-gated behavior (drag, the LOCK, canvas hover) via a zero-dep Node-25 CDP client
+over `--headless=old` + `--window-size` (NOT `Emulation.setDeviceMetricsOverride`; use `Page.captureScreenshot format:'jpeg'`
+— a huge PNG silently overruns the built-in WebSocket), since the in-app preview tab runs `document.hidden` with rAF paused.
+Land on `main` via `--ff-only` and `git push` after the gate. Token/time budget is unlimited — optimize for perfection, not
+speed. Confirm the next kickoff you write re-states this protocol.*
+> UX-3 (S15) is DONE — the verdict now LEADS the TUNE column as the pinned `--surface-4` `VerdictHero` (`--text-hero`, THE
+> LOCK sweep + green bloom, reduced-motion `lock-fade`), reused verbatim in `ScenarioCompare`; the readout math is the single
+> pure `components/panels/verdict.ts` (`deriveVerdict`/`representativePair`/`causeSentence` + the `initIgnition`/`stepIgnition`
+> LOCK edge detector, 26 tests); metrics are a Geist-Mono `.spec-sheet`; Compare is always present in TUNE + self-teaching.
+> **UX-4 completes the overhaul's learnability + shareability half. Read `docs/ui-ux-overhaul-plan.md` §5 (Learnability &
+> onboarding) + §4 (Speakers "Pair these two", Dialogs/Toasts, Empty states) + §3 (Import homes, Room-shell vs Zone) + §10
+> UX-4 + `CLAUDE.md` (esp. the S15 "readout & THE LOCK" design-system block + the new lessons) first.** Execute **UX-4 (Session
+> 16) — Learnability, empty states & shareable output:** ship the **`<Term>` tap-to-learn jargon layer** (zero-dep dotted-
+> underline term → accessible, keyboard-operable popover with a one-line plain-English definition for phantom center / lock /
+> ITD / ILD / sweet spot / comb notch / 60° — this UPGRADES the S15 spec-sheet labels, which currently carry only a visible
+> dotted underline + `title=` tooltip, the deliberate UX-3→UX-4 interim) + a short glossary reachable from TUNE; a collapsible
+> **on-canvas legend** keyed to the current mode; **fix the boot** — a dismissible first-run explainer + **seed the demo
+> apartment with a placed, locked stereo pair** so first run lands on a LIVE verdict (the whole point, visible before you touch
+> anything); mode-aware **editorial empty states** (the empty TUNE offers "Nothing to analyze yet — suggest 4 HomePod spots?"
+> wired to the existing Suggest); a **"Pair these two"** one-click in Speakers when exactly two same-model speakers are unpaired;
+> the optimizer **"Replace with N speakers"** wording + a **uniform undo toast on every scene-mutating apply** (consistency
+> with deletes); **rename the colliding "room" concepts** (walled Room shell vs targeting Zone/Area) and let the optimizer
+> target real walled regions (`regionOf` already computes them); **separate "Import a floorplan photo" vs "Import a saved
+> layout (JSON)"**; and a **shareable output** — "Export plan as image" + "Copy verdict". Presentation-layer + UI-only — do NOT
+> touch `src/engine`, persistence, or the scene data model (the optimizer-target-a-walled-region change is UI wiring over the
+> existing `regionOf`/`optimize.ts` API, not an engine edit). Acceptance: no load-bearing meaning hidden in a hover-only
+> tooltip (every metric/affordance has a visible, keyboard/touch-reachable info); a first-timer is oriented and sees a live
+> verdict on boot; every apply is reversible with a toast; a plan image + verdict sentence can be shared; Room-shell vs Zone no
+> longer collide and "optimize the bedroom" works on a walled region; gate green; a first-run walkthrough screenshot sequence
+> (scrubbed Maple Court, dark themes). Then self-review the diff, update `CLAUDE.md` + this checklist, and write the S7 (a11y
+> audit) handoff (the overhaul's a11y was built in at creation across UX-1…UX-4; S7 remains the systematic audit + contrast
+> tests + aria-live mirror over the redesigned surface).
 
 ## Backlog (noticed, not yet scheduled — add to a session as it fits)
 - **Auto-detect walls accuracy** — now scheduled as **Session 12** (duplicated/diagonal tangle on real floorplans);
@@ -907,3 +965,23 @@ not speed. Confirm the next kickoff you write re-states this protocol.*
   Live: headless-Chrome-over-CDP screenshots (both dark themes + ≤960 rail + touch HUD + monogram) in `docs/sessions/S14/`
   (gitignored, scrubbed Maple Court); 6/6 behavioral keydown assertions PASS (tool never changes mode/theme); console clean.
   Data-safe: the owner's real home layout backed up (gitignored) + byte-identical (`updatedAt` unchanged) + origin restored. Next: **UX-3**.
+- **2026-07-20 — Session 15 (UX-3) DONE:** The readout & THE LOCK. Extracted the verdict into the pinned `--surface-4`
+  `VerdictHero` (`--text-hero`, leads the TUNE column, `position:sticky` — never scrolls away) + THE LOCK ignition (the
+  `--signal` cyan→green gradient swept through the letterforms via `background-clip:text` + green bloom; reduced-motion →
+  opacity-only `lock-fade`; forced-colors fallback). All readout math is now the SINGLE pure `src/components/panels/verdict.ts`
+  (`deriveVerdict` == old `verdictOf` for `{locked,quality}` + `kind`/`headline`/`cause`, `representativePair`, moved
+  `causeSentence`, and the `initIgnition`/`stepIgnition` LOCK edge detector — 26 failing-first tests) consumed by BOTH the
+  sidebar hero AND `ScenarioCompare` (the divergent `verdictOf` + `.compare-verdict` deleted — the drift bug is gone). Metrics
+  are a Geist-Mono `.spec-sheet`; Compare is always present in TUNE + self-teaching (threaded `canCompare`). Pre-code 6-agent
+  design Workflow (understand→2 designs→adversarial skeptic → reconciled hybrid) + post-code 10-agent self-review (4 reviewers,
+  each finding adversarially verified) caught **2 real bugs** — a HIGH "ignite on switching TO an already-locked seat/scenario"
+  (fixed by keying the hero to the displayed entity: `key={activeListener(scene).id}` / per-scenario) and a MEDIUM headline that
+  dropped a genuine lock when it wasn't the highest-quality pair (fixed: gate on `some(p.locked)`, not `best.locked`) — plus 4
+  a11y fixes (forced-colors, focus-not-obscured `scroll-padding-top`, opacity-only reduced-motion, 40px touch targets); all
+  fixed + re-verified. Tests **296→322** (+26, none skipped). Gate: lint 0 · 322 green · build JS 123.79 kB gz / CSS 7.41 kB gz.
+  Live: in-app browser DOM/state proofs + a zero-dep Node-25 CDP client (classic headless, JPEG) → 6 desktop screenshots in
+  `docs/sessions/S15/` (unlocked → in-place LOCK sweep → sticky spec-sheet → 2-up compare → reduced-motion), incl. proof that a
+  seat-switch to a locked seat does NOT ignite while a genuine in-place lock DOES (`anim:lock-sweep`; reduced-motion `lock-fade`).
+  Presentation-layer only (zero engine/persistence/data-model change). Data-safe: real home layout backed up (gitignored, full
+  fidelity) + `updatedAt 1784480211854` byte-identical before AND after (+ reload/autosave settle) + fixture removed + origin
+  restored + no real address committed. Next: **UX-4 (Session 16)** — kickoff in the S16 block.
