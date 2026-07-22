@@ -1203,111 +1203,44 @@ Next: **Session 8-remainder (security hardening: CSP + headers + import size cap
 
 ---
 
-**KICKOFF PROMPT (Session 8-remainder — security hardening + README rewrite, the NEXT session)** — *run under
-the Standing Operating Protocol at the top of this file (also in `CLAUDE.md`, auto-loaded).*
+**KICKOFF PROMPT (Session 8-remainder — security hardening + README rewrite, the NEXT session)**
 
-> ultracode
+> **The full prompt lives in [`docs/kickoff-session-8.md`](kickoff-session-8.md)** — paste that
+> file's contents as the next session's opening message. It is kept as its own file because it
+> carries ~200 lines of *empirically verified* technical findings, produced at the end of S7 by a
+> 6-agent research pass with two adversarial skeptics (real production builds, a live
+> headless-Chrome CSP probe driving 38 clicks, and hostile engine payloads executed under Node).
 >
-> **KICKOFF — Session 8-remainder / SECURITY HARDENING + README (Phantom Lock)**
->
-> Run under the Standing Operating Protocol at the top of `docs/master-plan.md` (also in `CLAUDE.md`,
-> auto-loaded). This is an **ultracode** project: unlimited token/time budget — optimize for correctness and
-> completeness, never speed. This task is **HEAVY** (it changes what the app will execute and what it will
-> accept as input, and it rewrites the public front door of a PUBLIC repo), so it MUST get: a multi-agent
-> Workflow (parallel understand → design → an adversarial skeptic that tries to REFUTE each risky change
-> against the real code), full implementation (no stubs/TODOs/`.skip`/`.only`/scope-narrowing), failing-first
-> tests for every new pure behavior, a self-review agent pass over the ACTUAL diff, and a handoff with an
-> Evidence block.
->
-> **0. GIT + ⚠️ THE WORKTREE-PATH TRAP.** MAIN REPO: `/Users/rayankarimcheca/Desktop/Dev/fun/layout`.
-> Create a fresh per-session worktree branch off `main`. ⚠️ TRAP (has bitten UX-1/2/3 and cost time in S7):
-> the worktree lives at `<MAIN_REPO>/.claude/worktrees/<name>/` while a SEPARATE `main` checkout sits at the
-> repo root — ALWAYS confirm with `git rev-parse --show-toplevel` and `git branch --show-current` FIRST, and
-> pass worktree-relative paths to Read/Edit/Write, or your edits silently land in the wrong checkout and the
-> gate lies to you. **Also: `node_modules` is NOT shared into a new worktree — run `npm install` first.**
-> **Also: watch your shell `cwd`** — a `cd` in one Bash call persists into the next, and in S7 that put a
-> `mkdir docs/sessions/S7` inside `src/components/canvas/`. Commit a baseline, commit again after the gate.
-> Land with `git -C <MAIN_REPO> merge --ff-only <branch>` then `git -C <MAIN_REPO> push origin main`.
-> Commit messages end `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`.
-> FIRST ACTION: run the full gate and PASTE the literal tails to confirm the baseline is green.
->
-> **1. WHERE THE PROJECT IS.** Repo: github.com/rayancheca/phantom-lock (PUBLIC), default branch `main`.
-> Baseline to reproduce: `npm run lint` 0 problems · `npm test` **608 tests, 31 files** across the `node` and
-> `dom` vitest projects · `npm run build` clean (~401 kB / 129.3 kB gz JS + 43.2 kB / 8.24 kB gz CSS).
-> **TEST COUNT IS A RATCHET** (95→126→140→181→239→245→296→322→340→**608**) — never let it drop, and never
-> skip/only/weaken a test. DONE so far: Sessions 1–5, the whole UI/UX overhaul (S13–S16 = UX-1…UX-4), and
-> **Session 7 (the a11y audit)** — read its progress-log entry and the new **Accessibility** section in
-> `CLAUDE.md` before touching anything, because S7 added a keyboard model, two live regions, a contrast test
-> that reads the real stylesheets off disk, and a second (jsdom) vitest project.
->
-> **2. YOUR TASK — two blocks, both fully in scope.**
->
-> **(A) SECURITY HARDENING.** The app is a zero-backend static site that accepts UNTRUSTED USER INPUT: JSON
-> layout imports and floorplan photos. Deliver:
-> - A production **Content-Security-Policy** with NO `'unsafe-inline'` for scripts, plus
->   `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`, `frame-ancestors`. Decide honestly
->   HOW it ships for a static Vite build (a `<meta http-equiv>` CSP, a host config file, or both) and say what
->   each does and does not protect. Note the app uses `blob:`/`data:` URLs (underlay photos, plan-image
->   export) and self-hosted fonts — the policy must actually allow the real app to run, so **prove it in a
->   real browser with a clean console**, not just by writing a header.
-> - **Import hardening**: a size cap AND a shape/depth guard on layout-JSON import and on photo import,
->   with user-visible errors (the app already has an error-toast path — and after S7 error toasts are
->   `role="alert"`/assertive). `sanitizeScene` already exists; find out what it does NOT defend against
->   (prototype pollution via `__proto__`/`constructor`, absurd counts, NaN/Infinity coordinates, a 200 MB
->   image, a deeply nested object) and close the real gaps with failing-first pure tests.
-> - Re-verify there are no secrets, and that nothing user-controlled reaches `innerHTML`/`dangerouslySetInnerHTML`.
->
-> **(B) README REWRITE.** `README.md` predates the gallery, zones, detection, multi-select, the whole UX
-> overhaul and the a11y work — it is the front door of a public repo and is badly stale. Rewrite it to the
-> standard in the user's global rules (`~/.claude/rules/common/readme-standards.md`): what it is · **live
-> workflow screenshots (minimum 6, numbered captions, real data, captured from the running app)** ·
-> architecture · a technical deep-dive that explains something non-obvious (candidates: the 2D-plan vs 3D-path
-> split in the lock test; image-source reflections having to land on a SOLID span; the mode-owns-the-theme IA;
-> why the canvas needs `role="application"`) · install + run · real usage examples. **Screenshots go in
-> `docs/screenshots/` and MUST be committed** (unlike `docs/sessions/`, which is gitignored) — so they must
-> show the **bundled "Maple Court" demo, never the owner's real layout**, and must contain no real address.
->
-> **SCOPE GUARD:** do NOT touch `src/engine` acoustics math (`optimize.ts`/`rooms.ts`/`stereo.ts`/`raytrace.ts`
-> must be byte-unchanged) and do not regress the S7 a11y work or the S13–S16 design system.
->
-> **ACCEPTANCE:** a documented CSP + headers that a real browser enforces with a clean console and a working
-> app (proven live, both modes) · import of a hostile/oversized/malformed file fails safely with a visible
-> assertive error and never corrupts the store · new pure guards are failing-first tested · README meets the
-> standard with ≥6 real committed screenshots · gate green (lint 0 · ≥608 tests · build) · the owner's real
-> layout untouched.
->
-> **3. READ FIRST:** `CLAUDE.md` (protocol, architecture map, design system, **Accessibility**, and the
-> "Hard-won lessons" list — it encodes real bugs, including several from S7) · this file's Standing Operating
-> Protocol + the Session 7 and Session 8 blocks · `docs/ultrareview.md` §3.4 (security) · then
-> `src/engine/scene.ts` (`sanitizeScene`), `src/engine/db.ts`, `src/components/app/hooks/useLayoutActions.ts`
-> (import path), `src/components/panels/underlay-import.ts`, `index.html`, `vite.config.ts`.
->
-> **4. ⚠️ DATA SAFETY — THE OWNER'S REAL LAYOUT IS ON THIS MACHINE.** The preview's IndexedDB on
-> `localhost:5173` holds their real layout — as of 2026-07-22 it is **one** layout, `layout-mrwb0lnz-28-u87ub`,
-> named **"Maple Court"**, 24 objects / 2 speakers (VERIFY the live values, don't assume). **NEVER delete the
-> owner's layouts.** Back up FULL-FIDELITY to `docs/sessions/S8/backup.json` (gitignored) BEFORE any write
-> test by reading the `phantom-lock` IDB `layouts` + `meta` + `underlays` stores. Prefer a **fresh headless
-> Chrome profile** for all interactive testing — a fresh `--user-data-dir` is a fresh ORIGIN, so the app gets
-> its own IndexedDB and theirs is never touched. Afterwards confirm the layout record's `updatedAt` is
-> byte-identical (the `meta` row's `updatedAt` DOES advance on every boot — that is normal and not a change to
-> their data). Never hand-mutate IndexedDB to "reset". Keep any real street address out of committable files:
-> `git ls-files -oc --exclude-standard | xargs grep -l "Bay"` must be empty (the only legitimate match is this
-> instruction quoting its own search string in `docs/master-plan.md`).
->
-> **5. LIVE VERIFICATION.** The in-app preview tab runs `document.hidden`, so rAF (canvas render/drag/hover) is
-> PAUSED there; drive rAF-gated behavior in headless Chrome over CDP (zero-dep, Node 25 has built-in
-> `WebSocket` + `fetch`): `--headless=old` + `--window-size` at LAUNCH (NOT
-> `Emulation.setDeviceMetricsOverride`, which deadlocks capture), and `Page.captureScreenshot` as
-> `format:'jpeg', quality:90` (a big PNG silently overruns the built-in WebSocket). A working client is
-> described in the S7 log. **Verify visual claims by pixel diff, not by `getComputedStyle`** — S7 shipped an
-> invisible focus ring that `getComputedStyle` reported as present.
->
-> **6. FINISH.** Paste the literal gate tails. Spawn self-review agents (`security-reviewer` +
-> `code-reviewer` + `silent-failure-hunter`) over the ACTUAL diff; fix everything real; re-verify. Save
-> evidence to `docs/sessions/S8/` (gitignored) and the README screenshots to `docs/screenshots/` (committed).
-> Update `CLAUDE.md` (commands/ratchet/bundle size, a Security section, new lessons) + this checklist and
-> progress log with a full **Evidence block** (agents + verdicts · before/after test count · pasted gate
-> output · saved artifact paths · each Acceptance bullet → met/deferred). Commit on the session branch, land
-> on `main` via `--ff-only`, and `git push`. Then write the NEXT kickoff — **Session 12: the auto-detect walls
-> accuracy overhaul** (root causes are already diagnosed in this file against `src/engine/detect.ts`) —
-> re-stating this protocol in full.
+> Headline facts it establishes, so they are not lost if that file is ever mislaid:
+> - **`script-src 'self'` suffices — no nonce, no hash.** `dist/index.html` has exactly one
+>   script tag, external, and zero inline script/style (the app has no dynamic imports, so Vite
+>   emits no inline modulepreload polyfill).
+> - **`style-src 'self'` needs no `'unsafe-inline'`**: React 19 writes inline styles via CSSOM
+>   (`style.setProperty`), never `setAttribute('style')` — verified against 41 `[style]` elements
+>   with a live blocked-probe as the control.
+> - `img-src` needs BOTH `data:` (favicon + underlay) and `blob:` (photo import); `font-src 'self'`
+>   is required independently for the two `as="font"` preloads.
+> - **Drop `upgrade-insecure-requests`** — it is a total outage on a plain-http host and the
+>   failure does NOT appear as a CSP violation.
+> - **Do not put the CSP meta in the source `index.html`** — the dev server injects an inline
+>   react-refresh preamble and an HMR WebSocket, so it breaks `npm run dev` via
+>   `style-src`/`connect-src`. Inject at build time (`apply:'build'` + `transformIndexHtml`).
+> - There is **no deploy target in the repo at all**, and `npm run preview` sends no headers.
+> - **The real import bug is a ~760-byte layout** that makes `bestListeningSpot` quadratic in
+>   span (1.45 s per recompute at span 1200) — it COMMITS and PERSISTS, so it bricks the origin
+>   on every boot. The spectacular `1e17` infinite loop (`bestspot.ts:150`, step floor-clamped at
+>   0.7) never commits, so a reload recovers. A single circle with `r = 1e308` triggers it too —
+>   `Math.max(0.05, o.r)` has no upper bound.
+> - `speakers:[null]` and `rooms:[null]` THROW in the sanitizer, and in `loadStore` that silently
+>   replaces the **entire store** with defaults.
+> - NaN cannot get in, but is **manufactured** downstream: `sceneBounds`' finite guard
+>   (`scene.ts:377`) is one-sided, so `quality` becomes NaN and the hero silently reads
+>   "No lock yet" with a `width: NaN%` meter.
+> - **Prototype pollution is NOT reachable** (verified five ways) and **a `file.size` gate on
+>   photo import is the wrong control** (a valid 192 MB PNG decodes in 197 ms; a 1.17 MB
+>   decompression bomb decodes fine; Chrome's own pixel cap rejects the huge one in 7 ms).
+>   Do not ship either as though it were a fix.
+> - The README's problem is NOT that it is structurally stale — it has the right sections. Its
+>   Screenshots section is an explicit "coming soon" **placeholder** (which the repo's own
+>   standard bans outright), its walkthrough describes the pre-S13/S14 UI, and it claims
+>   140 tests.
