@@ -423,7 +423,7 @@ perf trace); tests + build green; results identical to the synchronous path.
 ---
 
 ## Session 7 — Accessibility: operable + AT-legible canvas
-**Status:** ☐ **Depends on:** ideally S5 (keyboard hook)
+**Status:** ☑ **DONE 2026-07-22** (branch `claude/a11y-audit-phantom-lock-70516e`) **Depends on:** ideally S5 (keyboard hook)
 
 **Goal.** Make the primary surface usable without a mouse and legible to screen readers; fix contrast.
 
@@ -1052,3 +1052,78 @@ speed. Confirm the next kickoff you write re-states this protocol.*
   testing on separate fresh-origin profiles (their IDB never touched) — no fixture created on their origin, none to remove; no
   real address in any committable file. Per owner request (2026-07-20) their layout was renamed from its real street address to
   the placeholder "My apartment", and future sessions must never delete their layouts. Next: **Session 7 (a11y audit)** — kickoff below.
+
+### 2026-07-22 — Session 7 (a11y audit) ☑ DONE
+
+**Branch** `claude/a11y-audit-phantom-lock-70516e`, off `main` @ `1f32241`.
+
+**Agents (12 in the planning workflow + 3 self-review).** Understand ×6 (canvas-keys · panel-lists ·
+verdict-live · contrast · test-infra · aria-audit) → design synthesis ×1 → **adversarial skeptics ×5**, all
+returning PARTIALLY REFUTED with ~40 real defects. The skeptics changed the shipped design substantially:
+- **CRITICAL** the plan's `inert` on `<main>` would have **bricked the optimizer, arrange and detected-layout
+  dialogs** — they render INSIDE `.workspace`, so `overlayOpen` inert would disable the very dialog that
+  opened it. Dropped; `tabIndex={-1}` alone carries it.
+- **CRITICAL** the live mirror had **no selection channel** — `n` would have announced nothing, defeating the
+  headline deliverable. Fixed with a second, immediate region.
+- **HIGH** `t?.closest(...)` throws on a window-dispatched key event (the repo's own verification technique).
+- **HIGH** the plan's `stepSettle` reducer was dead code the hook never called (~10 vacuous tests).
+- **HIGH** the `--text` contrast row was numerically wrong in 4 of 5 cells; `--border-input` at 0.62 alpha
+  failed 3:1 in two of three real contexts (2.83/2.97). Both independently re-derived before shipping.
+- MEDIUM: new canvas keys weren't mode-scoped (an S14 IA regression); blanket `interactiveTarget` gating would
+  have killed `t`/digits/`q`/`e` after any button click; the widened Space exemption broke "keyup always
+  disarms"; `KeyDispatchState`'s `Omit` and the `env()` test helper were missed edits.
+Self-review ×3 (`code-reviewer` · `silent-failure-hunter` · `a11y-architect`) over the real diff.
+
+**Gate.** `npm run lint` 0 problems · `npm test` **608 passed (608)**, 31 files (ratchet 340 → 608) ·
+`npm run build` clean, **401.17 kB / 129.28 kB gz** JS + **43.19 kB / 8.24 kB gz** CSS.
+
+**Acceptance.**
+- *Keyboard-only user can place + adjust a speaker and READ the verdict* — **met, proven live in headless
+  Chrome**: canvas reached in **2 Tabs**; `p`×2 took pods 2→4; the selection region announced
+  `"D, HomePod, 5 of 29"`; the readout announced *"Listening spot: Phantom center locked. Equal paths, a 60
+  degrees triangle… Quality 100 percent."*; 8× ArrowLeft moved a pod 1.52 m → 1.87 m; `n` then `d` turned
+  `"Wall, 0.74 m, 6 of 29"` into `"Door, 0.90 by 0.10 m, 6 of 30"`.
+- *Automated a11y clean on the chrome AND the new canvas affordances* — **met**: 26 jsdom axe tests green, and
+  a real-Chrome axe run with **`color-contrast` ENABLED** reported **0 violations** in both modes. axe found
+  two genuine defects during development (duplicate `banner`; orphaned `<li>` under the seat list's bogus
+  `radiogroup`) — both fixed.
+- *Contrast test passes / exceptions documented* — **met**: 112 assertions. `--text-3`×`--surface-4` (4.08)
+  is documented as forbidden and guarded; the 10 pre-existing 11px `--text-3` sites are frozen as a ratchet.
+  Not fixed (documented, unchanged design decisions): panel hairlines, meter *tracks*, chart gridlines, the
+  canvas graph-paper grid.
+- *reduced-motion honored; no design-system regression* — **met**: the two uncovered transforms (compass
+  needle, guide chevron) are now gated; screenshots captured under emulated `prefers-reduced-motion` and
+  `forced-colors`.
+- *Gate green* — **met** (above). *Screenshots + keyboard walkthrough* — **met**, `docs/sessions/S7/`.
+
+**Evidence / artifacts** (gitignored): `docs/sessions/S7/` — `01-canvas-focused.jpg`,
+`02-keyboard-placed-pods.jpg`, `03-keyboard-adjusted.jpg`, `04-door-via-keyboard.jpg`,
+`05-focus-ring-tab.jpg`, `05b-focus-ring-zoom.jpg`, `06-reduced-motion.jpg`, `07-forced-colors.jpg`,
+`08-design-plan-theme.jpg`, `backup.json`.
+
+**Notable in-session catch.** The first focus-ring implementation used `box-shadow: inset`, and
+`getComputedStyle` happily reported it — but a **pixel diff of the focused vs blurred canvas edge was
+byte-identical**: a canvas paints its bitmap over its own background, so an inset shadow is invisible.
+Re-done as `outline` + negative `outline-offset` (+ a dark companion ring on the wrapper via `:has()`, because
+`--accent` alone is 1.03:1 against the best-spot green). Verified by re-running the pixel diff.
+
+**Scope guard.** `src/engine/optimize.ts`, `rooms.ts`, `stereo.ts` **byte-unchanged**; `db.ts` and the scene
+data model untouched; `verdict.ts` byte-unchanged (the speech-only unit expansion lives in `announce.ts`).
+The only `src/engine` edit is `render.ts` (presentation: `export const THEMES` + one gridLabel alpha).
+
+**Data safety.** The owner's real layout was backed up FULL-FIDELITY to `docs/sessions/S7/backup.json`
+(gitignored) BEFORE any live work, and `layout-mrwb0lnz-28-u87ub` "Maple Court" verified `updatedAt`
+**1784738154671 — byte-identical** before and after, 24 objects / 2 speakers / 1 layout, nothing deleted. All
+interactive testing ran on **fresh headless-Chrome profiles** (fresh origin ⇒ the app's own IndexedDB, never
+theirs). Only the `meta` row's `updatedAt` advances, which is the normal per-boot rewrite the app does every
+time the owner opens it. No real address in any committable file.
+
+**Honest limits.** Live checks ran ONE browser (Chromium). No real screen reader was driven — the utterances
+above are the live-region TEXT read out of the DOM, not VoiceOver/NVDA output; a real-AT pass on
+`role="application"` remains the one thing code inspection cannot settle. jsdom axe cannot evaluate computed
+contrast, the ≤960px layout, focus-ring rendering, `forced-colors` or `target-size` (all stated in
+`src/test/axe.ts` and CLAUDE.md; the first is why the token test exists, the rest were checked in real Chrome).
+The ~20 `.tsx` components touched remain without behavioural unit tests — that is **S10's** scope, deliberately
+not absorbed here; S7 added rendering-only a11y assertions.
+
+Next: **Session 8-remainder (security hardening: CSP + headers + import size cap; README rewrite)** — kickoff below.

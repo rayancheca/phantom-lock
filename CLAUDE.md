@@ -70,9 +70,9 @@ say so.
 ## Commands
 
 - `npm run dev` — Vite (user usually has this running on :5173 already; autoPort will move yours)
-- `npm test` — vitest, **340 tests**, all green as of 2026-07-20 (S16/UX-4 added +18: `engine/__tests__/seed.test.ts` 10 — the demo pair locks end-to-end via the real `traceScene`→`computeAudio` pipeline (`pairs[0].locked===true`, LOS clear), `initialStoreForBoot` seeds on a pristine origin but NOT when a v2/v1 store exists (migration-shape), `isPristineOrigin` incl. the throw-proof path; `panels/__tests__/glossary.test.ts` 4; `canvas/__tests__/export-image.test.ts` 4 (`planImageFilename` slug); + `db.test.ts` gained `firstRun` assertions in-place). Ratchet: never let the count drop (95→126→140→181→239→245→296→322→**340**).
+- `npm test` — vitest, **608 tests** across TWO projects, all green as of 2026-07-22. `|node|` (pure logic, 28 files) + `|dom|` (jsdom + axe, 3 files) — see `vite.config.ts` `test.projects`. S7/a11y added +268: `styles/__tests__/contrast.test.ts` 112 (WCAG maths + every real token pair, read from the REAL `tokens.css`/`THEMES` off disk); `canvas/__tests__/selection-cycle.test.ts` 26; `canvas/__tests__/placement.test.ts` 29; `app/__tests__/announce.test.ts` 37; `keyboard.test.ts` +21; `interaction.test.ts` +14; and 26 axe tests (`canvas-a11y` 10 / `panels.a11y` 11 / `shell.a11y` 5). Ratchet: never let the count drop (95→126→140→181→239→245→296→322→340→**608**).
 - `npm run lint` — **(S5)** flat ESLint (`eslint.config.js`): @eslint/js + typescript-eslint + eslint-plugin-react-hooks `recommended-latest`, scoped to `src`, ignoring `.claude`/`dist`/`coverage`. Clean (0 problems) as of 2026-07-19. exhaustive-deps is enforced; 5 documented survivor suppressions remain (SimCanvas:250/398 mount-once, Toast/Menu/LayoutGallery/ScenarioCompare mount-once) — see each file.
-- `npm run build` — tsc --noEmit + vite build (**~394 kB / 126.9 kB gzip** JS + **42.3 kB / 8.05 kB gz** CSS after S16; JS +3.1 kB gz / CSS +0.64 kB gz vs S15 for `Term`/`Legend`/`ShareCard`/`GlossaryCard`/`FirstRunExplainer` + `seed.ts`/`export-image.ts`/`glossary.ts` + their CSS). Self-hosted fonts are static assets in `public/fonts/` (7 Latin-subset woff2 + `LICENSE.md`, ~148 kB total, 2 preloaded ≈36 kB — NOT in the JS/CSS bundle). Run all four (lint/test/build) before claiming done.
+- `npm run build` — tsc --noEmit + vite build (**~401 kB / 129.3 kB gzip** JS + **43.2 kB / 8.24 kB gz** CSS after S7; JS +2.4 kB gz / CSS +0.19 kB gz vs S16 for `selection-cycle.ts`/`placement.ts`/`canvas-help.ts`/`announce.ts`/`useAnnouncer.ts`/`LiveAnnouncer.tsx` + the a11y CSS). `src/styles/contrast.ts` and everything under `src/test/` are TEST-ONLY and tree-shake out of the bundle. Self-hosted fonts are static assets in `public/fonts/` (7 Latin-subset woff2 + `LICENSE.md`, ~148 kB total, 2 preloaded ≈36 kB — NOT in the JS/CSS bundle). Run all four (lint/test/build) before claiming done.
 
 **GitHub (as of 2026-07-19):** the repo is public at **github.com/rayancheca/phantom-lock** (`origin`, default
 branch `main`). The owner wants visible contribution activity, so **push `main` after every session lands the
@@ -206,6 +206,67 @@ a fixed ±30° equilateral **locked** homepod pair at the couch seat (a LIVE ver
 (reuses `Dialog`) gated on **genuine first run** (`bootstrapPersistence.firstRun` = no prior IDB data, AND `isPristineOrigin`) + a
 standalone `phantom-lock:intro-dismissed` localStorage flag — NEVER the persistence schema. `apartmentScene()` stays audio-free.
 
+## Accessibility (S7 / 2026-07-22 — do not regress)
+
+**The canvas is a keyboard-operable, AT-legible widget.** `SimCanvas`'s `<canvas>` carries
+`tabIndex={overlayOpen ? -1 : 0}` · `role="application"` · `aria-roledescription="Floorplan editor"` ·
+`aria-label="Room plan"` · `aria-describedby="sim-canvas-help"` (an `.sr-only` `<p>` holding `canvas-help.ts`'s
+`CANVAS_HELP` key map). `role="application"` is DELIBERATE over `img`: browse mode would swallow the
+single-letter keys, making the whole model unreachable for exactly the users it exists for — which is also why
+the key map must be published via `aria-describedby`.
+
+**The canvas key map** (all in the pure `app/keyboard.ts` dispatcher — the canvas has ZERO React key handlers,
+so nothing double-handles): `n`/`Shift+N` cycle · `p` place a pod (**TUNE only**) · `d`/`w` cut a door/window
+into a **selected wall** (**DESIGN only**) · arrows nudge · `q`/`e` rotate · `Delete` remove · `Escape` deselect.
+The new keys are **mode-scoped exactly like the digit shortcuts** (`mode.ts` `digitTool`) — a letter key must not
+become the loophole that reintroduces the cross-mode leak S14 structurally removed.
+
+**Pure modules (node-tested):**
+- `canvas/selection-cycle.ts` — `cycleOrder`/`stepCycle`/`selectionForEntry`/`describePosition`. Deterministic
+  traversal over EVERY seat, speaker and object (seats → speakers → objects in reading order, cm-rounded, `id`
+  tie-broken) so the order can't shift under a user mid-cycle. This is what makes walls/furniture/inactive seats
+  reachable at all — before S7 they were pointer-only.
+- `canvas/placement.ts` — `SNAP_STEP`/`snapPoint`/`surfaceHeightAt`/`keyboardPlacementPoint`/`placeSpeakerAt`/
+  `openingOnWall`. `surfaceHeightAt` MOVED out of SimCanvas (it only ever read `scene.objects`), and the POINTER
+  path now calls the same `placeSpeakerAt`, so the furniture z-snap cannot drift between the two paths.
+  `keyboardPlacementPoint` puts the first two pods at **±30°** in front of the seat (a real 60° triangle, so two
+  `p` presses + "Pair as stereo" can actually LOCK), then walks the **golden angle** so no finite count collides.
+- `app/announce.ts` — `speakableUnits`/`sceneSentence`/`verdictSentence`/`countsChanged`/`announcementFor` +
+  the `initSettle`/`stepSettle` reducer (injected clock → no fake timers anywhere in the suite).
+- `styles/contrast.ts` — WCAG maths with real alpha compositing + `fadeElement` (element `opacity` fades the
+  glyph AND its own fill over the parent; modelling only the glyph overstates every disabled state).
+
+**The spoken mirror.** `VerdictHero` stays NOT a live region. `LiveAnnouncer` mounts **TWO** `.sr-only`
+`role="status"` `aria-live="polite"` `aria-atomic` regions as the last child of the app root, because the two
+change kinds need opposite cadences: **selection** is discrete (immediate) and **the readout** is continuous
+(settled, `SETTLE_MS` 700). The scene inventory clause is spoken ONLY when a count changes — a deliberate
+arrow-nudge is SLOWER than the settle window, so without that every keypress re-reads ~45 words. Reuses
+`deriveVerdict`, so spoken and visible readouts cannot drift (`verdict.ts` stays byte-unchanged; the
+speech-only unit expansion lives in `announce.ts`). Suppressed on `overlayOpen`, and the suppressed path
+deliberately does NOT advance the baseline (else deleting the active layout from inside the gallery would
+close to total silence).
+
+**Contrast is enforced by a test, not a comment** (`styles/__tests__/contrast.test.ts`, 112 assertions over the
+real `tokens.css` + `render.ts` `THEMES`, read from DISK). `--text-3` × `--surface-4` = **4.08 (FAILS)** and is
+guarded: the only `--surface-4` consumer is `.verdict-hero`, which uses `--text-2` (5.92). The design system's
+own "`--text-3` is ≥12px only" rule is a second executable guard, frozen at its **10** pre-existing 11px sites.
+
+**S7 contrast fixes:** `--border-input` (0.75 alpha) — form-field boundaries were 1.19:1 and a field's border is
+the only thing distinguishing it from its panel (fills differ by 1.08:1); the alpha must clear 3:1 on BOTH edges
+because a translucent border paints over the element's own background. Sound `gridLabel` 0.7→0.82 (3.75→4.76;
+those are real 11px ruler NUMBERS). `<Term>`/`.spec-label` underline `--border-strong`→`--text-3` (1.65→6.04 —
+the entire UX-4 "there is an explanation here" affordance was invisible). The three disabled states became
+**tier-drops rather than opacity fades** (2.08/3.48/1.60 → ≥4.5), using `--text-2` for `.btn:disabled` because
+`.where-chips .btn` renders at 11px and `--text-3` is reserved for ≥12px.
+
+**Automated a11y**: `vite.config.ts` `test.projects` = `node` (byte-identical to the pre-S7 config) + `dom`
+(jsdom, `src/test/a11y-env.ts`). `src/test/axe.ts` scopes subtree runs to the WCAG tags and runs the full set
+page-wide. **`color-contrast` is DISABLED in jsdom and this is a real limit, not a shortcut** — jsdom does not
+resolve `var()`, so `getComputedStyle().color` returns the literal string `"var(--text-3)"`; that is exactly why
+the token test exists. jsdom also cannot prove: the ≤960px layout (it ignores `@media` entirely), visible focus
+rings, `prefers-reduced-motion`, `forced-colors`, `target-size` (disabled by default AND meaningless at 0×0
+rects), or canvas pixels. Those are proven in real headless Chrome over CDP.
+
 ## Hard-won lessons
 
 - **LOS rays from an object's center hit the object's own surfaces** — always filter `s.objectId !== obj.id` (the TV self-occlusion bug made TV/Music modes identical).
@@ -241,6 +302,16 @@ standalone `phantom-lock:intro-dismissed` localStorage flag — NEVER the persis
 - **The on-canvas Legend leaks Space/`r` to the canvas unless it swallows its own keys (S16/UX-4):** `canvasKeyAction` (interaction.ts) exempts only INPUT/TEXTAREA/SELECT — NOT BUTTON — so a focused legend toggle `<button>`, on Space, both toggles itself AND arms canvas pan (`armed=!overlayOpen`), and `r` rotates the selection. `SimCanvas` listens on `window` in the BUBBLE phase, so `onKeyDown`/`onKeyUp={e=>e.stopPropagation()}` on the legend root stops the leak without `preventDefault` (Enter/Space still toggle the button). A read-only legend needs no `overlayOpen` gate (it dispatches no commands), unlike `SelectionActions`.
 - **`renderScene` is offscreen-safe; `drawMiniPlan` is not (S16/UX-4):** the export-image renderer paints a detached `<canvas>` because `renderScene` reads ONLY its `RenderState` (never `canvas.clientWidth`/CSS/`document`/`devicePixelRatio`) and `THEMES` are literal hex — verified by an adversarial skeptic. `drawMiniPlan` (thumb.ts) sizes from `canvas.clientWidth` (=0 offscreen) and early-returns. An offscreen renderer that does sync work (`sceneBounds`/`getContext`/`renderScene`) BEFORE its `new Promise` must be `async` so a sync throw becomes a rejection the caller's `.catch` (→ error toast) can see — else it escapes as an uncaught exception.
 - **`clipboard.writeText` needs transient user activation; a programmatic click doesn't count (S16/UX-4):** in headless CDP an `element.click()` on "Copy verdict" rejects with `NotAllowedError` → the app's graceful "Could not copy" toast fires (proving the error path). A real `Input.dispatchMouseEvent` at the button's rect IS a user gesture → `writeText` succeeds and "Verdict copied" fires. Verify the success path with a synthesized mouse event, not `.click()`. (Also: the layout switcher is `.room-trigger` with a `title`, not an `aria-label` — CDP `querySelector('[aria-label^=…]')` misses it though the a11y tree shows the title as the name.)
+
+- **An inset `box-shadow` is INVISIBLE on a `<canvas>` (S7):** the canvas paints its bitmap as *replaced content* on top of its own background, and `renderScene` fills it opaquely every frame — so `box-shadow: inset` (the obvious way to draw a focus ring inside an `overflow:hidden` wrapper) is completely covered. Proven by pixel-diffing the focused vs blurred edge strip: byte-identical. **Outlines** paint in the overlay phase, above content, so the ring must be `outline` + a NEGATIVE `outline-offset`. The ring also sits over pannable content, where `--accent` alone measures 1.03:1 against the best-spot green — so it needs a second dark ring (on `.sim-canvas-wrap` via `:has()`) to guarantee one contrasting edge. Always pixel-verify a focus indicator on a canvas; `getComputedStyle` reporting the shadow proves only that the CSS applied, not that anything is visible.
+- **`?raw`/`?inline` CSS imports are EMPTY under vitest (S7):** `test.css` defaults to false, so vitest stubs CSS modules — `import tokens from '../tokens.css?raw'` yields `""`, silently. A contrast test built on that would have passed every assertion against an empty token map: a green suite proving nothing. Read stylesheets with `readFileSync` (which needs `@types/node` + `"node"` in `tsconfig.compilerOptions.types`, since this repo pins `types: ["vite/client"]`), and give any source-scanning test a guard that fails when the scan finds nothing.
+- **`e.target` is not always an Element (S7):** a key event dispatched at `window` — the repo's OWN live-verification technique (S5/S14) — has `e.target === window`, which is truthy, so `t?.closest(...)` does NOT short-circuit and throws `closest is not a function` inside the global keydown listener, killing every shortcut including Escape and undo. Derive with `e.target instanceof Element ? e.target : null`, never with an `as HTMLElement | null` cast plus optional chaining. (The pre-existing `t.tagName` read was accidentally safe because `window.tagName` is merely `undefined`.)
+- **A `<header>` inside `role="dialog"` is still a `banner` landmark (S7):** `role=dialog` is not sectioning content, so `<header class="dialog-head">` inside the shared `Dialog` (and the gallery/compare heads) mapped to a SECOND `banner` alongside the real topbar — axe `landmark-no-duplicate-banner`, and a rotor with two "banner" entries. Use a `<div>` for in-dialog heads. Found by the automated axe pass, not by reading the code.
+- **A `role="radiogroup"` may only own radios (S7):** the seat list was `<ul role="radiogroup">` whose `<li>`s each held a radio PLUS a rename `<input>` and a remove `<button>`. That orphaned every `<li>` from its list (axe `listitem`) and promised a one-tab-stop composite contract the rows do not implement. Dropping to a plain list of `aria-pressed` toggles means the roving tabindex must go too — under a non-composite role there is no arrow-key contract, so `tabIndex={active ? 0 : -1}` would strand seats 2..N with no announced way to reach them.
+- **`<output>` is an implicit `role="status"` live region (S7):** the ten `<output>` value displays next to sliders meant every drag of Rays/Bounces/Absorption/opacity/rotation double-spoke on each step. `aria-live="off"` keeps the semantics and the visual while silencing the unintended announcements.
+- **Mode-scope EVERY new canvas key, not just digits (S7):** S14 made tools mode-scoped via `digitTool(digit, mode)`. A letter key is the obvious loophole — `p` placing a speaker while the user is in DESIGN on the cyanotype canvas is the exact cross-mode leak that was structurally removed. Gate new keys on `env.appMode` and prove it live (3× `p` in DESIGN must leave the entity count unchanged).
+- **Gate `interactiveTarget` PER KEY, not per ladder (S7):** blocking the whole mutating ladder whenever a `<button>` has focus looks safe but silently kills `t`, the digits and `q`/`e` the moment the user clicks any sidebar or toolbar button — the single most common interaction. Only Arrow and Delete genuinely collide (ListenerCard and SegmentSwitch both drive roving focus with Arrow and neither stops propagation); Escape and ⌘Z must stay global.
+- **A widened target exemption must not break "keyup always disarms" (S7):** adding BUTTON/A/SUMMARY to `canvasKeyAction`'s early return would strand canvas panning armed forever if the user holds Space, Tabs to a button and releases there — `window` never blurs and the canvas never had focus, so neither disarm path fires. Handle the Space **keyup** above the exemption, unconditionally.
 
 ## NEXT UP: read-only 3D view — see docs/3d-view-plan.md
 
