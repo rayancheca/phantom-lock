@@ -795,9 +795,12 @@ export function sanitizeLayout(raw: unknown): Layout | null {
 //
 // Honest scope: these bounds reject every pathological payload measured (the
 // 354-byte `r: 1e308` brick, 1e17 coordinates, 200 000 objects, span ≥ 600) and
-// keep an accepted import's boot cost in the low seconds. They do NOT bound
-// worst-case CPU for a payload hand-tuned to sit just under every limit —
-// cost is multiplicative in objects × pairs × span², and a legitimate 10-room
+// they guarantee termination. They do NOT keep an accepted import fast, and they
+// do NOT bound worst-case CPU for a payload hand-tuned to sit just under every
+// limit: a scene at 200 speakers / span 399 m / 100 objects — every value inside
+// these limits — was measured at ~157 s for one simulation pass, and it persists,
+// so the freeze recurs on every load until the layout is deleted. The cost is
+// multiplicative in objects × pairs × span², and a legitimate 10-room
 // house already costs ~200 ms. Truly bounding that needs an iteration cap
 // inside the grid loops themselves (`bestspot.ts` / `pairspot.ts`), which are
 // frozen this session. See `docs/security.md`.
@@ -807,7 +810,15 @@ export const MAX_IMPORT_SPAN = 400;
 /** Largest coordinate magnitude (m) any imported point may carry. */
 export const MAX_IMPORT_COORD = 100_000;
 export const MAX_IMPORT_OBJECTS = 5_000;
-export const MAX_IMPORT_SPEAKERS = 200;
+/**
+ * 64 speakers (⇒ ≤32 pairs). Tightened from 200 after measurement: `bestspot`
+ * loops every speaker per grid cell and `pairspot` runs a full grid per blocked
+ * pair, so this is the sharpest axis in the cost product — 200 speakers at a
+ * near-maximum span cost ~18 s on their own with no furniture at all. 64 is
+ * still 16× more than the app's own optimizer will ever place, and this is a
+ * planner for a handful of HomePods.
+ */
+export const MAX_IMPORT_SPEAKERS = 64;
 export const MAX_IMPORT_ROOMS = 500;
 /** Ids round-trip into IndexedDB forever and key a Map per grid cell. */
 export const MAX_IMPORT_ID_LEN = 256;

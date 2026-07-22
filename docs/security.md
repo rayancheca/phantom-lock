@@ -137,7 +137,7 @@ a 5 cm floor, which only a degenerate sub-5 cm drag could hit.
 
 `importRejection` (in `src/engine/scene.ts`) runs **before anything is
 committed**, so a refused file leaves the store untouched and the user keeps
-their file. Limits: span 400 m, coordinate 100 km, 5 000 objects, 200 speakers,
+their file. Limits: span 400 m, coordinate 100 km, 5 000 objects, 64 speakers,
 500 areas, 256-character ids. The bundled demo, a maximum-size room from the UI
 dialog, and a 20-room layout built through "Add a room…" all pass — asserted by
 a test, because a limit that fires on real data is a data-loss bug, not a
@@ -163,13 +163,21 @@ persisted; only the box handed to the grid loops is bounded.
 ### Known limit — worst-case CPU is mitigated, not closed
 
 The import limits reject every pathological payload measured, and the bounds fix
-guarantees termination. They do **not** bound worst-case CPU for a payload
-hand-tuned to sit just under every limit: cost is multiplicative in
-`objects × pairs × span²`, and a legitimately-built 10-room house already costs
-~200 ms per simulation. Genuinely bounding this requires an iteration cap inside
-the grid loops themselves (`bestspot.ts`, `pairspot.ts`), which are frozen this
-session. **That work is scheduled and this claim should not be upgraded until it
-lands.**
+guarantees termination. They do **not** make an accepted import fast, and they do
+not bound worst-case CPU for a payload hand-tuned to sit just under every limit.
+
+Measured, with every value inside the accepted range: 200 speakers, span 399 m
+and 100 objects cost **~157 s** for a single simulation pass — and because the
+layout persists, that freeze recurs on every load until the user finds and
+deletes it. Speakers alone were ~18 s at the old cap with no furniture at all,
+which is why `MAX_IMPORT_SPEAKERS` was subsequently tightened from 200 to 64.
+Even so the product `objects × pairs × span²` is unbounded from the boundary's
+side; a legitimately-built 10-room house already costs ~200 ms per simulation.
+
+Genuinely bounding this requires an iteration cap inside the grid loops
+themselves (`bestspot.ts`, `pairspot.ts`), which are frozen this session.
+**That work is P0 in [`ideas.md`](ideas.md) and this claim must not be upgraded
+until it lands.**
 
 ### Photo import
 
