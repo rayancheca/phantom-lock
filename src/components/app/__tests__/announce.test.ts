@@ -43,8 +43,10 @@ describe('speakableUnits', () => {
     expect(speakableUnits('arrives 0.24 ms earlier')).toBe('arrives 0.24 milliseconds earlier'));
   it('expands dB to decibels', () =>
     expect(speakableUnits('is 1.8 dB louder')).toBe('is 1.8 decibels louder'));
-  it('expands the degree sign', () =>
+  it('expands the degree sign predicatively', () =>
     expect(speakableUnits('subtends 58° at your head')).toBe('subtends 58 degrees at your head'));
+  it('hyphenates the degree sign attributively (not "60 degrees triangle")', () =>
+    expect(speakableUnits('a 60° triangle')).toBe('a 60-degree triangle'));
   it('expands cm and m', () => {
     expect(speakableUnits('misses by 12 cm')).toBe('misses by 12 centimetres');
     expect(speakableUnits('a 3.20 m wall')).toBe('a 3.20 metres wall');
@@ -92,7 +94,7 @@ describe('verdictSentence', () => {
   it('carries the headline and the cause', () => {
     const s = verdictSentence(input());
     expect(s).toContain('Phantom center locked');
-    expect(s).toContain('60 degrees triangle');
+    expect(s).toContain('60-degree triangle');
   });
   it('rounds quality to the nearest 5 percent to damp per-frame jitter', () => {
     expect(verdictSentence(input({ verdict: verdict({ quality: 0.923 }) }))).toContain('90 percent');

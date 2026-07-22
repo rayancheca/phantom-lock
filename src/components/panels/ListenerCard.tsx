@@ -21,8 +21,9 @@ interface Props {
  * verdict is computed for and the "YOU" puck on the canvas; switch to a seat to
  * position it by dragging, or open Compare to see two seats side by side.
  *
- * The seat list is a proper `radiogroup`: only the active radio is a tab stop and
- * the arrow keys move selection between seats (matching the app's ARIA bar).
+ * The seat list is a plain list of buttons, one per seat, EVERY one a tab stop.
+ * It was a `radiogroup` with a roving tabindex until S7; see the note on the
+ * <ul> for why that was both invalid and less reachable.
  */
 export default function ListenerCard({ scene, selection, onSwitch, onAdd, onRename, onRemove, onCompare, canCompare }: Props) {
   const seats = sceneListeners(scene);
@@ -51,19 +52,29 @@ export default function ListenerCard({ scene, selection, onSwitch, onAdd, onRena
           rename field and a remove button; a radiogroup may only own radios, so
           the override orphaned every <li> from its list (axe: `listitem`) and
           promised a one-tab-stop composite contract the rows do not implement.
-          The pick is an aria-pressed toggle instead, and every seat is a real
-          tab stop — dropping the roving tabindex is what keeps seats 2..N
-          reachable now that no composite-widget contract supplies arrow nav.
-          The arrow handler stays as an additive convenience. */}
-      <ul className="seat-list" aria-label="Listening spots">
+          The pick carries aria-current instead, and every seat is a real tab
+          stop — dropping the roving tabindex is what keeps seats 2..N reachable
+          now that no composite-widget contract supplies arrow navigation.
+          The arrow handler stays as an additive convenience.
+          Explicit role="list": WebKit strips list semantics from a list with
+          `list-style: none` (panels.css), which makes the element generic —
+          and aria-label on a generic element is not exposed at all. The label
+          is dropped here because the wrapping <section> already carries it. */}
+      <ul className="seat-list" role="list">
         {seats.map((seat, i) => {
           const active = seat.id === activeId;
           return (
             <li key={seat.id} className={`seat-row ${active ? 'seat-row-active' : ''} ${active && listenerSelected ? 'seat-row-selected' : ''}`}>
               <button
                 type="button"
-                aria-pressed={active}
-                aria-label={`${active ? 'Active seat' : 'Listen from'} ${seat.name}`}
+                /* aria-current, not aria-pressed: exactly one seat is active
+                   and clicking the active one is a no-op, so "toggle button,
+                   pressed" wrongly implies it can be un-pressed. The name is
+                   also kept STABLE across the state — a name that changes with
+                   state announces the state twice and breaks voice-control
+                   targeting ("click Listen from Bed" renaming itself mid-use). */
+                aria-current={active ? 'true' : undefined}
+                aria-label={`Listen from ${seat.name}`}
                 title={active ? 'Active seat — drag the YOU puck to move it' : `Listen from “${seat.name}”`}
                 className="seat-pick"
                 ref={(el) => {

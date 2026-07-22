@@ -281,20 +281,31 @@ describe('S7 guard: --text-3 is never paired with sub-12px type', () => {
   // never executable; the ~11 pre-existing sites are allow-listed by name so the
   // count can only go DOWN, and a NEW violation fails the build.
   it('never grows beyond the frozen count of pre-existing sites', () => {
-    const dir = new URL('../../components/', import.meta.url);
     const files: Record<string, string> = {};
-    for (const sub of readdirSync(dir)) {
-      let entries: string[];
-      try {
-        entries = readdirSync(new URL(`${sub}/`, dir));
-      } catch {
-        continue; // not a directory
-      }
-      for (const f of entries) {
-        if (f.endsWith('.css')) files[`${sub}/${f}`] = readFileSync(new URL(`${sub}/${f}`, dir), 'utf8');
+    // Component stylesheets live one level down (components/<area>/*.css);
+    // the global ones live beside this test. Scan BOTH — scanning only the
+    // former would let a violation in global.css/tokens.css pass unseen.
+    const roots = [new URL('../../components/', import.meta.url), new URL('../', import.meta.url)];
+    for (const dir of roots) {
+      for (const entry of readdirSync(dir)) {
+        if (entry.endsWith('.css')) {
+          files[entry] = readFileSync(new URL(entry, dir), 'utf8');
+          continue;
+        }
+        let sub: string[];
+        try {
+          sub = readdirSync(new URL(`${entry}/`, dir));
+        } catch {
+          continue; // not a directory
+        }
+        for (const f of sub) {
+          if (f.endsWith('.css')) files[`${entry}/${f}`] = readFileSync(new URL(`${entry}/${f}`, dir), 'utf8');
+        }
       }
     }
-    expect(Object.keys(files).length).toBeGreaterThan(5); // the scan actually found stylesheets
+    // Guard against a vacuous pass: a scan that finds nothing reports zero
+    // offenders and looks identical to a clean codebase.
+    expect(Object.keys(files).length).toBeGreaterThan(7);
 
     const offenders: string[] = [];
     for (const [path, css] of Object.entries(files)) {

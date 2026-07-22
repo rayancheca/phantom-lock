@@ -40,7 +40,7 @@ import type { Deleted, DialogState } from './app-types';
 import { nudgeSelection, rotateSelectedRect, type KeyCommand } from './keyboard';
 import { cycleOrder, describePosition, selectionForEntry, stepCycle } from '../canvas/selection-cycle';
 import { keyboardPlacementPoint, openingOnWall, placeSpeakerAt } from '../canvas/placement';
-import { announcementFor, type AnnounceInput } from './announce';
+import { announcementFor, speakableUnits, type AnnounceInput } from './announce';
 import { useAnnouncer } from './hooks/useAnnouncer';
 import LiveAnnouncer from './LiveAnnouncer';
 import { useLayoutStore } from './hooks/useLayoutStore';
@@ -100,6 +100,9 @@ function AppInner({ initialStore, persistMode, showFirstRun }: AppInnerProps) {
   const [wallProposal, setWallProposal] = useState<SceneObject[] | null>(null);
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [compare, setCompare] = useState<{ left: Scenario; right: Scenario } | null>(null);
+  /** A one-shot spoken explanation for a keyboard command that could not act
+   *  (e.g. `d` with furniture selected). Cleared by the next command. */
+  const [notice, setNotice] = useState<string | null>(null);
   const [detecting, setDetecting] = useState(false);
   const [showIntro, setShowIntro] = useState(() => showFirstRun && introUnseen());
   const dismissIntro = useCallback(() => {
@@ -635,6 +638,8 @@ function AppInner({ initialStore, persistMode, showFirstRun }: AppInnerProps) {
     showIntro;
 
   const runKeyCommand = (cmd: KeyCommand) => {
+    // Any new command supersedes a previous "that didn't work" explanation.
+    if (notice) setNotice(null);
     switch (cmd.type) {
       case 'escape':
         if (cmd.target === 'dialog') setDialog(null);
@@ -647,6 +652,9 @@ function AppInner({ initialStore, persistMode, showFirstRun }: AppInnerProps) {
           setFurnitureProposal(null);
         } else {
           setMode('select');
+          // Announce the transition, not the state — otherwise deselecting is
+          // silent and indistinguishable from a key that did nothing.
+          if (selection) setNotice('Selection cleared.');
           setSelection(null);
         }
         return;
@@ -702,7 +710,14 @@ function AppInner({ initialStore, persistMode, showFirstRun }: AppInnerProps) {
       case 'opening': {
         if (selection?.type !== 'object') return;
         const res = openingOnWall(scene, selection.id, cmd.role);
-        if (!res) return; // not a wall — the dispatcher can't know that
+        if (!res) {
+          // `{type:'object'}` spans wall/rect/circle, so the dispatcher cannot
+          // tell a wall from furniture. Saying so matters: for a user whose only
+          // channel is the live region, a silent no-op is indistinguishable
+          // from a broken app.
+          setNotice(`Select a wall first — ${cmd.role}s can only be added to a wall.`);
+          return;
+        }
         setScene(() => res.scene);
         setSelection({ type: 'object', id: res.objectId });
         return;
@@ -730,18 +745,39 @@ function AppInner({ initialStore, persistMode, showFirstRun }: AppInnerProps) {
   };
   const prevAnnounceRef = useRef<AnnounceInput | null>(null);
   const announceText = announcementFor(announceInput, prevAnnounceRef.current);
-  prevAnnounceRef.current = announceInput;
+  // The baseline advances in an EFFECT, never during render. Writing it inline
+  // is a render-purity violation that StrictMode makes visible: React
+  // double-invokes the render body, the ref persists between the two
+  // invocations, so the second (committing) one sees prev === current,
+  // `countsChanged` is permanently false, and the scene-inventory clause is
+  // never announced again after mount — silently, and ONLY in dev, which is
+  // exactly where this project does its live verification. Same reason
+  // `useLockIgnition` (VerdictHero.tsx) does its ref work in an effect.
+  useEffect(() => {
+    prevAnnounceRef.current = announceInput;
+  });
   const readout = useAnnouncer(announceText, overlayOpen);
 
   // Selection is discrete and user-initiated, so it is announced immediately
-  // rather than through the settle window.
+  // rather than through the settle window. A transient `notice` (set by a
+  // command that could not do anything) pre-empts it — silence is the one thing
+  // a live-region-only user cannot interpret.
   const selectionText = (() => {
-    if (!selection || selection.type === 'multi') return '';
+    if (notice) return notice;
+    // NOT "selection cleared" here: a null selection is also the boot state, and
+    // announcing it on first paint is the very thing this design avoids. The
+    // deselect TRANSITION is announced from the Escape command instead.
+    if (!selection) return '';
+    if (selection.type === 'multi') {
+      const n = selection.objectIds.length + selection.speakerIds.length;
+      return `${n} item${n === 1 ? '' : 's'} selected.`;
+    }
     const order = cycleOrder(scene);
-    const id =
-      selection.type === 'listener' ? (scene.activeListenerId ?? '') : selection.id;
+    const id = selection.type === 'listener' ? (scene.activeListenerId ?? '') : selection.id;
     const entry = order.find((e) => e.id === id);
-    return entry ? describePosition(order, entry) : '';
+    // Same unit expansion the verdict path gets — otherwise "0.74 m" is spoken
+    // as "em" here while the readout says "metres" a second later.
+    return entry ? speakableUnits(describePosition(order, entry)) : '';
   })();
 
   useKeyboardShortcuts({

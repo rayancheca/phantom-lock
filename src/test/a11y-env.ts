@@ -65,7 +65,10 @@ if (typeof globalThis.localStorage?.clear !== 'function') {
 // Mirror index.html. vitest's jsdom shell is built from a bare `<!DOCTYPE html>`
 // with no lang and no title, so a document-scoped axe run would otherwise report
 // `html-has-lang` and `document-title` violations that are artefacts of the test
-// harness rather than defects in the app. (The real values are asserted against
-// index.html separately.)
+// harness rather than defects in the app.
+//
+// Because these are STUBBED, axe can never catch a regression in the real file —
+// so `src/__tests__/index-html.test.ts` reads index.html off disk and asserts
+// these exact values. Keep the two in sync; the test enforces it.
 document.documentElement.lang = 'en';
 document.title = 'Phantom Lock — 2D Acoustic Ray Lab';

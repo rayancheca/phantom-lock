@@ -39,7 +39,12 @@ export function useKeyboardShortcuts({ state, run }: Args): void {
       const interactiveTarget = !!el?.closest(
         'button, [role="button"], [role="radio"], [role="menuitem"], [role="menuitemcheckbox"], [role="tab"], [role="option"], [role="checkbox"], summary, a[href], [contenteditable]',
       );
-      const canvasFocused = !!el?.classList.contains('sim-canvas');
+      // Identify the canvas by what it IS, not by a presentational class — a CSS
+      // rename would otherwise silently disable n/p/d/w with every test still
+      // green. The class stays as a cheap first check for the common case.
+      const canvasFocused =
+        el?.tagName === 'CANVAS' &&
+        (el.classList.contains('sim-canvas') || el.getAttribute('role') === 'application');
       const res = handleKeydown(e, { ...state, editableTarget, interactiveTarget, canvasFocused });
       if (!res) return;
       if (res.preventDefault) e.preventDefault();

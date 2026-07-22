@@ -33,7 +33,53 @@ const DISABLED = {
  */
 const PAGE_LEVEL_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'];
 
+/**
+ * Rules axe reports as `incomplete` for reasons that are jsdom limitations
+ * rather than defects. Each needs a stated reason; anything not listed here
+ * fails the run, so an unknown can never pass silently.
+ */
+const KNOWN_INCOMPLETE = new Set([
+  // jsdom does not populate `HTMLInputElement.labels`, so axe cannot tell an
+  // aria-labelled input from a doubly-labelled one. The real markup (a bare
+  // <input aria-label> with no <label> ancestor) has exactly one label; verified
+  // by reading ListenerCard.tsx.
+  'form-field-multiple-labels',
+  // Needs layout + resolved custom properties, neither of which jsdom provides.
+  // Covered instead by src/styles/__tests__/contrast.test.ts and a real-Chrome
+  // axe run with the rule ENABLED.
+  'color-contrast',
+  // Both need a visibility determination, and jsdom gives every element a 0x0
+  // rect, so axe cannot confirm the element it found is actually shown. The
+  // underlying FACTS (exactly one <main>, exactly one <h1>) are asserted
+  // directly in shell.a11y.test.tsx so listing them here loses no coverage.
+  'landmark-one-main',
+  'page-has-heading-one',
+]);
+
 function report(results: axe.AxeResults): void {
+  // A run that checked NOTHING reports zero violations, so "no violations" is
+  // only meaningful alongside evidence that rules actually applied. Without this
+  // guard, a test that accidentally renders an empty container (a component
+  // returning null, say) passes while verifying nothing at all — confirmed:
+  // axe.run() on an empty div yields violations 0 / passes 0 / inapplicable 61.
+  if (results.passes.length === 0) {
+    expect.fail(
+      'axe evaluated no applicable rules — the container was probably empty. ' +
+        'A vacuous pass is not a pass.',
+    );
+  }
+  // `incomplete` is axe telling us it could not decide. Those are unknowns, not
+  // successes, so they must be surfaced rather than silently dropped. Anything
+  // genuinely un-decidable in jsdom belongs on the KNOWN_INCOMPLETE list with a
+  // reason, so the list itself documents the limits of this environment.
+  const unexpected = results.incomplete.filter((i) => !KNOWN_INCOMPLETE.has(i.id));
+  if (unexpected.length > 0) {
+    expect.fail(
+      `axe could not decide ${unexpected.length} rule(s): ${unexpected
+        .map((i) => i.id)
+        .join(', ')}. Investigate, then either fix or add to KNOWN_INCOMPLETE with a reason.`,
+    );
+  }
   if (results.violations.length === 0) return;
   const detail = results.violations
     .map((v) => {

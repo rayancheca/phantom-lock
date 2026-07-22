@@ -32,12 +32,21 @@ export interface AnnounceInput {
 /** Expand the symbols the UI shows into words a screen reader says correctly.
  *  Applied ONLY on the mirror path, so `verdict.ts` stays byte-unchanged. */
 export function speakableUnits(s: string): string {
-  return s
-    .replace(/(\d)\s*ms\b/g, '$1 milliseconds')
-    .replace(/(\d)\s*dB\b/g, '$1 decibels')
-    .replace(/(\d)\s*°/g, '$1 degrees')
-    .replace(/(\d)\s*cm\b/g, '$1 centimetres')
-    .replace(/(\d)\s*m\b/g, '$1 metres');
+  return (
+    s
+      .replace(/(\d)\s*ms\b/g, '$1 milliseconds')
+      .replace(/(\d)\s*dB\b/g, '$1 decibels')
+      // Attributive use first: "a 60° triangle" must become "a 60-degree
+      // triangle", not the ungrammatical "60 degrees triangle". Deliberately
+      // matched against the specific noun rather than "° followed by a word" —
+      // the broad rule also mangles the predicative "subtends 58° at your head"
+      // into "58-degree at your head". `triangle` is the only attributive use in
+      // verdict.ts's cause sentences; add nouns here if that changes.
+      .replace(/(\d)\s*°(?=\s+triangle\b)/g, '$1-degree')
+      .replace(/(\d)\s*°/g, '$1 degrees')
+      .replace(/(\d)\s*cm\b/g, '$1 centimetres')
+      .replace(/(\d)\s*m\b/g, '$1 metres')
+  );
 }
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;

@@ -1074,8 +1074,9 @@ returning PARTIALLY REFUTED with ~40 real defects. The skeptics changed the ship
   disarms"; `KeyDispatchState`'s `Omit` and the `env()` test helper were missed edits.
 Self-review ×3 (`code-reviewer` · `silent-failure-hunter` · `a11y-architect`) over the real diff.
 
-**Gate.** `npm run lint` 0 problems · `npm test` **608 passed (608)**, 31 files (ratchet 340 → 608) ·
-`npm run build` clean, **401.17 kB / 129.28 kB gz** JS + **43.19 kB / 8.24 kB gz** CSS.
+**Gate.** `npm run lint` 0 problems · `npm test` **613 passed (613)**, 32 files (ratchet 340 → 613) ·
+`npm run build` clean, **401.76 kB / 129.53 kB gz** JS + **43.19 kB / 8.24 kB gz** CSS.
+(608 at first commit; +5 after the self-review fixes.)
 
 **Coverage** (`npm run test:coverage`) — every NEW module is ≥96%:
 `selection-cycle.ts` 100% · `placement.ts` 100% · `announce.ts` 100% · `useAnnouncer.ts` 100% ·
@@ -1110,6 +1111,68 @@ absorb them — the new `dom` project asserts a11y properties only.
 `02-keyboard-placed-pods.jpg`, `03-keyboard-adjusted.jpg`, `04-door-via-keyboard.jpg`,
 `05-focus-ring-tab.jpg`, `05b-focus-ring-zoom.jpg`, `06-reduced-motion.jpg`, `07-forced-colors.jpg`,
 `08-design-plan-theme.jpg`, `backup.json`.
+
+**Self-review (3 agents over the real diff) — findings and what happened to each.**
+`code-reviewer`: 1 HIGH, 0 others. `silent-failure-hunter`: 2 confirmed + 1 bonus. `a11y-architect`: a hard
+review, 16 findings. **Everything that was a defect in what S7 shipped is FIXED and re-verified live:**
+- **HIGH — `prevAnnounceRef` written during render.** Found independently by TWO agents, both with a working
+  repro. `main.tsx` wraps the app in `<StrictMode>`, which double-invokes the render body; the ref persisted
+  between invocations, so the committing pass always saw `prev === current`, `countsChanged` was permanently
+  false, and **the scene-inventory clause was never announced again after mount — in dev only**, i.e. exactly
+  where this project does its live verification. Moved into an effect (the `useLockIgnition` pattern), and
+  `shell.a11y.test.tsx` now renders under `<StrictMode>` so the class of bug cannot return silently.
+- **CONFIRMED silent no-op — `d`/`w` on a non-wall.** `{type:'object'}` spans wall/rect/circle, so the
+  dispatcher cannot tell them apart and `App` just returned. For a user whose only channel is a live region,
+  silence is indistinguishable from a broken app. Now announces *"Select a wall first — doors can only be
+  added to a wall."* (proven live). Escape likewise announces *"Selection cleared."*, and a marquee announces
+  its count.
+- **CONFIRMED vacuous-pass risks in the test helpers.** `axe.run` on an empty container reports zero
+  violations, and `results.incomplete` was being dropped entirely. `src/test/axe.ts` now fails when no rule
+  applied, and fails on any `incomplete` not on an explicitly-reasoned `KNOWN_INCOMPLETE` list. **The guard
+  bit immediately**, surfacing three genuine unknowns (`form-field-multiple-labels`, `landmark-one-main`,
+  `page-has-heading-one`) that had been passing invisibly; all three are jsdom limitations, each is listed
+  with its reason, and the two structural facts are now asserted by hand instead.
+- **BONUS — a false comment.** `a11y-env.ts` claimed the stubbed `lang`/`<title>` were "asserted against
+  index.html separately". They were not. Made true: `src/__tests__/index-html.test.ts` reads the shipped file.
+- **`Toast` comment contradicted its code** — it claimed the live region wrapped only the message while the
+  attributes sat on the outer div containing the buttons. Restructured into two ALWAYS-MOUNTED regions (a
+  region born with its text is unreliably announced; politeness must not be mutated on a live node), the
+  buttons moved out of the atomic region, and the persistent Cmd+Z route is now named in the spoken text
+  (WCAG 2.2.1, since the Undo button expires with the toast).
+- **`aria-pressed` → `aria-current`** on the seat picks (exactly one is active and it cannot be un-pressed),
+  with a STABLE accessible name (a name that changes with state announces state twice and breaks
+  voice-control targeting), plus an explicit `role="list"` (WebKit strips list semantics from a
+  `list-style:none` list, which silently voided the `aria-label`). Two stale comments corrected.
+- **`speakableUnits` grammar** — "a 60° triangle" was spoken as "60 degrees triangle"; now "60-degree
+  triangle" (narrowly, since the broad rule mangles the predicative "subtends 58° at your head"). The
+  SELECTION text now goes through the same expansion — it was saying "0.74 m" while the readout said
+  "metres" a second later.
+- **`canvasFocused` keyed off a CSS class** — a rename would have disabled n/p/d/w with every test still
+  green. Now identified by tag + role.
+- **Contrast scanner widened** to `src/styles/*.css` (it walked only `components/<area>/*.css`), with an
+  anti-vacuous guard on the file count.
+
+**Deliberately NOT fixed — scheduled, not skipped.** The `a11y-architect` raised four architectural findings
+that are genuinely a follow-up session's work, and it ordered them itself. They are recorded here as a named
+block with their own Acceptance so they cannot be quietly lost:
+1. **A parallel DOM control list for the canvas.** `role="application"` + a key map serves a *desktop
+   screen-reader* user, but on iOS VoiceOver / Android TalkBack there is no keyboard, so every wall, seat and
+   object is unreachable; and the sidebar covers only ~4 of the 27 traversable entities. A visually-hidden
+   `listbox`/`tree` over the existing `cycleOrder` would satisfy 4.1.2 with real roles, work by swipe, and
+   make `role="application"` unnecessary.
+2. **No keyboard pan or zoom, and cycling does not scroll the selection into view** — so a sighted
+   keyboard-only user can select an entity that is off-screen and see nothing change (the live region carries
+   it, but that serves only screen-reader users).
+3. **WCAG 2.1.4 Character Key Shortcuts (Level A) is still failing** for the PRE-EXISTING single-key
+   shortcuts `t`, the digits, `q`/`e` and `r`: they fire on `<body>` focus with no way to turn them off. S7
+   scoped its OWN new keys behind `canvasFocused`, but did not retro-fit the older ones.
+4. **The four hand-rolled `role="dialog"` overlays implement no part of the dialog contract** (no
+   `aria-modal` on the gallery, no focus trap, no initial focus, and the two stage-anchored ones sit BEFORE
+   the sidebar in DOM order, so Tab leaves the app). Pre-existing; S7's `tabIndex={-1}` change removed a tab
+   stop between them, which does not fix the ordering.
+Also deferred: `aria-valuetext` on the range inputs (the `<output>` now silenced holds the unit, so sliders
+announce a bare number), and a visible keyboard-shortcuts surface — today `CANVAS_HELP` exists ONLY as
+`sr-only` text, so a sighted keyboard-only user has no way to discover `n`/`p`/`d`/`w`.
 
 **Notable in-session catch.** The first focus-ring implementation used `box-shadow: inset`, and
 `getComputedStyle` happily reported it — but a **pixel diff of the focused vs blurred canvas edge was
