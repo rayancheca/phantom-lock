@@ -96,7 +96,15 @@
 /* Hover-a-wall suggestion chips (door / window insertion). */
 .wall-actions {
   position: absolute;
-  transform: translate(-50%, calc(-100% - 10px));
+  /* Positioned with the INDEPENDENT `translate` property, not `transform`.
+     `pop-in` animates `transform`, and a running animation REPLACES the
+     element's own `transform` for its whole duration — so with
+     `transform: translate(-50%, …)` here the chip rendered at the raw anchor
+     while popping in, then jumped ~70px up-left the instant the animation
+     ended. That jump is why the chip appeared to run away from the cursor and
+     could not be clicked. `translate` composes with the animation instead of
+     being clobbered by it. */
+  translate: -50% calc(-100% - 10px);
   display: flex;
   gap: 4px;
   padding: 4px;

@@ -51,6 +51,62 @@ export function wallHoverAt(
   return found;
 }
 
+/** A screen-space box, in the same coordinates as a DOM `getBoundingClientRect`. */
+export interface ScreenRect {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+/**
+ * Should the door/window chip stay on screen while the cursor is off every wall?
+ *
+ * The chip has to survive the trip from the wall to its own buttons, or it can
+ * never be clicked. The original test measured a fixed radius from the wall
+ * ANCHOR — but the chip is rendered CENTRED ABOVE that anchor
+ * (`translate(-50%, calc(-100% - 10px))`) and is far wider than the radius, so
+ * "+ Door" and "+ Window" both sit outside it. Moving toward either button
+ * dismissed the chip: unreachable by construction, which is exactly what the
+ * user hit ("I have the option but I can't click it, it runs away").
+ *
+ * So the real test is the chip's OWN box, inflated by a small margin to cover
+ * the gap between the wall and the chip. Measuring the rendered element also
+ * means this cannot drift when the chip's size, padding or zoom changes.
+ *
+ * `chip` is null for the frame before the element mounts; the anchor radius is
+ * kept as the fallback for exactly that case.
+ */
+export function chipStaysVisible(
+  cursor: Vec2,
+  anchorScreen: Vec2,
+  chip: ScreenRect | null,
+  holdPx: number,
+  marginPx: number,
+): boolean {
+  if (v.dist(anchorScreen, cursor) <= holdPx) return true;
+  return insideRect(cursor, chip, marginPx);
+}
+
+/**
+ * Is the cursor within `marginPx` of the chip's own box?
+ *
+ * Exported separately because the two uses differ. Deciding whether to RELOCATE
+ * the chip to a nearer wall must consult ONLY this box — not the anchor radius —
+ * or hovering along the wall the chip belongs to would suppress a neighbouring
+ * wall's chip. Deciding whether to KEEP the chip when off every wall may use
+ * either (see `chipStaysVisible`).
+ */
+export function insideRect(cursor: Vec2, rect: ScreenRect | null, marginPx: number): boolean {
+  if (!rect) return false;
+  return (
+    cursor.x >= rect.left - marginPx &&
+    cursor.x <= rect.right + marginPx &&
+    cursor.y >= rect.top - marginPx &&
+    cursor.y <= rect.bottom + marginPx
+  );
+}
+
 /**
  * Build a door/window rect centred at `at`, aligned to the wall's direction.
  * `id` is injected (not generated inside) so the result is deterministic and

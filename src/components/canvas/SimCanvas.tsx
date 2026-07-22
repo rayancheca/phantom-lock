@@ -38,6 +38,8 @@ import {
   resolveSelection,
   selectionFromBand,
   selectionSets,
+  chipStaysVisible,
+  insideRect,
   wallHoverAt,
   watchDevicePixelRatio,
   type WallHover,
@@ -62,6 +64,8 @@ const WALL_HOVER_APPEAR_PX = 18;
 /** Once shown, the chip stays anchored within this screen radius so it stays
  *  reachable — otherwise its anchor chases the cursor along the wall. */
 const WALL_HOVER_HOLD_PX = 46;
+/** Slack around the chip's own box, covering the gap between wall and chip. */
+const WALL_HOVER_CHIP_MARGIN_PX = 24;
 
 interface Props {
   scene: Scene;
@@ -140,6 +144,8 @@ export default function SimCanvas({
   onActivateSeat,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
+  /** The +Door/+Window chip, measured so it can keep itself alive under the cursor. */
+  const chipRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [view, setView] = useState<View | null>(null);
@@ -754,16 +760,48 @@ export default function SimCanvas({
       const cursorS = { x: native.offsetX, y: native.offsetY };
       const hp = s2w(native);
       setWallHover((prev) => {
+        // The chip's own box, in the canvas's coordinate frame.
+        // `getBoundingClientRect` is viewport-relative; the anchor and cursor are
+        // canvas-relative, so subtract the host's origin.
+        const box = chipRef.current?.getBoundingClientRect();
+        const host = containerRef.current?.getBoundingClientRect();
+        const chipBox =
+          box && host
+            ? {
+                left: box.left - host.left,
+                top: box.top - host.top,
+                right: box.right - host.left,
+                bottom: box.bottom - host.top,
+              }
+            : null;
+        const alive = prev !== null && sceneRef.current.objects.some((o) => o.id === prev.id);
+
+        // FIRST: if the cursor is on (or heading for) the chip, keep it — even if
+        // another wall is nearer. Without this the chip relocates to whichever
+        // wall is closest as the cursor crosses the plan, so on a dense floorplan
+        // it jumps out from under the pointer and the buttons can never be
+        // clicked. That is the "it runs away from the mouse" report.
+        if (prev && alive && insideRect(cursorS, chipBox, WALL_HOVER_CHIP_MARGIN_PX)) return prev;
+
         const found = wallHoverAt(sceneRef.current.objects, hp, WALL_HOVER_APPEAR_PX / view.scale);
         // On a wall: keep the SAME wall's latched anchor so the chip doesn't chase
-        // the cursor along it (a screen-vertical wall's chip would retreat forever),
-        // but switch to a DIFFERENT wall at once so a neighbour's chip is reachable.
+        // the cursor along it (a screen-vertical wall's chip would retreat
+        // forever), but switch to a DIFFERENT wall so a neighbour's is reachable.
         if (found) return prev && prev.id === found.id ? prev : found;
-        // Off all walls: briefly hold the chip within reach so you can move onto it
-        // to click — but only while its wall still exists (self-heal if deleted).
-        return prev &&
-          v.dist(worldToScreen(prev.at, view), cursorS) <= WALL_HOVER_HOLD_PX &&
-          sceneRef.current.objects.some((o) => o.id === prev.id)
+
+        // Off every wall: hold the chip while the cursor is still near it. Tested
+        // against the chip's BOX, not just a radius around the anchor — the chip
+        // renders centred ABOVE the anchor and is wider than WALL_HOVER_HOLD_PX,
+        // so an anchor-only test dismissed it the instant the cursor reached for
+        // a button. Self-heals if the wall was deleted underneath it.
+        if (!prev || !alive) return null;
+        return chipStaysVisible(
+          cursorS,
+          worldToScreen(prev.at, view),
+          chipBox,
+          WALL_HOVER_HOLD_PX,
+          WALL_HOVER_CHIP_MARGIN_PX,
+        )
           ? prev
           : null;
       });
@@ -1072,9 +1110,17 @@ export default function SimCanvas({
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
-        onPointerLeave={() => {
+        onPointerLeave={(e) => {
           // No pointermove fires once the cursor is off the canvas, so clear the
           // hover affordances here or a door/window chip would linger over a panel.
+          //
+          // EXCEPT when the cursor is leaving the canvas INTO the chip itself:
+          // the chip overlays the canvas, so reaching for "+ Door" fires
+          // pointerleave here and used to destroy the chip the instant it was
+          // touched — the affordance could never be clicked at all. The chip
+          // clears itself on its own pointerleave (below).
+          const to = e.relatedTarget;
+          if (to instanceof Node && chipRef.current?.contains(to)) return;
           if (!dragRef.current) {
             setWallHover(null);
             setHoverGrab(false);
@@ -1117,7 +1163,17 @@ export default function SimCanvas({
       )}
       {wallHover && view && mode === 'select' && (
         <div
+          ref={chipRef}
           className="wall-actions"
+          // Leaving the chip for anything other than the canvas dismisses it —
+          // otherwise it would linger over a sidebar panel, since the canvas has
+          // already fired its own pointerleave. Going back to the canvas is
+          // handled by the pointermove safe-area test instead.
+          onPointerLeave={(e) => {
+            const to = e.relatedTarget;
+            if (to instanceof Node && canvasRef.current?.contains(to)) return;
+            setWallHover(null);
+          }}
           style={{
             left: worldToScreen(wallHover.at, view).x,
             top: worldToScreen(wallHover.at, view).y,

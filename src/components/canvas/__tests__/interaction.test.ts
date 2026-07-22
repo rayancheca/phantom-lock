@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   canvasKeyAction,
+  chipStaysVisible,
+  insideRect,
   hoverCursor,
   isDraggableAt,
   itemsInBand,
@@ -121,6 +123,69 @@ describe('wallHoverAt', () => {
 });
 
 // --- Fix 2: popChainSegment ------------------------------------------------
+
+describe('chipStaysVisible — the chip must survive the trip to its own buttons', () => {
+  // The chip renders CENTRED ABOVE the anchor, so its buttons are far outside a
+  // small anchor radius. Numbers below mirror the real layout: anchor at
+  // (500, 400), chip ~156x30 sitting 10px above it.
+  const anchor = { x: 500, y: 400 };
+  const chip = { left: 422, top: 360, right: 578, bottom: 390 };
+  const HOLD = 46;
+  const MARGIN = 24;
+
+  it('keeps the chip while the cursor is near the anchor', () => {
+    expect(chipStaysVisible({ x: 500, y: 410 }, anchor, chip, HOLD, MARGIN)).toBe(true);
+  });
+
+  it('keeps the chip over the "+ Window" button — the bug', () => {
+    // ~68px right and ~25px up from the anchor: distance ~72px, well beyond the
+    // 46px hold radius, so the old anchor-only test dismissed the chip exactly
+    // when the user reached for the button.
+    const overRightButton = { x: 568, y: 375 };
+    expect(Math.hypot(overRightButton.x - anchor.x, overRightButton.y - anchor.y)).toBeGreaterThan(HOLD);
+    expect(chipStaysVisible(overRightButton, anchor, chip, HOLD, MARGIN)).toBe(true);
+  });
+
+  it('keeps the chip over the "+ Door" button', () => {
+    expect(chipStaysVisible({ x: 432, y: 375 }, anchor, chip, HOLD, MARGIN)).toBe(true);
+  });
+
+  it('keeps the chip in the gap between the wall and the chip', () => {
+    expect(chipStaysVisible({ x: 500, y: 396 }, anchor, chip, HOLD, MARGIN)).toBe(true);
+  });
+
+  it('drops the chip once the cursor leaves it entirely', () => {
+    expect(chipStaysVisible({ x: 900, y: 700 }, anchor, chip, HOLD, MARGIN)).toBe(false);
+    expect(chipStaysVisible({ x: 500, y: 200 }, anchor, chip, HOLD, MARGIN)).toBe(false);
+  });
+
+  it('falls back to the anchor radius before the chip element has mounted', () => {
+    expect(chipStaysVisible({ x: 500, y: 410 }, anchor, null, HOLD, MARGIN)).toBe(true);
+    expect(chipStaysVisible({ x: 568, y: 375 }, anchor, null, HOLD, MARGIN)).toBe(false);
+  });
+});
+
+describe('insideRect — what stops the chip relocating to a nearer wall', () => {
+  const chip = { left: 422, top: 360, right: 578, bottom: 390 };
+
+  it('is true anywhere over the chip, so a nearer wall cannot steal it', () => {
+    expect(insideRect({ x: 432, y: 375 }, chip, 24)).toBe(true);
+    expect(insideRect({ x: 568, y: 375 }, chip, 24)).toBe(true);
+  });
+
+  it('covers the margin gap between the wall and the chip', () => {
+    expect(insideRect({ x: 500, y: 410 }, chip, 24)).toBe(true);
+    expect(insideRect({ x: 500, y: 415 }, chip, 24)).toBe(false);
+  });
+
+  it('is false well away from the chip, so hovering another wall does switch', () => {
+    expect(insideRect({ x: 900, y: 700 }, chip, 24)).toBe(false);
+  });
+
+  it('is false with no chip mounted yet', () => {
+    expect(insideRect({ x: 500, y: 375 }, null, 24)).toBe(false);
+  });
+});
 
 describe('popChainSegment', () => {
   it('removes ALL ids of a multi-chunk crossing group in one pop', () => {
