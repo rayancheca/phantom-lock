@@ -682,7 +682,7 @@ screenshots stay local/gitignored (the demo apartment's floorplan is the owner's
 ---
 
 ## Sessions 13–16 — UI/UX & layout overhaul ("Anechoic Console") — see docs/ui-ux-overhaul-plan.md
-**Status:** ☐ **Depends on:** S5 (decomposed, tested App/hooks makes this safe) **Presentation-layer only**
+**Status:** ☑ **ALL FOUR DONE** (S13 2026-07-19 · S14/S15/S16 2026-07-20) **Depends on:** S5 **Presentation-layer only**
 > **Scheduled 2026-07-19** at the owner's request ("rethink the UI/UX and layout of everything"). A 6-agent design
 > workflow (4 redesign directions + rubric judge + independent UX/IA-flow audit) + a live walkthrough produced the
 > full plan in **`docs/ui-ux-overhaul-plan.md`** — read it first. Direction: **"Anechoic Console"** — one unified dark,
