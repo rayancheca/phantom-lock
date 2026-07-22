@@ -38,6 +38,11 @@ import type { ToastData } from '../ui/Toast';
 import { initialMode, modeTheme, subStepForTool, type AppMode, type DesignSubStep, type ModeEntry } from './mode';
 import type { Deleted, DialogState } from './app-types';
 import { nudgeSelection, rotateSelectedRect, type KeyCommand } from './keyboard';
+import { cycleOrder, describePosition, selectionForEntry, stepCycle } from '../canvas/selection-cycle';
+import { keyboardPlacementPoint, openingOnWall, placeSpeakerAt } from '../canvas/placement';
+import { announcementFor, type AnnounceInput } from './announce';
+import { useAnnouncer } from './hooks/useAnnouncer';
+import LiveAnnouncer from './LiveAnnouncer';
 import { useLayoutStore } from './hooks/useLayoutStore';
 import { useLayoutActions } from './hooks/useLayoutActions';
 import { useSceneHistory } from './hooks/useSceneHistory';
@@ -671,8 +676,73 @@ function AppInner({ initialStore, persistMode, showFirstRun }: AppInnerProps) {
         if (!selection) return;
         setScene((s) => nudgeSelection(s, selection, { x: cmd.dx, y: cmd.dy }), { coalesce: cmd.coalesce });
         return;
+      case 'cycle': {
+        // Walk the deterministic traversal so every wall, seat, speaker and
+        // piece of furniture is reachable without a pointer.
+        const entry = stepCycle(cycleOrder(scene), selection, cmd.dir, scene);
+        if (!entry) return;
+        // A seat entry must ALSO become the active seat — `{type:'listener'}`
+        // carries no id, so selecting it without switching would silently point
+        // at whichever seat was already active (and desync the readout).
+        if (entry.kind === 'listener') switchSeat(entry.id);
+        else setSelection(selectionForEntry(entry));
+        return;
+      }
+      case 'place-speaker': {
+        const { scene: next, speakerId } = placeSpeakerAt(
+          scene,
+          keyboardPlacementPoint(scene),
+          placeModel,
+          settings.snap,
+        );
+        setScene(() => next);
+        setSelection({ type: 'speaker', id: speakerId });
+        return;
+      }
+      case 'opening': {
+        if (selection?.type !== 'object') return;
+        const res = openingOnWall(scene, selection.id, cmd.role);
+        if (!res) return; // not a wall — the dispatcher can't know that
+        setScene(() => res.scene);
+        setSelection({ type: 'object', id: res.objectId });
+        return;
+      }
     }
   };
+
+  // --- the off-screen spoken mirror (S7) -----------------------------------
+  // Reuses deriveVerdict, so the spoken readout and the visible VerdictHero can
+  // never drift. Cheap: useSimulation already runs unconditionally in both
+  // modes, so this is a reduce + one sentence, no engine work.
+  const announceInput: AnnounceInput = {
+    appMode,
+    seatName: activeListener(scene).name,
+    seatCount: sceneListeners(scene).length,
+    speakerCount: scene.speakers.length,
+    wallCount: scene.objects.filter((o) => o.kind === 'wall').length,
+    objectCount: scene.objects.filter((o) => o.kind !== 'wall').length,
+    areaCount: scene.rooms?.length ?? 0,
+    showBestSpot: settings.showBestSpot,
+    // `best` is nullable even when the field object exists — treating a present
+    // field as "found" would announce a spot that isn't there.
+    bestSpotFound: bestSpot?.best != null,
+    verdict: appMode === 'tune' ? deriveVerdict(audio, trace, settings.tvAnchor) : null,
+  };
+  const prevAnnounceRef = useRef<AnnounceInput | null>(null);
+  const announceText = announcementFor(announceInput, prevAnnounceRef.current);
+  prevAnnounceRef.current = announceInput;
+  const readout = useAnnouncer(announceText, overlayOpen);
+
+  // Selection is discrete and user-initiated, so it is announced immediately
+  // rather than through the settle window.
+  const selectionText = (() => {
+    if (!selection || selection.type === 'multi') return '';
+    const order = cycleOrder(scene);
+    const id =
+      selection.type === 'listener' ? (scene.activeListenerId ?? '') : selection.id;
+    const entry = order.find((e) => e.id === id);
+    return entry ? describePosition(order, entry) : '';
+  })();
 
   useKeyboardShortcuts({
     state: {
@@ -873,6 +943,11 @@ function AppInner({ initialStore, persistMode, showFirstRun }: AppInnerProps) {
       />
 
       {showIntro && <FirstRunExplainer onDismiss={dismissIntro} />}
+
+      {/* Last child of the app root: always mounted (so it is never a freshly
+          inserted region), outside every scroll container, and outside the
+          conditionally-rendered mode columns. */}
+      <LiveAnnouncer readout={readout} selection={selectionText} />
     </div>
   );
 }

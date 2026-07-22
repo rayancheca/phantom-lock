@@ -66,3 +66,22 @@ kbd {
 *::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/* Visually hidden, still in the accessibility tree.
+   Lives here rather than in panels.css because its consumers are now spread
+   across the app shell (the canvas instruction text, the live-region mirror,
+   the tone words on the spec sheet) and must not depend on a panel stylesheet
+   happening to be imported. Keeps BOTH `clip` and `clip-path`: dropping the
+   legacy `clip` breaks older WebKit. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}

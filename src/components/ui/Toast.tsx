@@ -32,11 +32,19 @@ export default function Toast({ toast, onDismiss }: ToastProps) {
   }, [toast?.id, paused]);
 
   if (!toast) return null;
+  const bad = toast.tone === 'bad';
   return (
     <div
       className={`toast toast-${toast.tone ?? 'default'}`}
-      role="status"
-      aria-live="polite"
+      /* Failures are ASSERTIVE. Every error path in the app (a failed import, a
+         failed export-all, an unreadable photo) funnels through here, and a
+         polite queue can leave a failure unspoken behind other chatter — the
+         "Export all" data-loss warning most of all.
+         The live region wraps ONLY the message: the Undo/Dismiss buttons must
+         not be re-read as part of an aria-atomic announcement. */
+      role={bad ? 'alert' : 'status'}
+      aria-live={bad ? 'assertive' : 'polite'}
+      aria-atomic="true"
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
       onFocus={() => setPaused(true)}

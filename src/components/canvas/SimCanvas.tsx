@@ -14,8 +14,8 @@ import type { AudioMetrics } from '../../engine/stereo';
 import type { Proposal } from '../../engine/optimize';
 import type { ListeningField } from '../../engine/bestspot';
 import { hitInactiveSeat, hitTestNodes, hitTestObjects } from '../../engine/hit';
-import { closestPointOnSegment, distPointSegment, pointInRect } from '../../engine/geometry';
-import { createId, makeSpeaker, ROOM_HEIGHT, sceneBounds, updateActiveListener } from '../../engine/scene';
+import { closestPointOnSegment, distPointSegment } from '../../engine/geometry';
+import { createId, ROOM_HEIGHT, sceneBounds, updateActiveListener } from '../../engine/scene';
 import { integrateWall, snapToWalls } from '../../engine/joints';
 import * as v from '../../engine/vec';
 import {
@@ -43,9 +43,12 @@ import {
   type WallHover,
 } from './interaction';
 import { repaintOnFontLoad } from './font-ready';
+// SNAP_STEP and the placement primitives are shared with the KEYBOARD path, so
+// there is exactly one definition of each (S7). `surfaceHeightAt` used to be a
+// closure here even though it only ever read `scene.objects`.
+import { SNAP_STEP, placeSpeakerAt, surfaceHeightAt } from './placement';
+import { CANVAS_HELP } from './canvas-help';
 import './sim-canvas.css';
-
-const SNAP_STEP = 0.05;
 const MIN_SCALE = 8;
 const MAX_SCALE = 500;
 /** Clicking this close to the chain's first vertex closes the room. */
@@ -362,6 +365,10 @@ export default function SimCanvas({
       if (action.kind === 'space') {
         // Never arm pan behind an overlay; a keyup always disarms.
         spaceRef.current = action.armed;
+        // The canvas is focusable now, so Space on it would scroll the page.
+        // role="application" has no activation semantics, so Space here means
+        // exactly one thing (arm pan) — there is nothing to double-fire.
+        if (t?.classList?.contains('sim-canvas')) e.preventDefault();
       } else if (action.kind === 'rotate') {
         if (dragRef.current?.kind === 'band') return; // freeze view during a band drag
         rotateBy((action.deltaDeg * Math.PI) / 180);
@@ -599,13 +606,16 @@ export default function SimCanvas({
     }
 
     if (mode === 'speaker') {
-      const cur = sceneRef.current;
-      const speaker = makeSpeaker(snap(p), cur, placeModel);
-      // Placed on a desk/shelf? The speaker stands on it, not inside it.
-      const surf = surfaceHeightAt(speaker.pos);
-      if (surf !== null) speaker.z = Math.round((surf + 0.12) * 100) / 100;
-      onScene({ ...cur, speakers: [...cur.speakers, speaker] });
-      onSelection({ type: 'speaker', id: speaker.id });
+      // The SAME primitive the keyboard `p` path calls, so the furniture z-snap
+      // can never be dropped from one of the two.
+      const { scene: next, speakerId } = placeSpeakerAt(
+        sceneRef.current,
+        p,
+        placeModel,
+        settings.snap,
+      );
+      onScene(next);
+      onSelection({ type: 'speaker', id: speakerId });
       return;
     }
 
@@ -839,7 +849,7 @@ export default function SimCanvas({
         onScene(updateActiveListener(cur, { pos: sp }));
       } else {
         const speakerId = drag.node.speakerId;
-        const surf = surfaceHeightAt(sp);
+        const surf = surfaceHeightAt(cur, sp);
         onScene({
           ...cur,
           speakers: cur.speakers.map((s) =>
@@ -1019,24 +1029,6 @@ export default function SimCanvas({
     setPreview(null);
   };
 
-  /** If p lands on furniture, a speaker standing there sits on top of it. */
-  const surfaceHeightAt = (p: Vec2): number | null => {
-    let best: number | null = null;
-    for (const o of sceneRef.current.objects) {
-      if (o.kind === 'wall') continue;
-      if (o.kind === 'rect' && (o.role === 'door' || o.role === 'window')) continue;
-      const inside =
-        o.kind === 'rect'
-          ? pointInRect(p, o)
-          : o.kind === 'circle'
-            ? v.dist(p, o.center) <= o.r
-            : false;
-      // Standing surfaces only — nobody perches a speaker on a wardrobe.
-      if (inside && o.height <= 1.6 && (best === null || o.height > best)) best = o.height;
-    }
-    return best;
-  };
-
   /** Drop a door or window exactly where the wall is being hovered. */
   const insertOpening = (role: 'door' | 'window') => {
     if (!wallHover) return;
@@ -1057,7 +1049,25 @@ export default function SimCanvas({
         ref={canvasRef}
         className="sim-canvas"
         style={{ cursor }}
-        aria-label="Acoustic ray-tracing floorplan. Drag speakers, listener, walls, and furniture."
+        /* The canvas IS the product, and until S7 it had no focusable element at
+           all — every wall, seat and piece of furniture was pointer-only (WCAG
+           2.1.1). `role="application"` is the deliberate choice over `img`: a
+           screen reader keeps browse mode on over an `img`, which would swallow
+           the single-letter keys (n/p/d/w/r/q/e) and the arrows into quick-nav,
+           making the whole key map unreachable for exactly the users it exists
+           for. The role is scoped to this ONE element, it publishes its key map
+           via aria-describedby, and the off-screen live mirror carries the
+           content browse mode would otherwise have provided. */
+        tabIndex={overlayOpen ? -1 : 0}
+        role="application"
+        aria-roledescription="Floorplan editor"
+        aria-label="Room plan"
+        aria-describedby="sim-canvas-help"
+        onBlur={() => {
+          // Element-level blur, not just window blur: Tab away mid-Space must
+          // not leave panning armed.
+          spaceRef.current = false;
+        }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
@@ -1088,6 +1098,9 @@ export default function SimCanvas({
         }}
         onContextMenu={(e) => e.preventDefault()}
       />
+      <p id="sim-canvas-help" className="sr-only">
+        {CANVAS_HELP}
+      </p>
       {band && band.length >= 2 && (
         <svg className="band-overlay" aria-hidden="true">
           {mode === 'marquee' ? (

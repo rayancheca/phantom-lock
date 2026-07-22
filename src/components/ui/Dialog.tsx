@@ -78,12 +78,12 @@ export default function Dialog({ title, modal = true, onClose, children }: Dialo
     <div className={`dialog-layer ${modal ? 'dialog-modal' : 'dialog-floating'}`}>
       {modal && <div className="dialog-scrim" onClick={onClose} />}
       <div className="dialog-panel" role="dialog" aria-modal={modal} aria-label={title} ref={panelRef}>
-        <header className="dialog-head">
+        <div className="dialog-head">
           <h2>{title}</h2>
           <button type="button" className="dialog-x" aria-label="Close" onClick={onClose}>
             <Icon name="x" size={14} />
           </button>
-        </header>
+        </div>
         {children}
       </div>
     </div>

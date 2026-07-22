@@ -69,13 +69,12 @@ export default function Legend({ appMode, settings }: Props) {
         ];
 
   return (
-    <div
-      className="legend"
-      // The canvas key handler exempts only form fields; swallow our keys so a
-      // focused toggle can't arm pan (Space) or rotate the selection (r).
-      onKeyDown={(e) => e.stopPropagation()}
-      onKeyUp={(e) => e.stopPropagation()}
-    >
+    // No key swallowing here any more. S7 widened `canvasKeyAction`'s target
+    // exemption to BUTTON/A/SUMMARY, which covers this component's only
+    // focusable node (the toggle) generically — and the blanket
+    // stopPropagation was ALSO eating Escape-to-deselect and Cmd-Z while the
+    // toggle held focus, which was never the intent.
+    <div className="legend">
       <button
         type="button"
         className="legend-toggle"

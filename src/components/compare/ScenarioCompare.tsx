@@ -172,12 +172,12 @@ export default function ScenarioCompare({ layouts, initialLeft, initialRight, on
 
   return (
     <div className="compare-layer" role="dialog" aria-label="Compare listening scenarios" aria-modal="true">
-      <header className="compare-head">
+      <div className="compare-head">
         <h2>Compare scenarios</h2>
         <button ref={closeRef} type="button" className="dialog-x" aria-label="Close compare" onClick={onClose}>
           <Icon name="x" size={15} />
         </button>
-      </header>
+      </div>
       <p className="compare-summary" role="status">
         {summary}
       </p>

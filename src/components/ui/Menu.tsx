@@ -52,7 +52,12 @@ export default function Menu({ trigger, align = 'left', label, children }: MenuP
         return;
       }
       if (e.key === 'Tab') {
-        setOpen(false);
+        // `setOpen(false)` alone unmounts the focused [role=menuitem] before the
+        // browser resolves the Tab target, so focus falls to <body> and the NEXT
+        // Tab teleports to the top of the document. preventDefault + close()
+        // keeps focus on the trigger, which is where Tab should continue from.
+        e.preventDefault();
+        close();
         return;
       }
       if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) {

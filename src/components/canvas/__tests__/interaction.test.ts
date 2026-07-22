@@ -555,3 +555,63 @@ describe('canvasKeyAction', () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// S7 — interactive targets swallow canvas keys; Space keyup always disarms
+// ---------------------------------------------------------------------------
+
+describe('canvasKeyAction interactive-target exemption (S7)', () => {
+  const ev = (over: Record<string, unknown>) => ({
+    type: 'keydown',
+    key: '',
+    code: '',
+    metaKey: false,
+    ctrlKey: false,
+    shiftKey: false,
+    targetTag: undefined as string | undefined,
+    ...over,
+  });
+
+  for (const tag of ['BUTTON', 'A', 'SUMMARY']) {
+    it(`does not arm pan on Space from a focused ${tag}`, () =>
+      expect(canvasKeyAction(ev({ code: 'Space', targetTag: tag }), false, false)).toEqual({
+        kind: 'none',
+      }));
+    it(`does not rotate the view on r from a focused ${tag}`, () =>
+      expect(canvasKeyAction(ev({ key: 'r', targetTag: tag }), false, false)).toEqual({ kind: 'none' }));
+    it(`does not chain-undo on Backspace from a focused ${tag}`, () =>
+      expect(canvasKeyAction(ev({ key: 'Backspace', targetTag: tag }), false, true)).toEqual({
+        kind: 'none',
+      }));
+  }
+
+  it('still exempts form fields, as before', () =>
+    expect(canvasKeyAction(ev({ key: 'r', targetTag: 'INPUT' }), false, false)).toEqual({ kind: 'none' }));
+
+  it('still arms pan on Space over the canvas itself', () =>
+    expect(canvasKeyAction(ev({ code: 'Space', targetTag: 'CANVAS' }), false, false)).toEqual({
+      kind: 'space',
+      armed: true,
+    }));
+
+  it('ALWAYS disarms on Space keyup, even from a focused BUTTON', () => {
+    // Hold Space over the canvas, Tab to a toolbar button, release there. Before
+    // S7 widened the exemption this returned {kind:'none'} and pan stayed armed,
+    // so every later click panned instead of selecting.
+    expect(canvasKeyAction(ev({ type: 'keyup', code: 'Space', targetTag: 'BUTTON' }), false, false)).toEqual({
+      kind: 'space',
+      armed: false,
+    });
+  });
+
+  it('disarms on Space keyup behind an overlay too', () =>
+    expect(canvasKeyAction(ev({ type: 'keyup', code: 'Space', targetTag: 'INPUT' }), true, false)).toEqual({
+      kind: 'space',
+      armed: false,
+    }));
+
+  it('keeps the {kind:"space", armed} shape (no new fields)', () => {
+    const a = canvasKeyAction(ev({ code: 'Space' }), false, false);
+    expect(Object.keys(a).sort()).toEqual(['armed', 'kind']);
+  });
+});

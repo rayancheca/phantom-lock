@@ -13,6 +13,22 @@
   display: block;
 }
 
+/* The canvas is a focusable widget (S7). Two things make this ring special:
+   1. `.sim-canvas-wrap` is `overflow: hidden` and the canvas exactly fills it,
+      so the global `outline-offset: 2px` would be clipped away entirely —
+      the offset MUST be negative to draw inside.
+   2. Drawing inside means the ring sits over live rendered content, which the
+      user can pan and zoom under it. `--accent` alone measures as low as 1.03:1
+      against the best-spot green and 1.10:1 against a plan wall, so a single
+      accent ring is NOT a conformant 1.4.11 indicator. The near-black casing
+      guarantees one contrasting edge everywhere (worst case 10.44:1). */
+.sim-canvas:focus-visible {
+  outline: none;
+  box-shadow:
+    inset 0 0 0 2px var(--accent),
+    inset 0 0 0 4px rgba(4, 6, 12, 0.92);
+}
+
 /* Inherits the single dark-glass overlay palette from .stage — shared by both
    the sound view and the dark cyanotype plan view. */
 .compass {
@@ -104,6 +120,11 @@
 @media (prefers-reduced-motion: reduce) {
   .wall-actions {
     animation: none;
+  }
+  /* The compass needle sweeps on every view rotation — positional motion, so it
+     belongs here too (it was the only uncovered transform in this file). */
+  .compass svg {
+    transition: none;
   }
 }
 

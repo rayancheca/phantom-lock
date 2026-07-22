@@ -119,8 +119,15 @@
   transform: translateY(0.5px);
 }
 
+/* `opacity: 0.45` fades the whole element — glyph AND its --surface-2 fill —
+   over the parent, measuring 4.10:1 plain and only 2.89:1 on a .btn-primary.
+   A tier-drop is both readable (--text-2: 8.77:1 on a card, 7.03:1 in a dialog)
+   and more consistent with the three-tier text doctrine than an ad-hoc fade.
+   --text-2 rather than --text-3 deliberately: .btn is used at 11px by the
+   optimizer's .where-chips, and --text-3 is reserved for >=12px. */
 .btn:disabled {
-  opacity: 0.45;
+  color: var(--text-2);
+  background: var(--surface-1);
   cursor: default;
 }
 

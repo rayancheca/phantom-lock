@@ -238,14 +238,16 @@
   width: 100%;
   padding: 7px 9px;
   background: var(--surface-1);
-  border: 1px solid var(--border-strong);
+  /* 1.4.11 — see tokens.css --border-input (--border-strong was 1.65:1). */
+  border: 1px solid var(--border-input);
   border-radius: var(--radius-sm);
   font-size: var(--text-base);
   font-variant-numeric: tabular-nums;
 }
 
-.dialog-field input:focus {
-  outline: none;
+/* No `outline: none` — it suppressed the app's own focus ring on the only
+   fields inside the modal dialogs. */
+.dialog-field input:focus-visible {
   border-color: var(--accent);
 }
 
@@ -365,7 +367,10 @@
   font: inherit;
   color: inherit;
   cursor: help;
-  text-decoration: underline dotted var(--border-strong);
+  /* --text-3, not --border-strong (1.65:1): the dotted underline IS the "there
+     is an explanation here" affordance that UX-4 is built on, and at 1.65:1 it
+     was effectively invisible. 6.04:1 on surface-1, 5.57:1 on surface-2. */
+  text-decoration: underline dotted var(--text-3);
   text-underline-offset: 3px;
 }
 .term:hover {

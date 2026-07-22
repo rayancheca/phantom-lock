@@ -22,7 +22,7 @@ export default function ControlsCard({ settings, onChange }: Props) {
           value={settings.rayCount}
           onChange={(e) => set({ rayCount: parseInt(e.target.value, 10) })}
         />
-        <output>{settings.rayCount}</output>
+        <output aria-live="off">{settings.rayCount}</output>
       </label>
       <label className="field">
         <span>Bounces</span>
@@ -34,7 +34,7 @@ export default function ControlsCard({ settings, onChange }: Props) {
           value={settings.maxBounces}
           onChange={(e) => set({ maxBounces: parseInt(e.target.value, 10) })}
         />
-        <output>{settings.maxBounces}</output>
+        <output aria-live="off">{settings.maxBounces}</output>
       </label>
       <label className="field">
         <span>Decay / m</span>
@@ -46,7 +46,7 @@ export default function ControlsCard({ settings, onChange }: Props) {
           value={settings.decay}
           onChange={(e) => set({ decay: parseFloat(e.target.value) })}
         />
-        <output>{settings.decay.toFixed(2)}</output>
+        <output aria-live="off">{settings.decay.toFixed(2)}</output>
       </label>
       <div className="field-row">
         <span className="field-row-label">Sound field</span>

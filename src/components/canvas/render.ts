@@ -158,12 +158,19 @@ interface ThemeColors {
   rays: boolean;
 }
 
-const THEMES: Record<CanvasTheme, ThemeColors> = {
+/** Exported so the S7 contrast test can assert the real canvas ink against the
+ *  real canvas backgrounds (both themes) rather than a hand-copied literal —
+ *  the S13 lesson that theme-keyed colours hide outside this object. */
+export const THEMES: Record<CanvasTheme, ThemeColors> = {
   sound: {
     bg: '#080b12',
     grid: 'rgba(148, 163, 184, 0.10)',
     gridMajor: 'rgba(148, 163, 184, 0.22)',
-    gridLabel: 'rgba(139, 150, 173, 0.7)',
+    // 0.82, not 0.7: these are real 11px ruler NUMBERS, so they owe 4.5:1 as
+    // text. At 0.7 they measured 3.75:1 on this background (S7 contrast audit);
+    // 0.82 lifts them to 4.76:1, matching what `plan` already achieved at 0.65
+    // over its lighter ground.
+    gridLabel: 'rgba(139, 150, 173, 0.82)',
     wall: '#8b9bb8',
     wallFill: 'rgba(139, 155, 184, 0.10)',
     tv: '#9be8ff',

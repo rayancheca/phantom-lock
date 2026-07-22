@@ -27,9 +27,28 @@
   --border: rgba(148, 163, 184, 0.12);
   --border-strong: rgba(148, 163, 184, 0.28);
 
+  /* The one hairline that must be PERCEIVABLE: a form field's boundary is the
+     only thing distinguishing it from its panel (its fill differs by just
+     1.08:1), so WCAG 1.4.11 governs it at 3:1. --border (1.19:1) and
+     --border-strong (1.65:1) both failed. A translucent border paints over the
+     element's OWN background (background-clip defaults to border-box), so the
+     alpha has to clear 3:1 on BOTH edges — against the fill AND, composited,
+     against the parent panel. 0.62 cleared only the card case (it fell to
+     2.97/2.83 inside dialogs); 0.75 clears all three shipped contexts
+     (4.39/4.76 card, 4.39/3.82 optimizer, 4.62/3.70 dialog).
+     Deliberately scoped to inputs only — "elevation over borders" still holds
+     for every panel, and --border itself is untouched. */
+  --border-input: rgba(148, 163, 184, 0.75);
+
   /* Three emphasis tiers instead of one "muted". text-3 is the dimmest label
-     tier and is now RESERVED for text ≥12px (≥5.3:1 on surfaces 0–3; it drops
-     to ~4.4:1 on surface-4, so never use it as a <12px label colour on -4). */
+     tier and is RESERVED for text ≥12px. Measured (S7 automated contrast test,
+     src/styles/__tests__/contrast.test.ts): 6.36 / 6.04 / 5.57 / 4.84 on
+     surfaces 0–3 — all clear AA — but only 4.08 on surface-4, which FAILS 4.5.
+     So --text-3 must never be paired with --surface-4 at any size; --text-2
+     (5.92 there) is the sanctioned surface-4 label tier. Both halves of this
+     rule are now executable assertions, not just a comment.
+     (The pre-S7 comment claimed "≥5.3:1 on 0–3" and "~4.4:1 on -4"; both were
+     wrong — surface-3 is 4.84 and surface-4 is 4.08.) */
   --text: #f2f5fc;
   --text-2: #a6b1c8;
   --text-3: #8592ad;

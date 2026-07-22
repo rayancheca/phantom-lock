@@ -70,7 +70,7 @@ export default function ArrangeDialog({ proposal, onSuggestInventory, onRun, onA
             <button type="button" className="btn count-btn" aria-label={`fewer ${p.label}`} onClick={() => bump(p.id, -1)}>
               −
             </button>
-            <output>{counts[p.id] ?? 0}</output>
+            <output aria-live="off">{counts[p.id] ?? 0}</output>
             <button type="button" className="btn count-btn" aria-label={`more ${p.label}`} onClick={() => bump(p.id, 1)}>
               +
             </button>

@@ -18,6 +18,21 @@ interface Props {
 
 type Tone = 'ok' | 'warn' | 'bad' | 'plain';
 
+/**
+ * The ok/warn/bad judgement is carried ONLY by the `.tone-*` colour, and the
+ * corroborating meter is `aria-hidden`. Without this word, a screen-reader user
+ * gets the raw number with no indication of whether it is good — the entire
+ * point of the spec sheet (WCAG 1.4.1, use of colour).
+ */
+function toneWord(tone: Tone): string {
+  return tone === 'ok' ? 'good' : tone === 'warn' ? 'borderline' : tone === 'bad' ? 'poor' : '';
+}
+
+function ToneNote({ tone }: { tone: Tone }) {
+  const word = toneWord(tone);
+  return word ? <span className="sr-only">, {word}</span> : null;
+}
+
 function Row({
   label,
   value,
@@ -40,7 +55,10 @@ function Row({
       ) : (
         <span className="metric-label">{label}</span>
       )}
-      <span className={`metric-value tone-${tone}`}>{value}</span>
+      <span className={`metric-value tone-${tone}`}>
+        {value}
+        <ToneNote tone={tone} />
+      </span>
     </div>
   );
 }
@@ -77,7 +95,10 @@ function SpecRow({
       ) : (
         <span className="spec-label">{label}</span>
       )}
-      <span className={`spec-value tone-${tone}`}>{value}</span>
+      <span className={`spec-value tone-${tone}`}>
+        {value}
+        <ToneNote tone={tone} />
+      </span>
       <div className={signal ? 'quality-meter' : 'meter'} aria-hidden="true">
         <div
           className={signal ? 'quality-fill' : `meter-fill tone-${tone === 'plain' ? 'ok' : tone}`}

@@ -31,7 +31,7 @@ function Stepper({
       <button type="button" className="btn count-btn" aria-label={`fewer ${label}`} onClick={() => onChange(Math.max(0, value - 1))}>
         −
       </button>
-      <output>{value}</output>
+      <output aria-live="off">{value}</output>
       <button type="button" className="btn count-btn" aria-label={`more ${label}`} onClick={() => onChange(Math.min(4, value + 1))}>
         +
       </button>

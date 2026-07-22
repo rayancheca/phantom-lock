@@ -46,7 +46,7 @@ export default function LayoutGallery(p: GalleryProps) {
 
   return (
     <div className="gallery-layer" role="dialog" aria-label="Your layouts">
-      <header className="gallery-head">
+      <div className="gallery-head">
         <h2>Your layouts</h2>
         <div className="gallery-head-actions">
           {p.onCompare && (
@@ -73,7 +73,7 @@ export default function LayoutGallery(p: GalleryProps) {
             <Icon name="x" size={15} />
           </button>
         </div>
-      </header>
+      </div>
       <div className="gallery-grid">
         {p.layouts.map((l) => {
           const walls = l.scene.objects.filter((o) => o.kind === 'wall').length;

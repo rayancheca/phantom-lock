@@ -288,8 +288,17 @@ export type CanvasKeyAction =
 /**
  * Decide what a canvas window-key event should do. An open overlay (dialog, the
  * full-screen gallery/compare) gates the view-rotate R and the chain-Backspace;
- * Space never arms panning under an overlay but a keyup always disarms (so pan
- * can't get stuck armed behind a card). Form fields swallow everything, as before.
+ * Space never arms panning under an overlay but a keyup ALWAYS disarms (so pan
+ * can't get stuck armed behind a card).
+ *
+ * Interactive targets — form fields, and since S7 also buttons/links/summaries —
+ * swallow the keydown side: a focused toolbar or legend button must not arm pan
+ * on Space or spin the view on `r`. That replaces the ad-hoc `stopPropagation`
+ * the Legend carried (which also swallowed Escape and undo).
+ *
+ * The keyup half of Space is deliberately handled ABOVE that exemption. Holding
+ * Space, Tab-ing to a button and releasing there would otherwise never disarm,
+ * leaving every later click panning instead of selecting.
  */
 export function canvasKeyAction(
   e: {
@@ -304,11 +313,22 @@ export function canvasKeyAction(
   overlayOpen: boolean,
   hasChain: boolean,
 ): CanvasKeyAction {
-  if (e.targetTag === 'INPUT' || e.targetTag === 'TEXTAREA' || e.targetTag === 'SELECT') {
-    return { kind: 'none' };
-  }
+  // A Space keyup ALWAYS disarms, whatever the target — the invariant this
+  // function documents. Must come first, or the widened exemption below can
+  // strand pan armed forever.
+  if (e.code === 'Space' && e.type !== 'keydown') return { kind: 'space', armed: false };
+
+  const interactiveTag =
+    e.targetTag === 'INPUT' ||
+    e.targetTag === 'TEXTAREA' ||
+    e.targetTag === 'SELECT' ||
+    e.targetTag === 'BUTTON' ||
+    e.targetTag === 'A' ||
+    e.targetTag === 'SUMMARY';
+  if (interactiveTag) return { kind: 'none' };
+
   if (e.code === 'Space') {
-    return { kind: 'space', armed: e.type === 'keydown' && !overlayOpen };
+    return { kind: 'space', armed: !overlayOpen };
   }
   if (overlayOpen) return { kind: 'none' };
   if (e.type === 'keydown' && (e.key === 'r' || e.key === 'R') && !e.metaKey && !e.ctrlKey) {

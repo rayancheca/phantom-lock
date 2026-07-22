@@ -47,19 +47,25 @@ export default function ListenerCard({ scene, selection, onSwitch, onAdd, onRena
         Listening spots
         {seats.length > 1 && <span className="card-tag">{seats.length}</span>}
       </h2>
-      <ul className="seat-list" role="radiogroup" aria-label="Active listening spot">
+      {/* A plain list, NOT role="radiogroup". Each row holds a pick button, a
+          rename field and a remove button; a radiogroup may only own radios, so
+          the override orphaned every <li> from its list (axe: `listitem`) and
+          promised a one-tab-stop composite contract the rows do not implement.
+          The pick is an aria-pressed toggle instead, and every seat is a real
+          tab stop — dropping the roving tabindex is what keeps seats 2..N
+          reachable now that no composite-widget contract supplies arrow nav.
+          The arrow handler stays as an additive convenience. */}
+      <ul className="seat-list" aria-label="Listening spots">
         {seats.map((seat, i) => {
           const active = seat.id === activeId;
           return (
             <li key={seat.id} className={`seat-row ${active ? 'seat-row-active' : ''} ${active && listenerSelected ? 'seat-row-selected' : ''}`}>
               <button
                 type="button"
-                role="radio"
-                aria-checked={active}
+                aria-pressed={active}
                 aria-label={`${active ? 'Active seat' : 'Listen from'} ${seat.name}`}
                 title={active ? 'Active seat — drag the YOU puck to move it' : `Listen from “${seat.name}”`}
                 className="seat-pick"
-                tabIndex={active ? 0 : -1}
                 ref={(el) => {
                   pickRefs.current[seat.id] = el;
                 }}
@@ -79,7 +85,8 @@ export default function ListenerCard({ scene, selection, onSwitch, onAdd, onRena
                 }}
               />
               <span className="seat-z" title="Ear height">
-                {seat.z.toFixed(2)} m
+                {seat.z.toFixed(2)} m{/* the title is hover-only — name the number */}
+                <span className="sr-only"> ear height</span>
               </span>
               <button
                 type="button"

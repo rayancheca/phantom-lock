@@ -94,7 +94,7 @@ function AbsorptionField({ value, onChange }: { value: number; onChange: (n: num
           value={value}
           onChange={(e) => onChange(parseFloat(e.target.value))}
         />
-        <output>{Math.round(value * 100)}%</output>
+        <output aria-live="off">{Math.round(value * 100)}%</output>
       </label>
       <label className="field">
         <span>Material</span>
@@ -243,7 +243,7 @@ export default function InspectorPanel({
             value={sp.trimDb}
             onChange={(e) => onUpdateSpeaker(sp.id, { trimDb: parseFloat(e.target.value) })}
           />
-          <output>
+          <output aria-live="off">
             {sp.trimDb > 0 ? '+' : ''}
             {sp.trimDb.toFixed(1)} dB
           </output>
@@ -340,7 +340,7 @@ export default function InspectorPanel({
               value={Math.round((obj.rotation * 180) / Math.PI)}
               onChange={(e) => patch({ rotation: (parseFloat(e.target.value) * Math.PI) / 180 })}
             />
-            <output>{Math.round((obj.rotation * 180) / Math.PI)}°</output>
+            <output aria-live="off">{Math.round((obj.rotation * 180) / Math.PI)}°</output>
           </label>
           {obj.role === 'door' ? (
             <label className="field field-check">

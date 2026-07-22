@@ -16,6 +16,10 @@ const key = (k: string, mods: Partial<KeyEvt> = {}): KeyEvt => ({
 
 const env = (over: Partial<KeyEnv> = {}): KeyEnv => ({
   editableTarget: false,
+  // Both default to the pre-S7 behaviour (no interactive target, canvas not
+  // focused), so every pre-existing assertion below is unchanged.
+  interactiveTarget: false,
+  canvasFocused: false,
   overlayOpen: false,
   dialogOpen: false,
   wallProposalOpen: false,
@@ -330,5 +334,138 @@ describe('nudgeSelection', () => {
     const o = out.objects[0];
     expect(o.kind === 'rect' && o.center).toEqual({ x: 1.05, y: 0.95 });
     expect(out.speakers[0].pos).toEqual({ x: 3.05, y: 2.95 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// S7 — the canvas keyboard model
+// ---------------------------------------------------------------------------
+
+const sel = (id: string): Selection => ({ type: 'object', id });
+const wallSel = (id = 'w1'): Selection => ({ type: 'object', id });
+
+const sceneWithWall = (): Scene => ({
+  objects: [
+    { id: 'w1', kind: 'wall', a: { x: 0, y: 0 }, b: { x: 4, y: 0 }, absorption: 0.12, label: 'Wall', height: 2.7 },
+    rect('r1'),
+  ],
+  speakers: [],
+  pairs: [],
+  listener: { pos: { x: 1, y: 1 }, z: 1.2 },
+  listeners: [{ id: 'seat-1', name: 'Couch', pos: { x: 1, y: 1 }, z: 1.2 }],
+  activeListenerId: 'seat-1',
+});
+
+describe('S7: selection cycling (n / Shift+N)', () => {
+  it('cycles forward on n when the canvas is focused', () =>
+    expect(handleKeydown(key('n'), env({ canvasFocused: true }))?.command).toEqual({
+      type: 'cycle', dir: 1,
+    }));
+
+  it('cycles backward on Shift+N', () =>
+    expect(handleKeydown(key('N', { shiftKey: true }), env({ canvasFocused: true }))?.command).toEqual({
+      type: 'cycle', dir: -1,
+    }));
+
+  it('does NOTHING when the canvas is not focused', () =>
+    expect(handleKeydown(key('n'), env({ canvasFocused: false }))).toBeNull());
+
+  it('is blocked behind an overlay', () =>
+    expect(handleKeydown(key('n'), env({ canvasFocused: true, overlayOpen: true }))).toBeNull());
+
+  it('is blocked while typing in a field', () =>
+    expect(handleKeydown(key('n'), env({ canvasFocused: true, editableTarget: true }))).toBeNull());
+});
+
+describe('S7: keyboard speaker placement (p)', () => {
+  it('places when the canvas is focused in TUNE', () =>
+    expect(handleKeydown(key('p'), env({ canvasFocused: true, appMode: 'tune' }))?.command).toEqual({
+      type: 'place-speaker',
+    }));
+
+  it('is MODE-SCOPED — silent in DESIGN, like every digit shortcut', () => {
+    // S14 made tools mode-scoped so a DESIGN key can never reach a TUNE tool.
+    // A letter key must not be the loophole that reintroduces the leak.
+    expect(handleKeydown(key('p'), env({ canvasFocused: true, appMode: 'design' }))).toBeNull();
+  });
+
+  it('does nothing when the canvas is not focused', () =>
+    expect(handleKeydown(key('p'), env({ canvasFocused: false, appMode: 'tune' }))).toBeNull());
+
+  it('is blocked behind an overlay', () =>
+    expect(handleKeydown(key('p'), env({ canvasFocused: true, appMode: 'tune', overlayOpen: true }))).toBeNull());
+});
+
+describe('S7: door / window on a selected wall (d / w)', () => {
+  const base = { canvasFocused: true, appMode: 'design' as const, selection: wallSel() };
+
+  it('inserts a door on d', () =>
+    expect(handleKeydown(key('d'), env(base))?.command).toEqual({ type: 'opening', role: 'door' }));
+
+  it('inserts a window on w', () =>
+    expect(handleKeydown(key('w'), env(base))?.command).toEqual({ type: 'opening', role: 'window' }));
+
+  it('is MODE-SCOPED — silent in TUNE', () =>
+    expect(handleKeydown(key('d'), env({ ...base, appMode: 'tune' }))).toBeNull());
+
+  it('does nothing without a selection', () =>
+    expect(handleKeydown(key('d'), env({ ...base, selection: null }))).toBeNull());
+
+  it('does nothing when a speaker is selected', () =>
+    expect(handleKeydown(key('d'), env({ ...base, selection: { type: 'speaker', id: 's1' } }))).toBeNull());
+
+  it('does nothing when the canvas is not focused', () =>
+    expect(handleKeydown(key('d'), env({ ...base, canvasFocused: false }))).toBeNull());
+});
+
+describe('S7: interactiveTarget gates the keys with native/roving semantics', () => {
+  // A focused <button> (the most common state after any click) must not have
+  // Arrow or Delete stolen from it — ListenerCard and SegmentSwitch both drive
+  // roving focus with Arrow and neither stops propagation.
+  it('blocks arrow-nudge while a roving widget has focus', () =>
+    expect(handleKeydown(key('ArrowLeft'), env({ selection: sel('r1'), interactiveTarget: true }))).toBeNull());
+
+  it('blocks Delete while an interactive control has focus', () =>
+    expect(handleKeydown(key('Delete'), env({ selection: sel('r1'), interactiveTarget: true }))).toBeNull());
+
+  it('blocks the new canvas keys too', () => {
+    expect(handleKeydown(key('n'), env({ canvasFocused: true, interactiveTarget: true }))).toBeNull();
+    expect(handleKeydown(key('p'), env({ canvasFocused: true, appMode: 'tune', interactiveTarget: true }))).toBeNull();
+  });
+
+  it('does NOT block t / digits / q / e — they have no native button semantics', () => {
+    // Over-blocking these would silently break documented shortcuts the moment
+    // the user clicks any sidebar or toolbar button.
+    expect(handleKeydown(key('t'), env({ interactiveTarget: true }))?.command).toEqual({ type: 'mode-toggle' });
+    expect(handleKeydown(key('1'), env({ interactiveTarget: true }))?.command.type).toBe('tool');
+    expect(handleKeydown(key('q'), env({ selection: sel('r1'), interactiveTarget: true }))?.command.type)
+      .toBe('rotate');
+  });
+
+  it('does NOT block Escape or undo/redo — they must stay global', () => {
+    expect(handleKeydown(key('Escape'), env({ interactiveTarget: true }))?.command).toEqual({
+      type: 'escape', target: 'deselect',
+    });
+    expect(handleKeydown(key('z', { metaKey: true }), env({ interactiveTarget: true }))?.command).toEqual({
+      type: 'undo',
+    });
+  });
+});
+
+describe('S7: the pre-existing ladder is unchanged when both new flags are false', () => {
+  it('arrow-nudge still fires', () =>
+    expect(handleKeydown(key('ArrowLeft'), env({ selection: sel('r1') }))?.command.type).toBe('nudge'));
+  it('delete still fires', () =>
+    expect(handleKeydown(key('Delete'), env({ selection: sel('r1') }))?.command.type).toBe('delete'));
+  it('n is inert without canvas focus (no behaviour change for existing users)', () =>
+    expect(handleKeydown(key('n'), env())).toBeNull());
+});
+
+describe('S7: openingOnWall command carries the scene-independent role only', () => {
+  it('leaves the id resolution to the App (the selection already names it)', () => {
+    const s = sceneWithWall();
+    expect(s.objects[0].kind).toBe('wall');
+    expect(handleKeydown(key('w'), env({ canvasFocused: true, appMode: 'design', selection: wallSel() }))?.command)
+      .toEqual({ type: 'opening', role: 'window' });
   });
 });

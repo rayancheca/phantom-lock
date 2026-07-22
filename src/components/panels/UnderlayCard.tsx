@@ -69,7 +69,7 @@ export default function UnderlayCard({
               value={u.opacity}
               onChange={(e) => onUnderlay({ ...u, opacity: parseFloat(e.target.value) })}
             />
-            <output>{Math.round(u.opacity * 100)}%</output>
+            <output aria-live="off">{Math.round(u.opacity * 100)}%</output>
           </label>
           <label className="field">
             <span>Rotate</span>
@@ -81,7 +81,7 @@ export default function UnderlayCard({
               value={Math.round((u.rotation * 180) / Math.PI)}
               onChange={(e) => onUnderlay({ ...u, rotation: (parseFloat(e.target.value) * Math.PI) / 180 })}
             />
-            <output>{Math.round((u.rotation * 180) / Math.PI)}°</output>
+            <output aria-live="off">{Math.round((u.rotation * 180) / Math.PI)}°</output>
           </label>
           <p className="card-sub">
             Image spans {(u.wPx * u.scale).toFixed(1)} × {(u.hPx * u.scale).toFixed(1)} m.

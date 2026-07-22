@@ -16,6 +16,22 @@ export interface KeyEvt {
 export interface KeyEnv {
   /** Focus is inside an INPUT/TEXTAREA/SELECT. */
   editableTarget: boolean;
+  /**
+   * Focus is on a control with its own native or roving-widget key semantics
+   * (a button, a radio, a menu item, a `<summary>`, a link).
+   *
+   * Gates ONLY the keys that genuinely collide: Arrow (ListenerCard and
+   * SegmentSwitch both drive roving focus with Arrow and neither stops
+   * propagation, so a nudge fired on top of every focus move) and Delete.
+   * Deliberately does NOT gate `t`/digits/`q`/`e` — those have no button
+   * semantics, and blocking them would silently kill documented shortcuts the
+   * moment the user clicks any sidebar or toolbar button. Escape and undo/redo
+   * stay global by design.
+   */
+  interactiveTarget: boolean;
+  /** Focus is on the canvas itself — scopes the canvas-only keys (n/p/d/w) so
+   *  they cannot fire while the user is working in the sidebar. */
+  canvasFocused: boolean;
   /** Any blocking overlay is open (dialog/optimize/arrange/compare/gallery/wallProposal). */
   overlayOpen: boolean;
   dialogOpen: boolean;
@@ -36,7 +52,15 @@ export type KeyCommand =
   | { type: 'tool'; tool: ToolMode }
   | { type: 'mode-toggle' }
   | { type: 'rotate'; dir: -1 | 1; coalesce: boolean }
-  | { type: 'nudge'; dx: number; dy: number; coalesce: boolean };
+  | { type: 'nudge'; dx: number; dy: number; coalesce: boolean }
+  /** Walk the deterministic scene traversal (selection-cycle.ts). */
+  | { type: 'cycle'; dir: -1 | 1 }
+  /** Place a speaker beside the active seat — the keyboard equivalent of the
+   *  pointer-only placement path. */
+  | { type: 'place-speaker' }
+  /** Cut a door/window into the SELECTED wall — the keyboard equivalent of the
+   *  hover chips, which no keyboard user can reach. */
+  | { type: 'opening'; role: 'door' | 'window' };
 
 export interface KeyResult {
   command: KeyCommand;
@@ -77,10 +101,37 @@ export function handleKeydown(e: KeyEvt, env: KeyEnv): KeyResult | null {
   // Everything below mutates the scene or switches tools — never behind an overlay.
   if (env.overlayOpen) return null;
 
-  if ((e.key === 'Delete' || e.key === 'Backspace') && env.selection && env.mode !== 'wall') {
+  if (
+    (e.key === 'Delete' || e.key === 'Backspace') &&
+    env.selection &&
+    env.mode !== 'wall' &&
+    !env.interactiveTarget
+  ) {
     // Consumes the key for every selection kind (a listener has no delete, but
     // must not fall through to the tool-key ladder).
     return { command: { type: 'delete' } };
+  }
+
+  // --- the canvas-scoped keys (S7) -----------------------------------------
+  // All four require canvas focus so they cannot fire while the user is working
+  // in the sidebar, and all four are MODE-SCOPED for the same reason the digit
+  // shortcuts are: a DESIGN key must never reach a TUNE tool, and a letter key
+  // must not become the loophole that reintroduces the cross-mode leak S14
+  // structurally removed.
+  if (env.canvasFocused && !env.interactiveTarget) {
+    if (e.key === 'n' || e.key === 'N') {
+      return { command: { type: 'cycle', dir: e.shiftKey ? -1 : 1 } };
+    }
+    if (e.key === 'p' && env.appMode === 'tune') {
+      return { command: { type: 'place-speaker' } };
+    }
+    if ((e.key === 'd' || e.key === 'w') && env.appMode === 'design') {
+      // Only a wall can take an opening; the App resolves the id from the
+      // selection, so the command itself stays scene-independent.
+      if (env.selection?.type === 'object') {
+        return { command: { type: 'opening', role: e.key === 'd' ? 'door' : 'window' } };
+      }
+    }
   }
 
   // Digit shortcuts bind only to tools present in the CURRENT app-mode, so a
@@ -96,7 +147,7 @@ export function handleKeydown(e: KeyEvt, env: KeyEnv): KeyResult | null {
     return { command: { type: 'rotate', dir: e.key === 'q' ? -1 : 1, coalesce: e.repeat } };
   }
 
-  if (e.key.startsWith('Arrow') && env.selection) {
+  if (e.key.startsWith('Arrow') && env.selection && !env.interactiveTarget) {
     const stepM = e.shiftKey ? NUDGE_COARSE_M : NUDGE_FINE_M;
     const dx = e.key === 'ArrowLeft' ? -stepM : e.key === 'ArrowRight' ? stepM : 0;
     const dy = e.key === 'ArrowUp' ? -stepM : e.key === 'ArrowDown' ? stepM : 0;

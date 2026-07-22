@@ -68,7 +68,12 @@ export default function SpeakersCard({
                 />
                 <strong>{sp.label}</strong>
                 <span className="speaker-model">{spec.short}</span>
-                <span className={`speaker-dist ${outOfRange ? 'tone-warn' : ''}`}>{d.toFixed(2)} m</span>
+                <span className={`speaker-dist ${outOfRange ? 'tone-warn' : ''}`}>
+                  {d.toFixed(2)} m
+                  {/* The amber tint is the ONLY signal that this distance is
+                      outside the model's ideal range — colour alone (WCAG 1.4.1). */}
+                  {outOfRange && <span className="sr-only">, outside the ideal range</span>}
+                </span>
                 {sp.trimDb !== 0 && (
                   <span className="speaker-trim">
                     {sp.trimDb > 0 ? '+' : ''}
@@ -81,8 +86,12 @@ export default function SpeakersCard({
                   </span>
                 )}
                 {blockedById.get(sp.id) && (
+                  /* Was an aria-hidden icon + red + a hover title: ZERO
+                     accessible content, and invisible on touch. This is the
+                     single most important thing the row can tell you. */
                   <span className="tone-bad" title="No line of sight to the listener">
                     <Icon name="warning" size={13} />
+                    <span className="sr-only">, no line of sight to the listener</span>
                   </span>
                 )}
               </button>
