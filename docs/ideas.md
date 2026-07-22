@@ -13,6 +13,7 @@ effort — a small high-value item beats a large one.
 | 1 | Auto-detect walls accuracy overhaul | **P0 — broken feature** | 1 session *(scheduled as S12)* |
 | 2 | Grid-loop iteration cap | **P0 — safety + real slowness** | ½ session |
 | 3 | **Guided tutorial mode** | **P1 — high** | 1–2 sessions |
+| 3b | **Door width + swing angle** (owner-requested) | **P1 — high** | ½–1 session |
 | 4 | Snap furniture to a wall's angle | **P1 — high** | ½ session |
 | 5 | Read-only 3D view | P2 | 1 session *(plan exists)* |
 | 6 | Component/hook tests | P2 | 1 session |
@@ -151,6 +152,53 @@ Video/GIF, voiceover, per-step analytics, localisation, and a mobile-specific to
 and chapters 0–4 first; 5–7 can follow once the runner is proven.
 
 ---
+
+## 3b. Door width + swing angle — **P1 (high)** — owner-requested
+
+> *Owner:* "i want it to be easy to make doors and windows and also select for [how] far
+> the door swings given its size".
+
+The "easy to make" half was a bug and is **fixed** (the chip was unclickable for three separate
+reasons — see the `fix: make the +Door/+Window chip clickable` commit). The **swing** half is not
+built. A design pass was started and its investigation completed before the session hit its usage
+limit; the acoustics analysis, the spec and the skeptic did **not** run, so nothing here is a
+finished design — but these facts are verified and should not be re-derived.
+
+**How a door works today (verified, file:line):**
+- A door is not its own type: it is a `RectObj` with `role: 'door'` (`types.ts:20-37`). There is
+  **no hinge side, no swing direction and no swing angle** — the drawn arc is hardcoded.
+- `doorOpen?: boolean` (`types.ts:33`), and the universal convention is `doorOpen !== false`
+  ⇒ OPEN, i.e. *absent means open*. `sanitizeObject` normalises it to a real boolean on every
+  load (`scene.ts:496`).
+- `w` is doing **two jobs**: it is the opening width that cuts the wall
+  (`raytrace.ts:55`, `half = o.w/2/len`) *and* the drawn swing radius
+  (`render.ts:544`, `rPx = o.w * view.scale`). Leaf length is therefore welded to door width —
+  a swing feature must either respect that coupling or deliberately break it.
+- Acoustically, a door is a **hole or a wall, nothing in between**: an open door contributes
+  **no surfaces at all** (`raytrace.ts:91` `continue`), a closed one contributes its four edges
+  with its own `absorption`. `pairspot.ts:79` additionally refuses an image-source bounce whose
+  reflection point lands inside an open door's span.
+- `makeOpening` defaults (`interaction.ts:59-79`): door `w 0.9`, `h 0.1`, `absorption 0.25`,
+  `height 2.05`, `doorOpen true`.
+
+**Constraints any implementation must respect:**
+- The sanitizer is allow-list reconstruction — a new field that is not explicitly copied is
+  **silently dropped on the first save→load**, so the feature would simply not persist. Add it
+  gated on `role === 'door'` exactly like `doorOpen`, and **clamp it**: an unbounded numeric field
+  is precisely the class S8 just hardened (`Math.max(0.05, o.w)` with no upper bound is what made
+  the `r: 1e308` brick possible).
+- Make it optional (`?:`) — hand-built rect literals in `raytrace.test.ts:176`, `pairspot.test.ts:120`,
+  `hit.test.ts:88`, `arrange.test.ts:55` and `rooms.test.ts:244` would break on a required field.
+- Existing `makeOpening` tests use `toMatchObject`, so adding a field breaks nothing there.
+- **Migration is the risk.** The owner has real saved doors. Every existing door must behave
+  identically after the change — same acoustics, same rendering. Decide the "absent" default once
+  and reuse it at every read site, or old doors will read one way in the renderer and another in
+  the engine.
+
+**The honest-design question to settle first:** what should a swing angle actually *do*? Today the
+model is binary. A swing control that looks physical but changes nothing acoustically would be a
+decorative lie; an elaborate partial-transmission model would be unverifiable. Resolve that before
+writing code, and be explicit in the UI about what it does and does not affect.
 
 ## 4. Snap furniture to a wall's angle — **P1 (high)**
 
