@@ -32,6 +32,31 @@ export const DEFAULT_LISTENER_NAME = 'Listening spot';
 /** Upper bound on named seats a single scene may carry (bounds import blow-up). */
 export const MAX_LISTENERS = 32;
 
+/**
+ * Ceiling on the search region `sceneBounds` will hand back (metres).
+ *
+ * Every grid loop in the engine — `bestspot.ts:150`, `pairspot.ts:141`,
+ * `arrange.ts:167` — walks `for (x = min.x; x <= max.x; x += step)` with a step
+ * floored at 0.25. Past |x| ≈ 2^51 that addition is a no-op in IEEE-754 and the
+ * loop never advances: a measured 354-byte payload (one circle, `r: 1e308`) ran
+ * 3 000 000 grid-cell bodies without the loop variable moving, then died with
+ * "heap out of memory" at 4 094 MB — and, because the layout persists, it
+ * re-crashed on every reload.
+ *
+ * This bound is deliberately applied to the RETURNED BOX ONLY, never to stored
+ * coordinates. Clamping the scene itself would silently flatten a legitimate
+ * layout the app's own "Add a room…" produced (measured: 42 appended 6 m rooms,
+ * or 11 at the UI's 25 m maximum, collapse 75 walls onto one line) and autosave
+ * would then overwrite the good data ~400 ms later. A clipped search region is
+ * recoverable; mangled geometry is not.
+ *
+ * 20 km is ~66× the largest scene anyone can practically work in (a 50-room
+ * house spans 300 m and already costs ~11 s per edit), so no real layout is
+ * affected. It guarantees termination; it does NOT by itself bound worst-case
+ * CPU — see `docs/security.md`.
+ */
+export const MAX_SCENE_SPAN = 20_000;
+
 /** Fresh copy of a position — the mirror must never alias a seat's Vec2. */
 function cloneVec(p: Vec2): Vec2 {
   return { x: p.x, y: p.y };
@@ -229,7 +254,9 @@ function circle(label: string, center: Vec2, r: number, absorption: number, heig
 }
 
 /**
- * Maple Court apartment (~52 m²), digitized from the floorplan.
+ * Maple Court apartment, digitized from the floorplan. The outline below encloses
+ * ~55 m² by the shoelace formula; walls carry no thickness, so the true interior
+ * area is slightly smaller.
  * Metres; x → right, y → down. Ships with no speakers — add them one by one
  * or use "Suggest placement".
  */
@@ -374,7 +401,18 @@ export function sceneBounds(scene: Scene): { min: Vec2; max: Vec2 } {
     max.x = Math.max(max.x, p.x);
     max.y = Math.max(max.y, p.y);
   }
-  if (!Number.isFinite(min.x)) return { min: vec(0, 0), max: vec(8, 8) };
+  // The empty-scene guard has to test all four components, not just `min.x`.
+  // A circle at (1e308, 1e308) with r = 1e308 passes `isNum` on every field yet
+  // overflows `center + r` to +Infinity, so `min.x` stays finite while `max.x`
+  // does not — the one-sided check let a non-finite box straight through.
+  if (
+    !Number.isFinite(min.x) ||
+    !Number.isFinite(min.y) ||
+    !Number.isFinite(max.x) ||
+    !Number.isFinite(max.y)
+  ) {
+    return { min: vec(0, 0), max: vec(8, 8) };
+  }
   if (max.x - min.x < 2) {
     min.x -= 1;
     max.x += 1;
@@ -383,7 +421,22 @@ export function sceneBounds(scene: Scene): { min: Vec2; max: Vec2 } {
     min.y -= 1;
     max.y += 1;
   }
+  // A finite box can still carry an unwalkable span: a circle at the ORIGIN with
+  // r = 1e308 yields bounds of ±1e308 — both finite, span Infinity — where one
+  // ulp is 2.2e292 and `x += 0.7` cannot move. Bound the region we hand to the
+  // grid loops. `scene` is not touched, so nothing is mangled or persisted.
+  clampSpan(min, max, 'x');
+  clampSpan(min, max, 'y');
   return { min, max };
+}
+
+/** Shrink one axis around its midpoint until it spans at most MAX_SCENE_SPAN. */
+function clampSpan(min: Vec2, max: Vec2, axis: 'x' | 'y'): void {
+  const span = max[axis] - min[axis];
+  if (!(span > MAX_SCENE_SPAN)) return; // `!(>)` also catches a NaN span
+  const mid = min[axis] / 2 + max[axis] / 2; // halve first: avoids overflowing the sum
+  min[axis] = mid - MAX_SCENE_SPAN / 2;
+  max[axis] = mid + MAX_SCENE_SPAN / 2;
 }
 
 // ---------------------------------------------------------------------------
@@ -396,6 +449,19 @@ const isVec = (p: unknown): p is Vec2 =>
 const clampH = (h: unknown, fallback: number): number =>
   isNum(h) ? Math.max(0.02, Math.min(6, h)) : fallback;
 
+/**
+ * Rebuild an accepted position as a fresh two-key literal.
+ *
+ * The sanitizer is allow-list *reconstruction*, but every Vec2 was assigned by
+ * reference (`a: o.a`), so the "sanitized" scene was a live view onto the
+ * attacker's parse tree: mutating the raw object afterwards changed the stored
+ * scene, arbitrary extra keys rode into IndexedDB and every export, and a JSON
+ * `"__proto__"` key survived as an own property on the Vec2. (No pollution
+ * gadget — `JSON.parse` makes it an own data property — but it has no business
+ * being persisted.) Callers must pass an `isVec`-checked value.
+ */
+const cleanVec = (p: Vec2): Vec2 => ({ x: p.x, y: p.y });
+
 function sanitizeObject(raw: unknown, seenIds: Set<string>): SceneObject | null {
   if (typeof raw !== 'object' || raw === null) return null;
   const o = raw as Record<string, unknown>;
@@ -405,13 +471,21 @@ function sanitizeObject(raw: unknown, seenIds: Set<string>): SceneObject | null 
   if (seenIds.has(id)) id = createId('obj');
   seenIds.add(id);
   if (o.kind === 'wall' && isVec(o.a) && isVec(o.b)) {
-    return { id, kind: 'wall', a: o.a, b: o.b, absorption, label, height: clampH(o.height, ROOM_HEIGHT) };
+    return {
+      id,
+      kind: 'wall',
+      a: cleanVec(o.a),
+      b: cleanVec(o.b),
+      absorption,
+      label,
+      height: clampH(o.height, ROOM_HEIGHT),
+    };
   }
   if (o.kind === 'rect' && isVec(o.center) && isNum(o.w) && isNum(o.h) && isNum(o.rotation)) {
     return {
       id,
       kind: 'rect',
-      center: o.center,
+      center: cleanVec(o.center),
       w: Math.max(0.05, o.w),
       h: Math.max(0.05, o.h),
       rotation: o.rotation,
@@ -427,7 +501,7 @@ function sanitizeObject(raw: unknown, seenIds: Set<string>): SceneObject | null 
     return {
       id,
       kind: 'circle',
-      center: o.center,
+      center: cleanVec(o.center),
       r: Math.max(0.05, o.r),
       absorption,
       label,
@@ -443,9 +517,17 @@ export function sanitizeScene(raw: unknown): Scene | null {
   if (!Array.isArray(s.objects)) return null;
 
   const seenIds = new Set<string>();
-  const objects = s.objects
-    .map((o) => sanitizeObject(o, seenIds))
-    .filter((o): o is SceneObject => o !== null);
+
+  // Seats claim their ids FIRST, before objects and speakers.
+  //
+  // `activeListenerId` is matched against the seats' FINAL ids, but ids are
+  // deduplicated in document order. With objects processed first, an imported
+  // object whose id collided with the active seat's forced the SEAT to take a
+  // fresh id — so the pointer no longer matched and silently fell back to
+  // `seats[0]`: the "Bed" seat survived under a new id while YOU loaded onto the
+  // Couch, and every verdict was then computed for a seat the user never chose.
+  // That is the S2 seat/verdict desync trap arriving through the import path.
+  // Whoever claims an id first keeps it, so the seats must go first.
 
   // Listening positions. New shape: `listeners[]` + `activeListenerId`.
   // Back-compat: v2 single `listener` {pos,z}, or v1 {x,y}. Always ≥1 seat, and
@@ -468,7 +550,7 @@ export function sanitizeScene(raw: unknown): Scene | null {
         id,
         name:
           typeof rl.name === 'string' && rl.name.trim() ? rl.name.slice(0, 32) : `Seat ${seats.length + 1}`,
-        pos: rl.pos,
+        pos: cleanVec(rl.pos),
         z: clampH(rl.z, DEFAULT_LISTENER_Z),
       });
     }
@@ -479,10 +561,10 @@ export function sanitizeScene(raw: unknown): Scene | null {
     let z = DEFAULT_LISTENER_Z;
     const rawListener = s.listener as Record<string, unknown> | undefined;
     if (rawListener && isVec(rawListener.pos)) {
-      pos = rawListener.pos;
+      pos = cleanVec(rawListener.pos);
       z = clampH(rawListener.z, DEFAULT_LISTENER_Z);
     } else if (isVec(s.listener)) {
-      pos = s.listener as Vec2;
+      pos = cleanVec(s.listener as Vec2);
     }
     const id = createId('seat');
     seenIds.add(id);
@@ -509,6 +591,12 @@ export function sanitizeScene(raw: unknown): Scene | null {
   let pairs: Array<[string, string]> = [];
   if (Array.isArray(s.speakers)) {
     for (const raw2 of s.speakers) {
+      // `speakers: [null]` used to throw here on the `sp.pos` read, and a throw
+      // in `loadStore` is caught by ONE outer try that then returns
+      // `defaultStore()` — i.e. a single hostile record silently replaced every
+      // layout the user owned. The seats/objects loops already null-check; these
+      // two (speakers, rooms) were the only ones that did not.
+      if (typeof raw2 !== 'object' || raw2 === null) continue;
       const sp = raw2 as Record<string, unknown>;
       if (!isVec(sp.pos)) continue;
       let id = typeof sp.id === 'string' ? sp.id : createId('spk');
@@ -516,7 +604,7 @@ export function sanitizeScene(raw: unknown): Scene | null {
       seenIds.add(id);
       speakers.push({
         id,
-        pos: sp.pos,
+        pos: cleanVec(sp.pos),
         z: clampH(sp.z, DEFAULT_SPEAKER_Z),
         label: typeof sp.label === 'string' ? sp.label.slice(0, 8) : `S${speakers.length + 1}`,
         model: sp.model === 'homepod-mini' ? 'homepod-mini' : 'homepod',
@@ -539,12 +627,24 @@ export function sanitizeScene(raw: unknown): Scene | null {
   } else if (typeof s.speakers === 'object' && s.speakers !== null) {
     const sp = s.speakers as Record<string, unknown>;
     if (isVec(sp.L) && isVec(sp.R)) {
-      const l: SpeakerObj = { id: createId('spk'), pos: sp.L, z: DEFAULT_SPEAKER_Z, label: 'L', model: 'homepod', trimDb: 0 };
-      const r: SpeakerObj = { id: createId('spk'), pos: sp.R, z: DEFAULT_SPEAKER_Z, label: 'R', model: 'homepod', trimDb: 0 };
+      const l: SpeakerObj = { id: createId('spk'), pos: cleanVec(sp.L), z: DEFAULT_SPEAKER_Z, label: 'L', model: 'homepod', trimDb: 0 };
+      const r: SpeakerObj = { id: createId('spk'), pos: cleanVec(sp.R), z: DEFAULT_SPEAKER_Z, label: 'R', model: 'homepod', trimDb: 0 };
       speakers.push(l, r);
       pairs = [[l.id, r.id]];
     }
   }
+
+  // Objects LAST — only now that the seats and speakers hold their ids.
+  //
+  // Objects are the only entities nothing else references by id (`objectId` in
+  // the tracer is derived at runtime), so they are the safe ones to re-issue on
+  // a collision. Seats are referenced by `activeListenerId` and speakers by
+  // `pairs`, so re-issuing either silently breaks a cross-reference: the same
+  // hostile file would otherwise move YOU to a different seat, or unlink a
+  // stereo pair so the verdict reads "No stereo pair".
+  const objects = s.objects
+    .map((o) => sanitizeObject(o, seenIds))
+    .filter((o): o is SceneObject => o !== null);
 
   // Optional floorplan tracing underlay. Since images now live as Blobs in
   // IndexedDB (not inline in a ~5 MB localStorage blob), this cap is only a sanity
@@ -565,7 +665,7 @@ export function sanitizeScene(raw: unknown): Scene | null {
       src: u.src,
       wPx: Math.max(1, u.wPx),
       hPx: Math.max(1, u.hPx),
-      center: u.center,
+      center: cleanVec(u.center),
       scale: Math.max(0.0005, Math.min(1, u.scale)),
       rotation: isNum(u.rotation) ? u.rotation : 0,
       opacity: isNum(u.opacity) ? Math.max(0.05, Math.min(1, u.opacity)) : 0.5,
@@ -576,6 +676,9 @@ export function sanitizeScene(raw: unknown): Scene | null {
   const rawRooms = (s as { rooms?: unknown }).rooms;
   const rooms = Array.isArray(rawRooms)
     ? rawRooms.flatMap((r) => {
+        // `rooms: [null]` threw here on the `.w` read — the second of the two
+        // store-eating throw sites (see the speakers loop above).
+        if (typeof r !== 'object' || r === null) return [];
         const rr = r as { id?: unknown; name?: unknown; at?: { x?: unknown; y?: unknown } };
         const rw = (r as { w?: unknown }).w;
         const rh = (r as { h?: unknown }).h;
@@ -670,6 +773,113 @@ export function sanitizeLayout(raw: unknown): Layout | null {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Import admission control.
+//
+// These limits apply ONLY to a file the user is importing right now — never to
+// data already in the store. That split is deliberate and load-bearing:
+//
+//   * An imported file is untrusted and the user has not invested anything in
+//     it yet, so REFUSING it costs nothing and they keep the file.
+//   * Their own saved layouts are the opposite: clamping or truncating those on
+//     load would silently destroy work (a legitimate 42-room layout built with
+//     "Add a room…" flattens 75 walls onto one line) and autosave would then
+//     overwrite the good record ~400 ms later. So the load path never mangles.
+//
+// Honest scope: these bounds reject every pathological payload measured (the
+// 354-byte `r: 1e308` brick, 1e17 coordinates, 200 000 objects, span ≥ 600) and
+// keep an accepted import's boot cost in the low seconds. They do NOT bound
+// worst-case CPU for a payload hand-tuned to sit just under every limit —
+// cost is multiplicative in objects × pairs × span², and a legitimate 10-room
+// house already costs ~200 ms. Truly bounding that needs an iteration cap
+// inside the grid loops themselves (`bestspot.ts` / `pairspot.ts`), which are
+// frozen this session. See `docs/security.md`.
+
+/** Largest span (m) an imported scene may occupy on either axis. */
+export const MAX_IMPORT_SPAN = 400;
+/** Largest coordinate magnitude (m) any imported point may carry. */
+export const MAX_IMPORT_COORD = 100_000;
+export const MAX_IMPORT_OBJECTS = 5_000;
+export const MAX_IMPORT_SPEAKERS = 200;
+export const MAX_IMPORT_ROOMS = 500;
+/** Ids round-trip into IndexedDB forever and key a Map per grid cell. */
+export const MAX_IMPORT_ID_LEN = 256;
+
+/**
+ * Why a scene may not be imported, or `null` if it is acceptable.
+ *
+ * Returns a REASON rather than a repaired scene on purpose — the caller shows
+ * it to the user and leaves the store untouched. Nothing here mutates `scene`.
+ */
+export function importRejection(scene: Scene): string | null {
+  if (scene.objects.length > MAX_IMPORT_OBJECTS) {
+    return `That layout has ${scene.objects.length.toLocaleString()} objects (limit ${MAX_IMPORT_OBJECTS.toLocaleString()}).`;
+  }
+  if (scene.speakers.length > MAX_IMPORT_SPEAKERS) {
+    return `That layout has ${scene.speakers.length.toLocaleString()} speakers (limit ${MAX_IMPORT_SPEAKERS}).`;
+  }
+  if ((scene.rooms?.length ?? 0) > MAX_IMPORT_ROOMS) {
+    return `That layout has ${scene.rooms!.length.toLocaleString()} areas (limit ${MAX_IMPORT_ROOMS}).`;
+  }
+
+  const tooLong = (id: string): boolean => id.length > MAX_IMPORT_ID_LEN;
+  if (
+    scene.objects.some((o) => tooLong(o.id)) ||
+    scene.speakers.some((sp) => tooLong(sp.id)) ||
+    (scene.listeners ?? []).some((l) => tooLong(l.id))
+  ) {
+    return `That layout contains an identifier longer than ${MAX_IMPORT_ID_LEN} characters.`;
+  }
+
+  // Reject on raw coordinates BEFORE consulting sceneBounds, whose returned box
+  // is span-clamped and would therefore hide exactly the values we want to catch.
+  const pts: Vec2[] = [
+    ...(scene.listeners ?? []).map((l) => l.pos),
+    ...scene.speakers.map((sp) => sp.pos),
+  ];
+  for (const o of scene.objects) {
+    if (o.kind === 'wall') pts.push(o.a, o.b);
+    else pts.push(o.center);
+  }
+  for (const p of pts) {
+    if (Math.abs(p.x) > MAX_IMPORT_COORD || Math.abs(p.y) > MAX_IMPORT_COORD) {
+      return 'That layout has coordinates far outside any real room.';
+    }
+  }
+  // Sizes are only lower-clamped by the sanitizer, so a single circle can span
+  // the universe from a perfectly ordinary centre.
+  for (const o of scene.objects) {
+    const extent = o.kind === 'circle' ? o.r * 2 : o.kind === 'rect' ? Math.max(o.w, o.h) : 0;
+    if (extent > MAX_IMPORT_SPAN) {
+      return 'That layout contains an object larger than any real room.';
+    }
+  }
+
+  const b = sceneBounds(scene);
+  const span = Math.max(b.max.x - b.min.x, b.max.y - b.min.y);
+  if (span > MAX_IMPORT_SPAN) {
+    return `That layout spans ${Math.round(span).toLocaleString()} m (limit ${MAX_IMPORT_SPAN} m).`;
+  }
+  return null;
+}
+
+/**
+ * Sanitize one record without letting it take its siblings down with it.
+ *
+ * `loadStore` wraps everything in a single try/catch that falls through to
+ * `defaultStore()`, so before the null-element guards landed, ONE malformed
+ * layout replaced every layout the user owned — and autosave then wrote the
+ * replacement back. Both guards are worth having: this one bounds the blast
+ * radius of any FUTURE throw to the single record that caused it.
+ */
+function sanitizeLayoutIsolated(raw: unknown): Layout | null {
+  try {
+    return sanitizeLayout(raw);
+  } catch {
+    return null; // drop this record, keep the rest of the user's work
+  }
+}
+
 /** Load the layout store, migrating a v1 single-scene save if present. */
 export function loadStore(storage: Pick<Storage, 'getItem'>): LayoutStore {
   try {
@@ -678,7 +888,7 @@ export function loadStore(storage: Pick<Storage, 'getItem'>): LayoutStore {
       const parsed = JSON.parse(raw) as Record<string, unknown>;
       if (Array.isArray(parsed.layouts)) {
         const layouts = parsed.layouts
-          .map(sanitizeLayout)
+          .map(sanitizeLayoutIsolated)
           .filter((l): l is Layout => l !== null);
         if (layouts.length > 0) {
           const activeId =
@@ -692,7 +902,14 @@ export function loadStore(storage: Pick<Storage, 'getItem'>): LayoutStore {
     const legacy = storage.getItem(LEGACY_KEY);
     if (legacy) {
       const parsed = JSON.parse(legacy) as Record<string, unknown>;
-      const scene = sanitizeScene(parsed.scene);
+      // Isolated for the same reason as the v2 branch above: a throw here would
+      // land in the outer catch and discard the migration wholesale.
+      let scene: Scene | null = null;
+      try {
+        scene = sanitizeScene(parsed.scene);
+      } catch {
+        scene = null;
+      }
       if (scene) {
         const migrated = makeLayout(
           'My layout (imported)',

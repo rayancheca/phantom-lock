@@ -1,0 +1,23 @@
+#
+# Real HTTP security headers for Phantom Lock.
+#
+# Vite copies `public/` verbatim to the output root, so this lands at
+# `dist/_headers` — exactly where Netlify and Cloudflare Pages look for it.
+# Other hosts need their own mechanism; the same values live in `vercel.json`
+# and in `src/security-headers.ts`, which is the source of truth. A test
+# (`src/__tests__/security-headers.test.ts`) fails if these three drift apart.
+#
+# Why this file exists at all when the build already injects a `<meta>` CSP:
+# `frame-ancestors` is IGNORED in a meta policy (W3C CSP Level 3 §3.3), so
+# clickjacking protection can only be delivered as a real header.
+#
+# Note for GitHub Pages: its default Jekyll processing excludes files beginning
+# with `_`, so `dist/_headers` is not published there. Harmless (Pages ignores
+# the contents anyway), but do not go looking for a missing file.
+#
+/*
+  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'none'; worker-src 'none'; child-src 'none'; frame-src 'none'; object-src 'none'; media-src 'none'; manifest-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: no-referrer
+  Permissions-Policy: camera=(), microphone=(), geolocation=()

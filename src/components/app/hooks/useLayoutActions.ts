@@ -4,6 +4,7 @@ import {
   apartmentScene,
   blankScene,
   createId,
+  importRejection,
   makeLayout,
   rectRoomScene,
   sanitizeLayout,
@@ -164,24 +165,42 @@ export function useLayoutActions(a: Args): LayoutActions {
     file
       .text()
       .then((text) => {
-        const parsed: unknown = JSON.parse(text);
-        const layout =
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(text);
+        } catch {
+          // Distinguish "not JSON" from "JSON we refuse" — the old code reported
+          // every sanitizer failure as a parse error, which sent the user off
+          // hunting a syntax problem that did not exist.
+          a.showToast('Could not read that file as JSON.', { tone: 'bad' });
+          return;
+        }
+        const sanitized =
           sanitizeLayout(parsed) ??
           (() => {
             const data = parsed as { scene?: unknown };
             const sc = sanitizeScene(data.scene ?? parsed);
             return sc ? makeLayout(file.name.replace(/\.json$/i, '') || 'Imported', sc) : null;
           })();
-        if (!layout) {
+        if (!sanitized) {
           a.showToast('That file does not look like a Phantom Lock layout.', { tone: 'bad' });
           return;
         }
-        layout.id = createId('layout');
+        // Admission control runs BEFORE anything is committed, so a refused file
+        // leaves the user's store exactly as it was.
+        const rejection = importRejection(sanitized.scene);
+        if (rejection) {
+          a.showToast(`${rejection} It was not imported.`, { tone: 'bad' });
+          return;
+        }
+        // A fresh id, without mutating the object we just built (immutability
+        // rule; the old code assigned `layout.id` in place).
+        const layout: Layout = { ...sanitized, id: createId('layout') };
         a.setStore((st) => ({ layouts: [...st.layouts, layout], activeId: layout.id }));
         afterLayoutSwitch(layout.scene);
         a.showToast(`Imported “${layout.name}”`, { tone: 'ok' });
       })
-      .catch(() => a.showToast('Could not read that file as JSON.', { tone: 'bad' }));
+      .catch(() => a.showToast('Could not read that file.', { tone: 'bad' }));
   };
 
   return {

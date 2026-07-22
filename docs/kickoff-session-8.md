@@ -29,7 +29,7 @@ over the ACTUAL diff, and a handoff with an Evidence block.
 
 ## 0. GIT + THE TRAPS (read before touching a file)
 
-**MAIN REPO (source of truth):** `/Users/rayankarimcheca/Desktop/Dev/fun/layout`
+**MAIN REPO (source of truth):** `<REPO_ROOT>`
 `main` is at **`62d0ab8`**, clean, in sync with `origin/main`.
 
 Create a fresh per-session worktree branch off `main`. Then:
@@ -62,8 +62,8 @@ don't reuse them, don't clean them up unless asked.
 Commit a baseline, then commit again after the gate passes. Land with:
 
 ```
-git -C /Users/rayankarimcheca/Desktop/Dev/fun/layout merge --ff-only <branch>
-git -C /Users/rayankarimcheca/Desktop/Dev/fun/layout push origin main
+git -C <REPO_ROOT> merge --ff-only <branch>
+git -C <REPO_ROOT> push origin main
 ```
 
 Commit messages end with:
