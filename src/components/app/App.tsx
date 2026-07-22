@@ -73,9 +73,11 @@ interface AppInnerProps {
   persistMode: PersistMode;
   /** True only on a genuine first run (no prior data + pristine origin + unseen). */
   showFirstRun: boolean;
+  /** Records `loadFromIDB` could not reconstruct — reported to the user on mount. */
+  droppedCount: number;
 }
 
-function AppInner({ initialStore, persistMode, showFirstRun }: AppInnerProps) {
+function AppInner({ initialStore, persistMode, showFirstRun, droppedCount }: AppInnerProps) {
   const [store, setStore] = useState<LayoutStore>(initialStore);
   const [selection, setSelection] = useState<Selection>(null);
   const [mode, setMode] = useState<ToolMode>('select');
@@ -124,6 +126,21 @@ function AppInner({ initialStore, persistMode, showFirstRun }: AppInnerProps) {
     [],
   );
   const dismissToast = useCallback(() => setToast(null), []);
+
+  // Tell the user when a saved layout could not be read. Dropping the record is
+  // correct (losing one beats losing all), but in silence it is indistinguishable
+  // from the app having eaten their work — and "Export all" is the move they
+  // should make next, while the rest is still intact.
+  useEffect(() => {
+    if (droppedCount > 0) {
+      showToast(
+        `${droppedCount} saved layout${droppedCount === 1 ? '' : 's'} could not be read and ${
+          droppedCount === 1 ? 'was' : 'were'
+        } skipped. Your other layouts are intact — consider Export all.`,
+        { tone: 'bad' },
+      );
+    }
+  }, [droppedCount, showToast]);
 
   // --- hooks: store, history, persistence, simulation ------------------------
   const { active, applyToLayout, setSettings, duplicateLayout, exportLayout } = useLayoutStore(store, setStore);
@@ -678,7 +695,7 @@ function AppInner({ initialStore, persistMode, showFirstRun }: AppInnerProps) {
         return;
       case 'rotate':
         if (selection?.type !== 'object') return;
-        setScene((s) => rotateSelectedRect(s, selection.id, cmd.dir), { coalesce: cmd.coalesce });
+        setScene((s) => rotateSelectedRect(s, selection.id, cmd.dir, cmd.coarse), { coalesce: cmd.coalesce });
         return;
       case 'nudge':
         if (!selection) return;
@@ -847,8 +864,10 @@ function AppInner({ initialStore, persistMode, showFirstRun }: AppInnerProps) {
           onTool={applyTool}
           onPlaceSpeaker={startPlacing}
           onResetView={() => setResetViewToken((n) => n + 1)}
-          onRotateSel={(dir) => runKeyCommand({ type: 'rotate', dir, coalesce: false })}
-          onNudgeSel={(dx, dy) => runKeyCommand({ type: 'nudge', dx, dy, coalesce: false })}
+          // `held` is true for every repeat once a press-and-hold begins, so a
+          // whole hold collapses into ONE undo entry (same contract as a held key).
+          onRotateSel={(dir, held) => runKeyCommand({ type: 'rotate', dir, coarse: false, coalesce: held })}
+          onNudgeSel={(dx, dy, held) => runKeyCommand({ type: 'nudge', dx, dy, coalesce: held })}
           onDeleteSel={() => runKeyCommand({ type: 'delete' })}
           showStarter={showStarter}
           onStarterRectRoom={() => setDialog({ kind: 'room-size', purpose: 'add-room' })}
@@ -1000,6 +1019,8 @@ export default function App() {
     firstRun: boolean;
   } | null>(null);
   const startedRef = useRef(false);
+  /** Ids of records `loadFromIDB` could not reconstruct — reported once mounted. */
+  const droppedRef = useRef<string[]>([]);
 
   useEffect(() => {
     if (startedRef.current) return;
@@ -1012,6 +1033,13 @@ export default function App() {
     bootstrapPersistence(
       () => initialStoreForBoot(localStorage),
       () => loadStore(localStorage),
+      // A record that cannot be reconstructed is dropped so the rest survive —
+      // but never silently: a layout vanishing from the gallery with no
+      // explanation is indistinguishable from the app losing the user's work.
+      (id) => {
+        droppedRef.current.push(id);
+        console.error(`[phantom-lock] dropped an unreadable layout record: ${id}`);
+      },
     )
       .then(setBoot)
       .catch(() => setBoot({ store: loadStore(localStorage), mode: 'localStorage', firstRun: false }));
@@ -1033,6 +1061,11 @@ export default function App() {
   // and the "you're looking at the demo" copy is always accurate).
   const showFirstRun = boot.firstRun && isPristineOrigin(localStorage);
   return (
-    <AppInner initialStore={boot.store} persistMode={boot.mode} showFirstRun={showFirstRun} />
+    <AppInner
+      initialStore={boot.store}
+      persistMode={boot.mode}
+      showFirstRun={showFirstRun}
+      droppedCount={droppedRef.current.length}
+    />
   );
 }

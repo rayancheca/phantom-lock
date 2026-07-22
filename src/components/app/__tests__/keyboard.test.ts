@@ -212,22 +212,30 @@ describe('handleKeydown mode key', () => {
 // --- rotate ---------------------------------------------------------------
 
 describe('handleKeydown rotate', () => {
-  it('q/e rotate a selected object', () => {
+  it('q/e rotate a selected object by a FINE step', () => {
     expect(handleKeydown(key('q'), env({ selection: { type: 'object', id: 'r1' } }))?.command).toEqual({
       type: 'rotate',
       dir: -1,
+      coarse: false,
       coalesce: false,
     });
     expect(handleKeydown(key('e'), env({ selection: { type: 'object', id: 'r1' } }))?.command).toEqual({
       type: 'rotate',
       dir: 1,
+      coarse: false,
       coalesce: false,
     });
+  });
+  it('shift makes a coarse rotate step (mirrors arrow-nudge shift)', () => {
+    expect(
+      handleKeydown(key('e', { shiftKey: true }), env({ selection: { type: 'object', id: 'r1' } }))?.command,
+    ).toEqual({ type: 'rotate', dir: 1, coarse: true, coalesce: false });
   });
   it('held rotate repeat coalesces into one undo entry (like nudge)', () => {
     expect(handleKeydown(key('e', { repeat: true }), env({ selection: { type: 'object', id: 'r1' } }))?.command).toEqual({
       type: 'rotate',
       dir: 1,
+      coarse: false,
       coalesce: true,
     });
   });
@@ -276,11 +284,37 @@ describe('handleKeydown arrow nudge', () => {
 // --- pure scene transforms ------------------------------------------------
 
 describe('rotateSelectedRect', () => {
-  it('rotates a rect by +5 degrees', () => {
+  it('rotates a rect by a FINE 1 degree by default', () => {
+    // 5° was too coarse to sit a bed flush against an angled wall — the whole
+    // point of the fine step. 1° leaves ≤0.5° of error, ~1.7 cm over a 2 m bed.
     const scene = baseScene([rect('r1')], []);
     const out = rotateSelectedRect(scene, 'r1', 1);
     const o = out.objects[0];
-    expect(o.kind === 'rect' && o.rotation).toBeCloseTo((5 * Math.PI) / 180, 6);
+    expect(o.kind === 'rect' && o.rotation).toBeCloseTo((1 * Math.PI) / 180, 6);
+  });
+  it('rotates by a coarse 15 degrees when asked', () => {
+    const scene = baseScene([rect('r1')], []);
+    const out = rotateSelectedRect(scene, 'r1', 1, true);
+    const o = out.objects[0];
+    expect(o.kind === 'rect' && o.rotation).toBeCloseTo((15 * Math.PI) / 180, 6);
+  });
+  it('reaches an arbitrary wall angle within half a degree', () => {
+    // The Maple Court front wall runs (0.57,1.49)->(4.28,0.72): ≈ -11.73°.
+    // Chosen deliberately: it sits 1.73° from the nearest multiple of 5, so the
+    // OLD 5° step oscillates between -10° and -15° and can never land inside the
+    // tolerance. (The entry wall at -49.61° would NOT discriminate — it happens
+    // to be 0.39° from -50°, so a 5° step reaches it and the test would pass
+    // against the very bug it exists to catch.)
+    const target = Math.atan2(0.72 - 1.49, 4.28 - 0.57);
+    let scene = baseScene([rect('r1')], []);
+    for (let i = 0; i < 400; i++) {
+      const o = scene.objects[0];
+      const rot = o.kind === 'rect' ? o.rotation : 0;
+      if (Math.abs(rot - target) <= (0.5 * Math.PI) / 180) break;
+      scene = rotateSelectedRect(scene, 'r1', rot > target ? -1 : 1);
+    }
+    const o = scene.objects[0];
+    expect(o.kind === 'rect' && Math.abs(o.rotation - target)).toBeLessThanOrEqual((0.5 * Math.PI) / 180);
   });
   it('wraps past +180 degrees back into range', () => {
     const scene = baseScene([{ ...rect('r1'), rotation: Math.PI - 0.01 } as SceneObject], []);

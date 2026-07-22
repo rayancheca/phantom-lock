@@ -247,7 +247,15 @@ async function readMeta(db: IDBDatabase): Promise<MetaRecord | undefined> {
  * `data:` URL and running it through the `sanitizeLayout` trust boundary.
  * Returns null if the store has never been migrated (no meta row).
  */
-export async function loadFromIDB(): Promise<LayoutStore | null> {
+/**
+ * `onDrop` is called once per record that could not be reconstructed.
+ *
+ * Dropping the record is right — losing one layout beats losing all of them —
+ * but doing it in silence is not: the user simply finds a layout missing from
+ * the gallery with nothing to explain it, which is indistinguishable from the
+ * app having eaten their work. The caller surfaces the count.
+ */
+export async function loadFromIDB(onDrop?: (id: string) => void): Promise<LayoutStore | null> {
   const db = await openDB();
   const meta = await readMeta(db);
   if (!meta) return null;
@@ -283,8 +291,10 @@ export async function loadFromIDB(): Promise<LayoutStore | null> {
       };
       const clean = sanitizeLayout(raw);
       if (clean) layouts.push(clean);
+      else onDrop?.(String(rec?.id ?? '(unknown id)'));
     } catch {
-      // Drop this one record rather than losing every layout.
+      // Drop this one record rather than losing every layout — but say so.
+      onDrop?.(String(rec?.id ?? '(unknown id)'));
     }
   }
   if (layouts.length === 0 && records.length > 0) {
@@ -331,10 +341,11 @@ export async function migrateFromLocalStorage(store: LayoutStore): Promise<Layou
 export async function bootstrapPersistence(
   loadLegacy: () => LayoutStore,
   loadFallback: () => LayoutStore = loadLegacy,
+  onDrop?: (id: string) => void,
 ): Promise<{ store: LayoutStore; mode: PersistMode; firstRun: boolean }> {
   try {
     await openDB();
-    const existing = await loadFromIDB();
+    const existing = await loadFromIDB(onDrop);
     if (existing) return { store: existing, mode: 'idb', firstRun: false };
     // First run on IDB: migrate whatever the legacy loader produces (real saved
     // data, or the bundled default apartment / seeded demo).

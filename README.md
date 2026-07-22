@@ -12,8 +12,8 @@ It ships with a bundled sample apartment so you can start immediately, and you c
 number of your own layouts from a floorplan photo or from scratch. No backend, no account,
 no network calls: everything runs locally and layouts live in your browser's IndexedDB.
 
-Zero runtime dependencies beyond React. The physics is a hand-written TypeScript engine
-covered by **644 unit tests**.
+Zero runtime dependencies beyond React. The physics is a hand-written TypeScript engine;
+the project carries **644 unit tests**, 169 of them over the engine itself.
 
 ---
 
@@ -110,7 +110,7 @@ npm run preview   # serve the production build with real security headers
 No API keys, no backend, no environment setup. Layouts persist locally in IndexedDB; a
 one-click *Export all* writes a portable JSON backup of every layout.
 
-Requires Node 20+. Developed and verified on macOS with Chrome; the app is a standard
+Requires Node 20.19+ or 22.12+ (Vite 7's declared range). Developed and verified on macOS with Chrome; the app is a standard
 static site with no platform-specific code, but automated browser checks run in Chromium
 only.
 
@@ -120,7 +120,7 @@ only.
 
 ```
 src/
-├── engine/                 pure TypeScript — no DOM, no React, fully unit-tested
+├── engine/                 pure TypeScript, no React — unit-tested in Node
 │   ├── raytrace.ts         ray casting, 3D line-of-sight, graze attenuation, door gaps
 │   ├── stereo.ts           pair metrics (ITD/ILD/angle), phantom-center lock verdict
 │   ├── pairspot.ts         per-pair wall-aware sweet-spot search + image-source bounces
@@ -229,11 +229,11 @@ properly needs an iteration cap inside the engine's grid loops, which is schedul
 | `1`–`4` (DESIGN) | select · wall · box · circle |
 | `1` / `5` (TUNE) | select · speaker |
 | `T` | switch DESIGN ⇄ TUNE (the mode owns the canvas theme) |
-| `N` / `Shift+N` | cycle to the next / previous item on the canvas |
-| `P` (TUNE) | place a speaker beside your listening spot |
-| `D` / `W` (DESIGN) | cut a door / window into the selected wall |
-| arrows | nudge selection (`Shift` = coarser) |
-| `Q` / `E` | rotate the selected box |
+| `N` / `Shift+N` † | cycle to the next / previous item on the canvas |
+| `P` (TUNE) † | place a speaker beside your listening spot |
+| `D` / `W` (DESIGN) † | cut a door / window into the selected wall |
+| arrows | nudge selection 5 cm (`Shift` = 25 cm) |
+| `Q` / `E` | rotate the selected box 1° (`Shift` = 15°); hold to sweep |
 | `R` | rotate the view |
 | `Del` | delete selection |
 | `⌘Z` / `⇧⌘Z` | undo / redo |
@@ -241,8 +241,11 @@ properly needs an iteration cap inside the engine's grid loops, which is schedul
 | scroll | pan · `⌘`-scroll or pinch = zoom · `⌥`-scroll = rotate view |
 | space-drag / right-drag | pan |
 
+† needs canvas focus, so these never fire while you're working in the sidebar.
+
 Digit shortcuts are scoped to the current mode, so they never select a tool that mode
-doesn't have. Everything autosaves. Export/import layouts as JSON — import always adds, it
+doesn't have. On touch, the on-selection handles do the same jobs — a tap is one fine step and
+press-and-hold sweeps continuously, so furniture can be seated flush against a wall at any angle. Everything autosaves. Export/import layouts as JSON — import always adds, it
 never overwrites.
 
 ---

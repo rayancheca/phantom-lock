@@ -72,6 +72,41 @@ describe('security-headers source of truth', () => {
 });
 
 /**
+ * The plugin is the ONLY thing putting the policy into the shipped HTML. If it
+ * silently stopped emitting (renamed hook, wrong `apply`, a bad merge), every
+ * other test here would still pass and `npm run build` would still succeed —
+ * the app would just ship with no CSP. Assert the descriptor directly; it needs
+ * no `vite build`.
+ */
+describe('the build-time CSP injector', () => {
+  it('emits the policy as a head-prepended meta, build-only', async () => {
+    const { cspMeta } = (await import('../../vite.config')) as unknown as {
+      cspMeta: () => {
+        name: string;
+        apply: string;
+        transformIndexHtml: () => Array<{
+          tag: string;
+          attrs: Record<string, string>;
+          injectTo: string;
+        }>;
+      };
+    };
+    const plugin = cspMeta();
+    // `apply: 'build'` is what keeps `npm run dev` alive: the dev server injects
+    // an inline react-refresh preamble and an HMR WebSocket that this policy
+    // would block on script-src, connect-src AND style-src.
+    expect(plugin.apply).toBe('build');
+
+    const [tag] = plugin.transformIndexHtml();
+    expect(tag.tag).toBe('meta');
+    expect(tag.attrs['http-equiv']).toBe('Content-Security-Policy');
+    expect(tag.attrs.content).toBe(CSP_META);
+    // Must precede everything it governs: the data: favicon and the font preloads.
+    expect(tag.injectTo).toBe('head-prepend');
+  });
+});
+
+/**
  * `style-src 'self'` is the single directive most likely to silently kill the
  * UI, and it holds only because React 19 writes inline styles through CSSOM.
  * The moment any code reaches for a style ATTRIBUTE (or injects a stylesheet or
@@ -79,7 +114,12 @@ describe('security-headers source of truth', () => {
  * rather than trusting a comment.
  */
 describe('the codebase stays compatible with the policy', () => {
-  const srcDir = new URL('../', root === undefined ? '' : root);
+  // `src/`, NOT `new URL('../', root)` — that climbs one level ABOVE the repo
+  // and walked every sibling git worktree (581 files, 499 of them outside this
+  // checkout), so an unrelated branch could fail this suite with a message
+  // naming a file that is not in the repo. The defect was self-concealing: both
+  // vacuity guards below still passed on the wrong tree.
+  const srcDir = new URL('src/', root);
 
   function walk(dir: string, out: string[] = []): string[] {
     for (const entry of readdirSync(dir)) {
@@ -101,8 +141,12 @@ describe('the codebase stays compatible with the policy', () => {
   const sources = files.map((f) => ({ file: f, text: readFileSync(f, 'utf8') }));
 
   it('scanned a real set of source files (guards against a vacuous pass)', () => {
-    expect(sources.length).toBeGreaterThan(40);
+    // Deterministic now that the root is `src/` (~82 files), so this can be a
+    // real floor rather than a token one.
+    expect(sources.length).toBeGreaterThan(70);
     expect(sources.some((s) => s.file.endsWith('scene.ts'))).toBe(true);
+    // And it must be THIS checkout — the bug it replaces read sibling worktrees.
+    expect(sources.every((s) => s.file.includes('/src/'))).toBe(true);
   });
 
   const forbidden: Array<[string, RegExp]> = [

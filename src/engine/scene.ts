@@ -573,8 +573,15 @@ export function sanitizeScene(raw: unknown): Scene | null {
   const rawActive = (s as { activeListenerId?: unknown }).activeListenerId;
   let activeListenerId =
     typeof rawActive === 'string' && seats.some((l) => l.id === rawActive) ? rawActive : seats[0].id;
-  // Cap stored seats, but NEVER drop the active one — that would silently jump
+  // Cap stored seats, but never drop the active one — that would silently jump
   // YOU (and every verdict) to an unrelated seat on the next load.
+  //
+  // Precisely: the rescue holds for any active seat found within the scan window
+  // above (index ≤ 255). A hand-crafted file that puts the active seat at index
+  // 256+ still falls back to seat 0 — measured exactly at that boundary. Not
+  // reachable from app-produced data (`addListener` no-ops at MAX_LISTENERS=32),
+  // and `importRejection` has no seat limit, so this is a documented edge rather
+  // than a guarantee.
   let finalSeats = seats;
   if (seats.length > MAX_LISTENERS) {
     finalSeats = seats.slice(0, MAX_LISTENERS);
@@ -872,7 +879,7 @@ export function importRejection(scene: Scene): string | null {
  * replacement back. Both guards are worth having: this one bounds the blast
  * radius of any FUTURE throw to the single record that caused it.
  */
-function sanitizeLayoutIsolated(raw: unknown): Layout | null {
+export function sanitizeLayoutIsolated(raw: unknown): Layout | null {
   try {
     return sanitizeLayout(raw);
   } catch {

@@ -51,7 +51,7 @@ export type KeyCommand =
   | { type: 'delete' }
   | { type: 'tool'; tool: ToolMode }
   | { type: 'mode-toggle' }
-  | { type: 'rotate'; dir: -1 | 1; coalesce: boolean }
+  | { type: 'rotate'; dir: -1 | 1; coarse: boolean; coalesce: boolean }
   | { type: 'nudge'; dx: number; dy: number; coalesce: boolean }
   /** Walk the deterministic scene traversal (selection-cycle.ts). */
   | { type: 'cycle'; dir: -1 | 1 }
@@ -70,8 +70,21 @@ export interface KeyResult {
 /** Coarse (with ⇧) and fine arrow-nudge step, in metres. */
 const NUDGE_FINE_M = 0.05;
 const NUDGE_COARSE_M = 0.25;
-/** Degrees per q/e rotate tap. */
-const ROTATE_STEP_DEG = 5;
+/**
+ * Degrees per q/e rotate tap — fine by default, coarse with ⇧, mirroring the
+ * arrow-nudge pair above.
+ *
+ * The fine step was 5°, which is too coarse to sit furniture flush against a
+ * wall: real walls sit at arbitrary angles (Maple Court's front wall is
+ * -11.73°), so a 5° step oscillates between -10° and -15° and can never land on
+ * it. 1° leaves at most 0.5° of error — under 2 cm across a 2 m bed.
+ *
+ * Holding the key still reaches large angles quickly: OS key-repeat delivers
+ * ~30-60 events/s, so a held q/e sweeps 30-60°/s, and ⇧ is there for a
+ * deliberate quarter-turn.
+ */
+export const ROTATE_FINE_DEG = 1;
+export const ROTATE_COARSE_DEG = 15;
 
 /**
  * Pure global-shortcut dispatcher. Given a keyboard event + the current App
@@ -142,9 +155,18 @@ export function handleKeydown(e: KeyEvt, env: KeyEnv): KeyResult | null {
   if (tool) return { command: { type: 'tool', tool } };
   if (e.key === 't') return { command: { type: 'mode-toggle' } };
 
-  if ((e.key === 'q' || e.key === 'e') && env.selection?.type === 'object') {
+  // Match on the physical key, not the produced character: ⇧+q yields 'Q'.
+  const rotKey = e.key.toLowerCase();
+  if ((rotKey === 'q' || rotKey === 'e') && env.selection?.type === 'object') {
     // Held-key repeat folds into one undo entry, like nudge.
-    return { command: { type: 'rotate', dir: e.key === 'q' ? -1 : 1, coalesce: e.repeat } };
+    return {
+      command: {
+        type: 'rotate',
+        dir: rotKey === 'q' ? -1 : 1,
+        coarse: Boolean(e.shiftKey),
+        coalesce: e.repeat,
+      },
+    };
   }
 
   if (e.key.startsWith('Arrow') && env.selection && !env.interactiveTarget) {
@@ -161,14 +183,15 @@ export function handleKeydown(e: KeyEvt, env: KeyEnv): KeyResult | null {
  *  rects rotate; for any other selection (wall/circle) this returns the SAME
  *  scene reference so a stray q/e or touch-HUD tap can't push a no-op undo
  *  entry. (Callers should also disable the affordance — see SelectionActions.) */
-export function rotateSelectedRect(scene: Scene, id: string, dir: -1 | 1): Scene {
+export function rotateSelectedRect(scene: Scene, id: string, dir: -1 | 1, coarse = false): Scene {
   const target = scene.objects.find((o) => o.id === id);
   if (!target || target.kind !== 'rect') return scene;
+  const stepDeg = coarse ? ROTATE_COARSE_DEG : ROTATE_FINE_DEG;
   return {
     ...scene,
     objects: scene.objects.map((o) => {
       if (o.id !== id || o.kind !== 'rect') return o;
-      let rot = o.rotation + (dir * ROTATE_STEP_DEG * Math.PI) / 180;
+      let rot = o.rotation + (dir * stepDeg * Math.PI) / 180;
       if (rot > Math.PI) rot -= Math.PI * 2;
       if (rot < -Math.PI) rot += Math.PI * 2;
       return { ...o, rotation: rot };

@@ -665,7 +665,9 @@ detect → preview → commit path.
 duplicates/diagonal-beams; a synthetic fixture (thick double-line rectangle + a furniture blob) that currently
 over-detects returns the correct wall count/geometry after the fix (**failing-test-first** in `detect.test.ts`);
 `npm test` + `npm run build` green; live-verified with saved before/after screenshots (both themes). Real-floorplan
-screenshots stay local/gitignored (the demo apartment's floorplan is the owner's real home — never publish it).
+screenshots may now be **published** — the former "never publish it" clause was retired in S8 by explicit owner
+decision (*"pulbish and change the rules. idc about privacy"*), and `docs/screenshots/` is committed. The street
+address stays scrubbed to the "Maple Court" placeholder.
 
 **KICKOFF PROMPT** — *run under the Standing Operating Protocol at the top of this file (also in CLAUDE.md, auto-loaded): multi-agent orchestration, adversarial verification of every serious finding, full implementation (no shortcuts/stubs), test everything (unit + live browser), a self-review agent pass, the full verification gate, clean-up, and honest reporting. Token/time budget is unlimited — optimize for perfection, not speed.*
 > Read `docs/ultrareview.md` and `src/engine/detect.ts` in the Phantom Lock repo and execute Session 12 of
@@ -1199,7 +1201,129 @@ contrast, the ≤960px layout, focus-ring rendering, `forced-colors` or `target-
 The ~20 `.tsx` components touched remain without behavioural unit tests — that is **S10's** scope, deliberately
 not absorbed here; S7 added rendering-only a11y assertions.
 
-Next: **Session 8-remainder (security hardening: CSP + headers + import size cap; README rewrite)** — kickoff below.
+Next: **Session 8-remainder** — done, see below.
+
+---
+
+### Session 8-remainder — security hardening + README rewrite (2026-07-22) ✅
+
+**Shipped.** A strict CSP + security headers delivered three ways from one source of truth; an
+input-boundary hardening pass that fixes real data loss; a README rewritten to the standard with 9
+live screenshots; plus an owner-reported rotation-granularity fix and a prioritized ideas backlog.
+
+**CSP + headers.** `src/security-headers.ts` is the single source; a build-only Vite plugin
+(`apply:'build'` + `transformIndexHtml` + `injectTo:'head-prepend'`) injects the `<meta>` policy,
+and `public/_headers` + `vercel.json` carry the real headers. `default-src 'none'` with **no nonce
+and no hash**. `frame-ancestors` is header-only (ignored in meta per CSP3 §3.3, and Chrome errors
+on it). `upgrade-insecure-requests` deliberately excluded — it kills the app over plain http on a
+LAN address *without producing a CSP violation*. `preview.headers` is a harness and ships nothing.
+
+**Input boundary — the design that changed after adversarial review.** The first spec clamped
+coordinates and truncated arrays in `sanitizeScene`. A skeptic measured that this **silently
+flattens a legitimate 42-room layout** (75 walls onto one line) which autosave then overwrites, and
+separately proved the DoS estimate was wrong by two orders of magnitude (3.7–6 h, not ~4 min,
+because cost is multiplicative in `objects × pairs` and only span had been varied). The spec was
+rewritten: **the load path mangles nothing**; untrusted files are **rejected** at import by
+`importRejection`. Also fixed: two throw sites that let one hostile record replace every layout the
+user owned; sanitizer output aliasing the caller's parse tree; and an id-collision that silently
+moved the active seat (and unlinked stereo pairs) — seats and speakers now claim ids before objects.
+
+**Honest limit (do not upgrade without measuring):** worst-case CPU for a payload tuned to sit under
+every import limit is **mitigated, not closed**. Bounding it needs an iteration cap inside
+`bestspot.ts`/`pairspot.ts`, frozen this session — now **P0 in `docs/ideas.md`**, because the same
+cap also fixes a real usability cliff (a legit 10-room house already costs ~200 ms *per edit*).
+
+**Owner-reported fix (mid-session).** Rotation was 5° per tap — too coarse to sit furniture flush
+against a wall, since real walls sit at arbitrary angles. Now **1° fine / 15° with ⇧**, and the
+touch HUD gained **press-and-hold to repeat** (tap = one step, hold = continuous), with the whole
+hold collapsing into one undo entry. Delete deliberately opts out of repeat.
+
+---
+
+#### EVIDENCE BLOCK — Session 8-remainder
+
+**Agents spawned (16 total, 0 errors).**
+
+*Investigation (8):* sanitizer boundary map · empirical cost curve · CSP delivery design · README
+audit — each followed by an adversarial skeptic. Verdicts: the CSP design **survived** with 8
+corrections (incl. the LAN-IP blind spot and the `worker-src`/`connect-src` forward note); the
+README audit was **partly refuted** (it cleared a genuine deep-dive overstatement about which
+openings reflections refuse, and proposed selectors that did not exist); the hardening spec was
+**REFUTED on its two central claims** (see above) — the single most valuable result of the session.
+
+*Self-review (8):* `security-reviewer` · `code-reviewer` · `silent-failure-hunter` ·
+README fact-check — each with a skeptic. Surviving findings, all fixed: a **MEDIUM** where the new
+forbidden-API scanner walked the *parent* of the repo (581 files, 499 in sibling worktrees —
+self-concealing, since both vacuity guards still passed); `docs/security.md` overclaiming "no
+coordinate is clamped" (heights/seat-z/seat-count bounds do exist, all unreachable from
+app-produced data); the per-record isolation having **zero** coverage; the CSP plugin being
+untestable; dropped IDB records vanishing silently; and four README facts (engine test
+attribution, Node range, "no DOM", canvas-focus precondition). Two findings were **refuted** and
+dropped rather than actioned.
+
+**Test count:** 613 → **649** (34 files). Never dropped, nothing skipped.
+
+**Gate (literal tails):**
+```
+> eslint .
+                                    ← 0 problems
+
+ Test Files  34 passed (34)
+      Tests  649 passed (649)
+
+dist/index.html                   1.31 kB │ gzip:   0.62 kB
+dist/assets/index-DEe17nU-.css   43.19 kB │ gzip:   8.24 kB
+dist/assets/index-Dt47rcLd.js   404.69 kB │ gzip: 130.58 kB
+✓ built in 488ms
+```
+
+**Live verification (headless Chrome, fresh profiles).**
+- CSP: **18/18 golden-path steps × 3 configurations** (meta-only · meta + real headers · plain http
+  on LAN IP 192.168.1.72) → **0 violations, 0 page errors, 0 failed requests**. Every run carried a
+  **negative control** (an injected inline `<script>` MUST be blocked) — without it "0 violations"
+  is unfalsifiable.
+- Dev server unaffected: serves the inline react-refresh preamble + `/@vite/client` with **0** CSP
+  tags. `dist/index.html` charset at byte **488** (< 1024). Policy module **not** in the bundle.
+- Hostile import through the real UI (`DOM.setFileInputFiles`): the 354-byte `r:1e308` brick, a
+  1e17 coordinate, span 1200 m, 200 000 objects, a 5 000-char id and a non-layout file were all
+  **refused with a specific message in ~250 ms**, store unchanged, page responsive. `speakers:[null]`
+  and `rooms:[null]` now import cleanly instead of eating the store. Saved:
+  `docs/sessions/S8/hostile-import.txt`.
+- Rotation: one `e` tap = **1.000°**, ⇧+E = **15.000°**, touch tap = **1.00°**, 1.2 s hold =
+  **20.00°**, after release = **0.00°** (no runaway timer) — all read from IndexedDB.
+
+**Artifacts:** `docs/screenshots/01..09` (committed) · `docs/sessions/S8/{backup.json,
+hostile-import.txt, csp-goldenpath-final.jpg, csp-plain-http-lan.jpg}` (gitignored).
+
+**Data safety.** Owner's layout read **without booting the app** (same-origin static asset), so not
+even the `meta` row advanced. Verified byte-identical at session end: `layout-mrwb0lnz-28-u87ub`,
+`updatedAt` **1784738154671**, 24 objects / 2 speakers / 1 seat / 0 underlays. All interactive
+testing ran on fresh `--user-data-dir` profiles. An absolute home path was scrubbed from a tracked
+doc (found by a skeptic, not by my own first scan).
+
+**Owner decision recorded.** Asked directly whether README screenshots of the bundled demo — which
+the S12 block said was the owner's real home and must never be published — could go to the public
+repo, the owner answered *"pulbish and change the rules. idc about privacy"*. The never-publish
+clause is retired in both `CLAUDE.md` and this file; the street address stays scrubbed.
+
+**Acceptance → outcome.** CSP + headers live-verified in both modes with delivery limits stated ✅ ·
+`npm run dev` still works ✅ · hostile/oversized/malformed imports fail safely with a visible error,
+store intact, no hang ✅ · new pure guards failing-first tested in the right vitest project ✅ ·
+README meets `readme-standards.md` (9 committed screenshots, no placeholder text, correct counts,
+real deep-dive) ✅ · gate green ✅ · owner's layout untouched ✅ · six frozen engine files
+byte-unchanged ✅ (`git diff` = 0 lines). **Deferred, named:** the grid-loop iteration cap (P0 in
+`docs/ideas.md`).
+
+**Honest limits.** One browser (headless Chrome); no Firefox/Safari. No real screen reader. No
+actual deployment to Netlify/Cloudflare/Vercel — header *values* and `dist/_headers` placement are
+proven, host plumbing is not.
+
+---
+
+Next: **Session 12 (auto-detect walls accuracy overhaul)** — kickoff in
+[`kickoff-session-12.md`](kickoff-session-12.md). Unscheduled ideas, prioritized, live in
+[`ideas.md`](ideas.md) — including the owner-requested **guided tutorial mode** (P1, with a full
+design written up).
 
 ---
 

@@ -118,12 +118,20 @@ prototype-pollution gadget. Three defects were fixed:
    stereo pairs. Seats and speakers now claim their ids **before** objects,
    which are the only entities nothing references by id.
 
-**No coordinate is clamped and no array is truncated on load.** That is
-deliberate: clamping would silently flatten a legitimate layout the app's own
-"Add a room…" produced (measured: 42 appended 6 m rooms, or 11 at the UI's 25 m
-maximum, collapse 75 walls onto a single line), and autosave would overwrite the
-good record ~400 ms later. A refused import is recoverable; mangled geometry is
-not.
+**No position is clamped and no geometry is rewritten on load.** That is
+deliberate: clamping coordinates would silently flatten a legitimate layout the
+app's own "Add a room…" produced (measured: 42 appended 6 m rooms, or 11 at the
+UI's 25 m maximum, collapse 75 walls onto a single line), and autosave would
+overwrite the good record ~400 ms later. A refused import is recoverable;
+mangled geometry is not.
+
+For precision, the load path does carry three **pre-existing** bounds, all of
+which are unreachable from app-produced data and none of which touch a position:
+object/speaker heights and a seat's `z` are clamped to 0.02–6 m (the inspector's
+own inputs are capped at `max={6}`, and listener/speaker z ranges are strictly
+inside it); `listeners[]` is capped at 32 (`addListener` no-ops at the cap, "so
+we never create seats a later load would silently drop"); and a circle radius has
+a 5 cm floor, which only a degenerate sub-5 cm drag could hit.
 
 ### The import path rejects rather than repairs
 

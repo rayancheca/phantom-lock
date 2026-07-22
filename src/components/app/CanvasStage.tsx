@@ -51,8 +51,10 @@ interface CanvasStageProps {
   onTool: (t: ToolMode) => void;
   onPlaceSpeaker: (model: SpeakerModel) => void;
   onResetView: () => void;
-  onRotateSel: (dir: -1 | 1) => void;
-  onNudgeSel: (dx: number, dy: number) => void;
+  /** `held` is true for repeats within one press-and-hold on the touch HUD, so
+   *  the whole gesture collapses into a single undo entry. */
+  onRotateSel: (dir: -1 | 1, held: boolean) => void;
+  onNudgeSel: (dx: number, dy: number, held: boolean) => void;
   onDeleteSel: () => void;
 
   showStarter: boolean;

@@ -70,15 +70,21 @@ say so.
 ## Commands
 
 - `npm run dev` — Vite (user usually has this running on :5173 already; autoPort will move yours)
-- `npm test` — vitest, **613 tests** across TWO projects, all green as of 2026-07-22. `|node|` (pure logic, 28 files) + `|dom|` (jsdom + axe, 3 files) — see `vite.config.ts` `test.projects`. S7/a11y added +273: `styles/__tests__/contrast.test.ts` 112 (WCAG maths + every real token pair, read from the REAL `tokens.css`/`THEMES` off disk); `canvas/__tests__/selection-cycle.test.ts` 26; `canvas/__tests__/placement.test.ts` 29; `app/__tests__/announce.test.ts` 37; `keyboard.test.ts` +21; `interaction.test.ts` +14; and 26 axe tests (`canvas-a11y` 10 / `panels.a11y` 11 / `shell.a11y` 5). Ratchet: never let the count drop (95→126→140→181→239→245→296→322→340→**613**).
+- `npm test` — vitest, **613 tests** across TWO projects, all green as of 2026-07-22. `|node|` (pure logic, 28 files) + `|dom|` (jsdom + axe, 3 files) — see `vite.config.ts` `test.projects`. S7/a11y added +273: `styles/__tests__/contrast.test.ts` 112 (WCAG maths + every real token pair, read from the REAL `tokens.css`/`THEMES` off disk); `canvas/__tests__/selection-cycle.test.ts` 26; `canvas/__tests__/placement.test.ts` 29; `app/__tests__/announce.test.ts` 37; `keyboard.test.ts` +21; `interaction.test.ts` +14; and 26 axe tests (`canvas-a11y` 10 / `panels.a11y` 11 / `shell.a11y` 5). S8 added +31: `engine/__tests__/hardening.test.ts` 18 (input-boundary: throw sites, aliasing, id-collision, bounds termination, `importRejection`) and `__tests__/security-headers.test.ts` 13 (CSP drift across the 3 copies + a source scan for policy-incompatible APIs). Ratchet: never let the count drop (95→126→140→181→239→245→296→322→340→613→**644**).
 - `npm run lint` — **(S5)** flat ESLint (`eslint.config.js`): @eslint/js + typescript-eslint + eslint-plugin-react-hooks `recommended-latest`, scoped to `src`, ignoring `.claude`/`dist`/`coverage`. Clean (0 problems) as of 2026-07-19. exhaustive-deps is enforced; 5 documented survivor suppressions remain (SimCanvas:250/398 mount-once, Toast/Menu/LayoutGallery/ScenarioCompare mount-once) — see each file.
-- `npm run build` — tsc --noEmit + vite build (**~402 kB / 129.5 kB gzip** JS + **43.2 kB / 8.24 kB gz** CSS after S7; JS +2.4 kB gz / CSS +0.19 kB gz vs S16 for `selection-cycle.ts`/`placement.ts`/`canvas-help.ts`/`announce.ts`/`useAnnouncer.ts`/`LiveAnnouncer.tsx` + the a11y CSS). `src/styles/contrast.ts` and everything under `src/test/` are TEST-ONLY and tree-shake out of the bundle. Self-hosted fonts are static assets in `public/fonts/` (7 Latin-subset woff2 + `LICENSE.md`, ~148 kB total, 2 preloaded ≈36 kB — NOT in the JS/CSS bundle). Run all four (lint/test/build) before claiming done.
+- `npm run build` — tsc --noEmit + vite build (**403.5 kB / 130.1 kB gzip** JS + **43.19 kB / 8.24 kB gz** CSS + **1.31 kB** HTML after S8; JS +0.6 kB gz for `importRejection`/`cleanVec`/`clampSpan`, HTML 0.87→1.31 kB for the injected CSP meta. `src/security-headers.ts` is BUILD/TEST-ONLY — imported by `vite.config.ts`, never by a client module, so it does not reach the bundle (verified by grep against `dist/assets/*.js`). Pre-S8 was ~402 kB / 129.5 kB gz; JS +2.4 kB gz / CSS +0.19 kB gz vs S16 for `selection-cycle.ts`/`placement.ts`/`canvas-help.ts`/`announce.ts`/`useAnnouncer.ts`/`LiveAnnouncer.tsx` + the a11y CSS). `src/styles/contrast.ts` and everything under `src/test/` are TEST-ONLY and tree-shake out of the bundle. Self-hosted fonts are static assets in `public/fonts/` (7 Latin-subset woff2 + `LICENSE.md`, ~148 kB total, 2 preloaded ≈36 kB — NOT in the JS/CSS bundle). Run all four (lint/test/build) before claiming done.
 
 **GitHub (as of 2026-07-19):** the repo is public at **github.com/rayancheca/phantom-lock** (`origin`, default
 branch `main`). The owner wants visible contribution activity, so **push `main` after every session lands the
 gate** (land per-session branch work onto `main`, then `git push`). The bundled demo apartment's real address
 was scrubbed to the placeholder **"Maple Court"** across all history — keep it that way; `docs/sessions/` and
-`coverage/` are gitignored (local-only, never publish the real-floorplan screenshots).
+`coverage/` are gitignored (local-only). **Screenshot policy CHANGED in S8 by explicit owner decision** — the
+owner, asked directly whether README screenshots of the bundled "Maple Court" demo (which is modelled on their
+real home) could be published to the public repo, answered: *"pulbish and change the rules. idc about privacy"*.
+So the former "never publish the real-floorplan screenshots" clause is **retired**: `docs/screenshots/` is
+committed and published, and README screenshots of the bundled demo are allowed. The **street address** stays
+scrubbed to the "Maple Court" placeholder (unchanged, and no reason to undo it), and secrets/credentials scanning
+is unchanged. Do not re-tighten this without the owner saying so.
 
 ## Architecture map
 
@@ -267,6 +273,31 @@ the token test exists. jsdom also cannot prove: the ≤960px layout (it ignores 
 rings, `prefers-reduced-motion`, `forced-colors`, `target-size` (disabled by default AND meaningless at 0×0
 rects), or canvas pixels. Those are proven in real headless Chrome over CDP.
 
+## Security (S8 / 2026-07-22 — do not regress) — full posture in `docs/security.md`
+
+**CSP.** Declared ONCE in `src/security-headers.ts` (build/test-only, never bundled) and delivered two ways:
+a build-time `<meta http-equiv>` injected by the `cspMeta()` plugin in `vite.config.ts` (`apply:'build'` +
+`transformIndexHtml` + `injectTo:'head-prepend'`), and real HTTP headers in `public/_headers` (→ `dist/_headers`,
+where Netlify/Cloudflare look) + `vercel.json`. `preview.headers` is a **verification harness only** — it ships
+nothing. `default-src 'none'` with **no nonce and no hash** (the build emits one module script, zero inline
+script/style, no modulepreload polyfill). `frame-ancestors` is **header-only** (ignored in meta per CSP3 §3.3,
+and Chrome logs an ERROR if it sees it there). `src/__tests__/security-headers.test.ts` fails if the three copies
+drift, or if any source file reaches for `setAttribute('style')`/`insertRule`/`innerHTML`/`eval`/`new Function`.
+**Forward note:** `worker-src 'none'` + `connect-src 'none'` are correct today but will block the planned S6 Web
+Worker and the approved Three.js 3D view — intended loosened values are in `FUTURE_LOOSENING`.
+
+**The input boundary — LOAD never mangles, IMPORT rejects.** This split is the whole design. The load path
+(`sanitizeScene`/`loadStore`) clamps no coordinate and truncates no array, because an adversarial pass measured
+that clamping silently flattens a legitimate 42-room layout (75 walls onto one line) which autosave then
+overwrites — worse than the DoS it prevents. Untrusted files are refused by `importRejection` **before anything
+is committed** (span 400 m, coord 100 km, 5 000 objects, 200 speakers, 500 areas, 256-char ids), asserted by a
+test to ACCEPT the bundled demo, a max-size UI room, and a 20-room "Add a room…" layout.
+
+**Honest limit, do not upgrade this claim without measuring:** worst-case CPU for a payload tuned to sit just
+under every import limit is **mitigated, not closed**. Cost is multiplicative in `objects × pairs × span²`, and a
+legitimate 10-room house already costs ~200 ms. Bounding it needs an iteration cap inside `bestspot.ts` /
+`pairspot.ts` — frozen this session, scheduled separately.
+
 ## Hard-won lessons
 
 - **LOS rays from an object's center hit the object's own surfaces** — always filter `s.objectId !== obj.id` (the TV self-occlusion bug made TV/Music modes identical).
@@ -313,12 +344,54 @@ rects), or canvas pixels. Those are proven in real headless Chrome over CDP.
 - **Gate `interactiveTarget` PER KEY, not per ladder (S7):** blocking the whole mutating ladder whenever a `<button>` has focus looks safe but silently kills `t`, the digits and `q`/`e` the moment the user clicks any sidebar or toolbar button — the single most common interaction. Only Arrow and Delete genuinely collide (ListenerCard and SegmentSwitch both drive roving focus with Arrow and neither stops propagation); Escape and ⌘Z must stay global.
 - **A widened target exemption must not break "keyup always disarms" (S7):** adding BUTTON/A/SUMMARY to `canvasKeyAction`'s early return would strand canvas panning armed forever if the user holds Space, Tabs to a button and releases there — `window` never blurs and the canvas never had focus, so neither disarm path fires. Handle the Space **keyup** above the exemption, unconditionally.
 
+- **A security cap that fires on real data is a data-loss bug, not a fix (S8):** the obvious hardening for the
+  354-byte brick was to clamp coordinates in `sanitizeScene`. Measured consequence: `addRoomShell` appends each
+  room to the RIGHT, so 42 legitimate 6 m rooms (or 11 at the UI's 25 m `clampDim` max) exceed any sane clamp —
+  75 walls collapse onto a single line, silently, and `usePersistence` writes the mangled scene back ~400 ms
+  later. Permanent, unrecoverable. The fix is to **separate the populations**: REJECT untrusted imports before
+  committing (the user keeps their file), and never touch data already in the store. When a guard must bound the
+  engine anyway, bound the **derived value** (`sceneBounds`'s returned box) rather than the stored data.
+- **Span can be infinite while every bound is finite (S8):** a circle at the ORIGIN with `r: 1e308` yields bounds
+  of ±1e308 — both `Number.isFinite` — but a span of `Infinity`, one ulp of 2.2e292, and `x += 0.7` that cannot
+  move. A circle at (1e308, 1e308) is the *other* case, where `max.x` overflows to `Infinity` while `min.x` stays
+  finite (which is why the old one-sided `!Number.isFinite(min.x)` guard let it through). You need BOTH the
+  four-component finite check AND a span bound; neither alone is sufficient.
+- **Id de-duplication order encodes a trust hierarchy (S8):** `sanitizeScene` dedupes ids in document order, so
+  whoever is processed FIRST keeps its id. With objects first, an imported object whose id collided with the
+  active seat's forced the *seat* to be re-issued — `activeListenerId` then failed to match and YOU silently fell
+  back to `seats[0]`, i.e. the S2 seat/verdict desync arriving through the import path. The same hole unlinked
+  stereo pairs when an object stole a speaker id (caught by my own test, not by inspection). Process the entities
+  that are REFERENCED BY ID first (seats ← `activeListenerId`, speakers ← `pairs`) and objects last — objects are
+  the only ones nothing references (`objectId` in the tracer is derived at runtime).
+- **One `try` around a whole store is a data-loss amplifier (S8):** `loadStore` wrapped every layout in a single
+  try/catch that fell through to `defaultStore()`, so one hostile record (`speakers:[null]` → TypeError) silently
+  replaced EVERY layout the user owned — and autosave then persisted the replacement. Fix both ends: null-guard
+  the throw sites, AND sanitize each record in isolation so a future throw is contained to the record that caused
+  it. The v1 legacy branch needs the same wrapper or the total-loss path stays armed.
+- **`apply:'build'` is mandatory for a CSP in a Vite app, and the failure is misdirecting (S8):** a CSP in the
+  SOURCE `index.html` breaks `npm run dev` — `@vitejs/plugin-react` injects an inline react-refresh preamble
+  (`script-src`), `/@vite/client` opens an HMR WebSocket (`connect-src`) and pushes CSS via `style.textContent`
+  (`style-src`). Three directives, none of them the one you'd suspect. Inject at build time only.
+- **`upgrade-insecure-requests` fails invisibly, and localhost cannot catch it (S8):** with it enabled the same
+  `dist/` served over plain http on a LAN IP is a total outage — and it does NOT surface as a CSP violation, so a
+  violation-counting harness reports success while the app is dead. `127.0.0.1` is potentially-trustworthy so the
+  upgrade never fires there. Any "safe over plain http" check must use a LAN IP or hostname (verified working at
+  `192.168.1.72`).
+- **Prove a CSP with a NEGATIVE CONTROL, or "0 violations" is unfalsifiable (S8):** every CSP run in this session
+  injects an inline `<script>` and asserts it is blocked AND raises a violation. Without it, a policy that failed
+  to apply at all would look identical to a perfect one. Same discipline as the S7 focus-ring pixel-diff: a policy
+  that parses is not a policy that enforces.
+
 ## NEXT UP: read-only 3D view — see docs/3d-view-plan.md
 
 User approved Three.js (or any dep): **bundle size does NOT matter, "cool" matters;
 efficiency only matters if the app gets slow.** It must be read-only and touch nothing else.
 
 ## Other known gaps (backlog)
+
+**Unscheduled ideas live in `docs/ideas.md`, prioritized** (P0 auto-detect overhaul + grid-loop
+iteration cap · **P1 guided tutorial mode** (owner-requested, deep design written up) · P1 snap
+furniture to a wall's angle · P2 3D view + component tests · P3 small stuff).
 
 - **Auto-detect walls is broken on real floorplans** (spidery/duplicated/non-orthogonal tangle) — scheduled as **Session 12** (accuracy overhaul); root causes diagnosed in `docs/master-plan.md` against `src/engine/detect.ts` (global Hough on filled walls, no skeletonization, grazing diagonals, furniture blobs kept, no global regularization).
 
@@ -327,7 +400,7 @@ efficiency only matters if the app gets slow.** It must be read-only and touch n
 - Marquee/lasso band *drag* still not driven live (the Browser-pane tab runs `document.hidden`, so rAF — which throttles `applyMove` — is paused); the selection/deselect logic is unit-tested and 3-agent-traced (S4).
 - README.md predates gallery/zones/detection/multi-select — needs a rewrite eventually.
 - `{type:'multi'}` selection has no listener slot, so a `{type:'listener'}` base is silently dropped from an additive marquee/⌘-click (pre-existing; unchanged by S4). Add a `listenerId?`/`includeListener` if this ever matters.
-- **React hook/component tests are deferred to S10** (needs jsdom + React Testing Library, which the repo doesn't have — vitest env is `node`). The S5 pure logic (`history.ts`/`keyboard.ts`/`store.ts`) is ≥96% unit-covered; the hooks (`useSceneHistory`/`useLayoutStore`/`useLayoutActions`/`usePersistence`/`useSimulation`/`useKeyboardShortcuts`) + the 4 JSX components (`AppHeader`/`CanvasStage`/`Sidebar`/`AppDialogs`) are 0% unit-covered — S10 owns "component tests for the extracted hooks (S5)".
+- **React hook/component tests are still deferred to S10 — but the blocker is GONE.** ~~needs jsdom + RTL, which the repo doesn't have~~ **(corrected S8):** S7 added `jsdom`, `@testing-library/react`, `@testing-library/dom` and `fake-indexeddb`, so hook tests are writable **today**. They just have to be named `*.test.tsx` — `vite.config.ts` routes by FILENAME, not directory (`src/**/*.test.ts` → node project, `src/**/*.test.tsx` → jsdom project). The S5 pure logic (`history.ts`/`keyboard.ts`/`store.ts`) is ≥96% unit-covered; the hooks (`useSceneHistory`/`useLayoutStore`/`useLayoutActions`/`usePersistence`/`useSimulation`/`useKeyboardShortcuts`) + the 4 JSX components (`AppHeader`/`CanvasStage`/`Sidebar`/`AppDialogs`) are 0% unit-covered — S10 owns "component tests for the extracted hooks (S5)".
 - **(S5, LOW/theoretical)** `splitWall`/`addPreset` now compute ids from the render-scope `scene` (not the updater's `s`). Behaviour-identical for the single-call-per-gesture wiring today; if a future caller fires two scene-mutating calls in one synchronous handler, `splitWall` could leave a phantom `{type:'object'}` selection pointing at an un-added id. Harden the guard if that wiring ever appears.
 - **SimCanvas is still >800 lines** (1136) — its own hook split is out of scope until a dedicated session (S5 only cleaned its exhaustive-deps suppressions + 2 syntactic lint fixes).
 - **(S4 done)** grab/grabbing cursor on draggable objects; door/window hover chips wired; canvas keys overlay-gated.

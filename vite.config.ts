@@ -18,7 +18,7 @@ import { CSP_META, SECURITY_HEADERS } from './src/security-headers';
  * clickjacking protection a host must send the real header set; the meta tag is
  * the self-contained floor that travels with the files wherever they are served.
  */
-function cspMeta(): Plugin {
+export function cspMeta(): Plugin {
   return {
     name: 'phantom-lock-csp-meta',
     apply: 'build',

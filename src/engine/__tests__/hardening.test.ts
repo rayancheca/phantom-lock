@@ -3,9 +3,11 @@ import {
   MAX_IMPORT_OBJECTS,
   MAX_IMPORT_SPAN,
   addRoomShell,
+  apartmentScene,
   importRejection,
   loadStore,
   rectRoomScene,
+  sanitizeLayoutIsolated,
   sanitizeScene,
   sceneBounds,
 } from '../scene';
@@ -74,6 +76,33 @@ describe('loadStore — one hostile record must not eat the whole store', () => 
     // the user's real layout silently gone.
     expect(store.layouts.some((l) => l.id === 'layout-good')).toBe(true);
     expect(store.layouts.find((l) => l.id === 'layout-good')!.name).toBe('My real apartment');
+  });
+
+  it('contains a THROW to the single record that caused it', () => {
+    // The null-element guards mean nothing reachable through JSON.parse throws
+    // any more, so the per-record isolation is defence-in-depth. Tested directly
+    // rather than through `loadStore`, because a throwing getter is exactly what
+    // JSON.parse cannot produce — and without this the whole block has ZERO
+    // coverage (reverting it leaves every other assertion in this file green).
+    const exploding = { id: 'layout-boom', name: 'boom', settings: {}, updatedAt: 2 };
+    Object.defineProperty(exploding, 'scene', {
+      enumerable: true,
+      get() {
+        throw new Error('boom');
+      },
+    });
+    expect(() => sanitizeLayoutIsolated(exploding)).not.toThrow();
+    expect(sanitizeLayoutIsolated(exploding)).toBeNull();
+    // and a well-formed record still comes back intact through the same wrapper
+    expect(
+      sanitizeLayoutIsolated({
+        id: 'layout-good',
+        name: 'My real apartment',
+        scene: { objects: [], speakers: [], listener: { pos: { x: 1, y: 1 }, z: 1.2 } },
+        settings: { rayCount: 360, maxBounces: 5 },
+        updatedAt: 1,
+      })?.name,
+    ).toBe('My real apartment');
   });
 });
 
@@ -259,6 +288,9 @@ describe('importRejection — refuse hostile files, never mangle the user’s ow
     // The bundled demo, a max-size room from the UI dialog, and a legitimately
     // large multi-room layout built through "Add a room…". A limit that fires on
     // any of these would be a data-loss bug, not a security fix.
+    // (The demo is asserted explicitly because docs/security.md names it, and it
+    // is the item most likely to drift as the preset changes.)
+    expect(importRejection(apartmentScene())).toBeNull();
     expect(importRejection(sanitizeScene(JSON.parse(JSON.stringify(rectRoomScene(25, 25))))!)).toBeNull();
     let grown = rectRoomScene(6, 6);
     for (let i = 0; i < 20; i++) grown = addRoomShell(grown, `Room ${i}`, 6, 6);
