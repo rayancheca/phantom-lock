@@ -1077,6 +1077,16 @@ Self-review ×3 (`code-reviewer` · `silent-failure-hunter` · `a11y-architect`)
 **Gate.** `npm run lint` 0 problems · `npm test` **608 passed (608)**, 31 files (ratchet 340 → 608) ·
 `npm run build` clean, **401.17 kB / 129.28 kB gz** JS + **43.19 kB / 8.24 kB gz** CSS.
 
+**Coverage** (`npm run test:coverage`) — every NEW module is ≥96%:
+`selection-cycle.ts` 100% · `placement.ts` 100% · `announce.ts` 100% · `useAnnouncer.ts` 100% ·
+`LiveAnnouncer.tsx` 100% · `canvas-help.ts` 100% · `contrast.ts` 100% · `keyboard.ts` 96.4% ·
+`interaction.ts` 99.5%. `src/test/axe.ts` is 76% — the uncovered lines are its violation-FORMATTING branch,
+which by construction only executes when an axe assertion fails.
+The pre-existing `.tsx` components edited for the ARIA fixes stay well below 80% (`SimCanvas` 25%, `App` 51%,
+`Menu` 7%, `Toast` 76%, `MetricsPanel` 81%, `SpeakersCard` 84%, `ListenerCard` 88%). Stated plainly rather
+than papered over: behavioural component tests for these are **S10's** scope, and S7 deliberately did not
+absorb them — the new `dom` project asserts a11y properties only.
+
 **Acceptance.**
 - *Keyboard-only user can place + adjust a speaker and READ the verdict* — **met, proven live in headless
   Chrome**: canvas reached in **2 Tabs**; `p`×2 took pods 2→4; the selection region announced
@@ -1127,3 +1137,114 @@ The ~20 `.tsx` components touched remain without behavioural unit tests — that
 not absorbed here; S7 added rendering-only a11y assertions.
 
 Next: **Session 8-remainder (security hardening: CSP + headers + import size cap; README rewrite)** — kickoff below.
+
+---
+
+**KICKOFF PROMPT (Session 8-remainder — security hardening + README rewrite, the NEXT session)** — *run under
+the Standing Operating Protocol at the top of this file (also in `CLAUDE.md`, auto-loaded).*
+
+> ultracode
+>
+> **KICKOFF — Session 8-remainder / SECURITY HARDENING + README (Phantom Lock)**
+>
+> Run under the Standing Operating Protocol at the top of `docs/master-plan.md` (also in `CLAUDE.md`,
+> auto-loaded). This is an **ultracode** project: unlimited token/time budget — optimize for correctness and
+> completeness, never speed. This task is **HEAVY** (it changes what the app will execute and what it will
+> accept as input, and it rewrites the public front door of a PUBLIC repo), so it MUST get: a multi-agent
+> Workflow (parallel understand → design → an adversarial skeptic that tries to REFUTE each risky change
+> against the real code), full implementation (no stubs/TODOs/`.skip`/`.only`/scope-narrowing), failing-first
+> tests for every new pure behavior, a self-review agent pass over the ACTUAL diff, and a handoff with an
+> Evidence block.
+>
+> **0. GIT + ⚠️ THE WORKTREE-PATH TRAP.** MAIN REPO: `/Users/rayankarimcheca/Desktop/Dev/fun/layout`.
+> Create a fresh per-session worktree branch off `main`. ⚠️ TRAP (has bitten UX-1/2/3 and cost time in S7):
+> the worktree lives at `<MAIN_REPO>/.claude/worktrees/<name>/` while a SEPARATE `main` checkout sits at the
+> repo root — ALWAYS confirm with `git rev-parse --show-toplevel` and `git branch --show-current` FIRST, and
+> pass worktree-relative paths to Read/Edit/Write, or your edits silently land in the wrong checkout and the
+> gate lies to you. **Also: `node_modules` is NOT shared into a new worktree — run `npm install` first.**
+> **Also: watch your shell `cwd`** — a `cd` in one Bash call persists into the next, and in S7 that put a
+> `mkdir docs/sessions/S7` inside `src/components/canvas/`. Commit a baseline, commit again after the gate.
+> Land with `git -C <MAIN_REPO> merge --ff-only <branch>` then `git -C <MAIN_REPO> push origin main`.
+> Commit messages end `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`.
+> FIRST ACTION: run the full gate and PASTE the literal tails to confirm the baseline is green.
+>
+> **1. WHERE THE PROJECT IS.** Repo: github.com/rayancheca/phantom-lock (PUBLIC), default branch `main`.
+> Baseline to reproduce: `npm run lint` 0 problems · `npm test` **608 tests, 31 files** across the `node` and
+> `dom` vitest projects · `npm run build` clean (~401 kB / 129.3 kB gz JS + 43.2 kB / 8.24 kB gz CSS).
+> **TEST COUNT IS A RATCHET** (95→126→140→181→239→245→296→322→340→**608**) — never let it drop, and never
+> skip/only/weaken a test. DONE so far: Sessions 1–5, the whole UI/UX overhaul (S13–S16 = UX-1…UX-4), and
+> **Session 7 (the a11y audit)** — read its progress-log entry and the new **Accessibility** section in
+> `CLAUDE.md` before touching anything, because S7 added a keyboard model, two live regions, a contrast test
+> that reads the real stylesheets off disk, and a second (jsdom) vitest project.
+>
+> **2. YOUR TASK — two blocks, both fully in scope.**
+>
+> **(A) SECURITY HARDENING.** The app is a zero-backend static site that accepts UNTRUSTED USER INPUT: JSON
+> layout imports and floorplan photos. Deliver:
+> - A production **Content-Security-Policy** with NO `'unsafe-inline'` for scripts, plus
+>   `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`, `frame-ancestors`. Decide honestly
+>   HOW it ships for a static Vite build (a `<meta http-equiv>` CSP, a host config file, or both) and say what
+>   each does and does not protect. Note the app uses `blob:`/`data:` URLs (underlay photos, plan-image
+>   export) and self-hosted fonts — the policy must actually allow the real app to run, so **prove it in a
+>   real browser with a clean console**, not just by writing a header.
+> - **Import hardening**: a size cap AND a shape/depth guard on layout-JSON import and on photo import,
+>   with user-visible errors (the app already has an error-toast path — and after S7 error toasts are
+>   `role="alert"`/assertive). `sanitizeScene` already exists; find out what it does NOT defend against
+>   (prototype pollution via `__proto__`/`constructor`, absurd counts, NaN/Infinity coordinates, a 200 MB
+>   image, a deeply nested object) and close the real gaps with failing-first pure tests.
+> - Re-verify there are no secrets, and that nothing user-controlled reaches `innerHTML`/`dangerouslySetInnerHTML`.
+>
+> **(B) README REWRITE.** `README.md` predates the gallery, zones, detection, multi-select, the whole UX
+> overhaul and the a11y work — it is the front door of a public repo and is badly stale. Rewrite it to the
+> standard in the user's global rules (`~/.claude/rules/common/readme-standards.md`): what it is · **live
+> workflow screenshots (minimum 6, numbered captions, real data, captured from the running app)** ·
+> architecture · a technical deep-dive that explains something non-obvious (candidates: the 2D-plan vs 3D-path
+> split in the lock test; image-source reflections having to land on a SOLID span; the mode-owns-the-theme IA;
+> why the canvas needs `role="application"`) · install + run · real usage examples. **Screenshots go in
+> `docs/screenshots/` and MUST be committed** (unlike `docs/sessions/`, which is gitignored) — so they must
+> show the **bundled "Maple Court" demo, never the owner's real layout**, and must contain no real address.
+>
+> **SCOPE GUARD:** do NOT touch `src/engine` acoustics math (`optimize.ts`/`rooms.ts`/`stereo.ts`/`raytrace.ts`
+> must be byte-unchanged) and do not regress the S7 a11y work or the S13–S16 design system.
+>
+> **ACCEPTANCE:** a documented CSP + headers that a real browser enforces with a clean console and a working
+> app (proven live, both modes) · import of a hostile/oversized/malformed file fails safely with a visible
+> assertive error and never corrupts the store · new pure guards are failing-first tested · README meets the
+> standard with ≥6 real committed screenshots · gate green (lint 0 · ≥608 tests · build) · the owner's real
+> layout untouched.
+>
+> **3. READ FIRST:** `CLAUDE.md` (protocol, architecture map, design system, **Accessibility**, and the
+> "Hard-won lessons" list — it encodes real bugs, including several from S7) · this file's Standing Operating
+> Protocol + the Session 7 and Session 8 blocks · `docs/ultrareview.md` §3.4 (security) · then
+> `src/engine/scene.ts` (`sanitizeScene`), `src/engine/db.ts`, `src/components/app/hooks/useLayoutActions.ts`
+> (import path), `src/components/panels/underlay-import.ts`, `index.html`, `vite.config.ts`.
+>
+> **4. ⚠️ DATA SAFETY — THE OWNER'S REAL LAYOUT IS ON THIS MACHINE.** The preview's IndexedDB on
+> `localhost:5173` holds their real layout — as of 2026-07-22 it is **one** layout, `layout-mrwb0lnz-28-u87ub`,
+> named **"Maple Court"**, 24 objects / 2 speakers (VERIFY the live values, don't assume). **NEVER delete the
+> owner's layouts.** Back up FULL-FIDELITY to `docs/sessions/S8/backup.json` (gitignored) BEFORE any write
+> test by reading the `phantom-lock` IDB `layouts` + `meta` + `underlays` stores. Prefer a **fresh headless
+> Chrome profile** for all interactive testing — a fresh `--user-data-dir` is a fresh ORIGIN, so the app gets
+> its own IndexedDB and theirs is never touched. Afterwards confirm the layout record's `updatedAt` is
+> byte-identical (the `meta` row's `updatedAt` DOES advance on every boot — that is normal and not a change to
+> their data). Never hand-mutate IndexedDB to "reset". Keep any real street address out of committable files:
+> `git ls-files -oc --exclude-standard | xargs grep -l "Bay"` must be empty (the only legitimate match is this
+> instruction quoting its own search string in `docs/master-plan.md`).
+>
+> **5. LIVE VERIFICATION.** The in-app preview tab runs `document.hidden`, so rAF (canvas render/drag/hover) is
+> PAUSED there; drive rAF-gated behavior in headless Chrome over CDP (zero-dep, Node 25 has built-in
+> `WebSocket` + `fetch`): `--headless=old` + `--window-size` at LAUNCH (NOT
+> `Emulation.setDeviceMetricsOverride`, which deadlocks capture), and `Page.captureScreenshot` as
+> `format:'jpeg', quality:90` (a big PNG silently overruns the built-in WebSocket). A working client is
+> described in the S7 log. **Verify visual claims by pixel diff, not by `getComputedStyle`** — S7 shipped an
+> invisible focus ring that `getComputedStyle` reported as present.
+>
+> **6. FINISH.** Paste the literal gate tails. Spawn self-review agents (`security-reviewer` +
+> `code-reviewer` + `silent-failure-hunter`) over the ACTUAL diff; fix everything real; re-verify. Save
+> evidence to `docs/sessions/S8/` (gitignored) and the README screenshots to `docs/screenshots/` (committed).
+> Update `CLAUDE.md` (commands/ratchet/bundle size, a Security section, new lessons) + this checklist and
+> progress log with a full **Evidence block** (agents + verdicts · before/after test count · pasted gate
+> output · saved artifact paths · each Acceptance bullet → met/deferred). Commit on the session branch, land
+> on `main` via `--ff-only`, and `git push`. Then write the NEXT kickoff — **Session 12: the auto-detect walls
+> accuracy overhaul** (root causes are already diagnosed in this file against `src/engine/detect.ts`) —
+> re-stating this protocol in full.
