@@ -164,6 +164,11 @@ built. A design pass was started and its investigation completed before the sess
 limit; the acoustics analysis, the spec and the skeptic did **not** run, so nothing here is a
 finished design — but these facts are verified and should not be re-derived.
 
+**A full, ready-to-run kickoff for this feature exists at
+[`kickoff-door-swing.md`](kickoff-door-swing.md)** — it folds in the completed data-model + UX
+investigations as verified file:line facts, states the one open question (what swing means
+acoustically), and lists the ranked change set + minimum shippable slice. Start there.
+
 **How a door works today (verified, file:line):**
 - A door is not its own type: it is a `RectObj` with `role: 'door'` (`types.ts:20-37`). There is
   **no hinge side, no swing direction and no swing angle** — the drawn arc is hardcoded.
