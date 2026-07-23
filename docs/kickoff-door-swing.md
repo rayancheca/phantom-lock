@@ -26,7 +26,7 @@ with an Evidence block.
 
 ## 0. GIT + THE TRAPS (read before touching a file)
 
-**MAIN REPO (source of truth):** `<REPO_ROOT>` (`/Users/<you>/…/Dev/fun/layout`). `main` is at **`77bb751`**,
+**MAIN REPO (source of truth):** `<REPO_ROOT>` (`/Users/<you>/…/Dev/fun/layout`). `main` is at **`004683c`**,
 clean, in sync with `origin/main`. Create a fresh per-session worktree branch off `main`.
 
 - ⚠️ **TRAP 1 — the worktree path.** A worktree lives at `<MAIN_REPO>/.claude/worktrees/<name>/` while a
@@ -71,15 +71,15 @@ the literal tails to confirm the baseline is green before changing anything.
 
 ## 1. WHERE THE PROJECT IS
 
-Repo: **github.com/rayancheca/phantom-lock** (PUBLIC), default branch `main` @ `77bb751`.
+Repo: **github.com/rayancheca/phantom-lock** (PUBLIC), default branch `main` @ `004683c`.
 
 Baseline gate to reproduce exactly (end of the security/README/door-chip session):
 - `npm run lint` → 0 problems
-- `npm test` → **659 tests, 34 files**, two vitest projects (`|node|` pure logic + `|dom|` jsdom+axe)
-- `npm run build` → clean; **405.28 kB / 130.82 kB gz** JS + **43.18 kB / 8.24 kB gz** CSS + **1.31 kB** HTML
+- `npm test` → **666 tests, 34 files**, two vitest projects (`|node|` pure logic + `|dom|` jsdom+axe)
+- `npm run build` → clean; **405.36 kB / 130.83 kB gz** JS + **43.18 kB / 8.24 kB gz** CSS + **1.31 kB** HTML
 - `npm run dev` → Vite on :5173 (owner often has one running; `autoPort` moves yours)
 
-**TEST COUNT IS A RATCHET:** 95→126→140→181→239→245→296→322→340→613→644→649→655→**659**. It must never drop, and
+**TEST COUNT IS A RATCHET:** 95→126→140→181→239→245→296→322→340→613→644→649→655→659→**666**. It must never drop, and
 no test may be newly skipped/`.only`'d/weakened. State before/after counts.
 
 Done since the master-plan's numbered sessions: S1–S5, the UI/UX overhaul (S13–S16 = UX-1…UX-4), S7
@@ -118,7 +118,7 @@ the `docs/master-plan.md` progress log.
    stubs/TODOs/placeholders/scope-narrowing. A split is legitimate ONLY if the shipped slice fully satisfies a
    NAMED subset of the Acceptance criteria and the remainder is rescheduled with its own Acceptance.
 6. **Test everything with PROOF.** Keep the suite green, ADD failing-first tests for every new pure behaviour,
-   never let the count drop below 659. Run `npm run test:coverage` and paste the coverage line for every file
+   never let the count drop below 666. Run `npm run test:coverage` and paste the coverage line for every file
    you touched (≥80%, or state the exact reason). Vite routes by FILENAME: `src/**/*.test.ts` → node project,
    `src/**/*.test.tsx` → jsdom project.
 7. **Double-check.** Spawn self-review agents (`code-reviewer` + `silent-failure-hunter` + a domain reviewer,
@@ -256,7 +256,7 @@ skeptic must attack it. **Minimum shippable slice** is called out at the end.
     corridor should follow the actual swing so it stops putting a sofa where the door opens. Lowest priority; the
     payoff that makes swing more than decoration.
 
-**Do NOT build canvas leaf-dragging this session.** The UX investigation rejected it: SimCanvas is already 1210
+**Do NOT build canvas leaf-dragging this session.** The UX investigation rejected it: SimCanvas is already ~1210
 lines (over the 800 cap), rAF-gated drag cannot be driven in the in-app preview (only via CDP), and the gesture
 collides with move-along-wall and `q`/`e` rotate. The inspector slider + `f`/`⇧F` keys cover it. If ever built,
 it belongs in the session that splits SimCanvas into hooks, with CDP-driven live proof.
@@ -376,7 +376,7 @@ Specific to this feature:
 - New pure guards are **failing-first tested** in the correct vitest project. New interactive UI meets the S7
   bar (keyboard-operable, visible focus, `aria-live="off"` on `<output>`s, reduced-motion, no contrast
   regression).
-- Gate green: lint 0 · ≥659 tests · build clean, all three tails pasted.
+- Gate green: lint 0 · ≥666 tests · build clean, all three tails pasted.
 - The six frozen engine files are byte-unchanged (unless §3.2 deliberately chose an acoustic model and gave it
   its own skeptic pass — state which).
 - The S8 security posture is intact (CSP drift test green; any new numeric field is clamped in `sanitizeObject`).

@@ -70,7 +70,7 @@ say so.
 ## Commands
 
 - `npm run dev` — Vite (user usually has this running on :5173 already; autoPort will move yours)
-- `npm test` — vitest, **613 tests** across TWO projects, all green as of 2026-07-22. `|node|` (pure logic, 28 files) + `|dom|` (jsdom + axe, 3 files) — see `vite.config.ts` `test.projects`. S7/a11y added +273: `styles/__tests__/contrast.test.ts` 112 (WCAG maths + every real token pair, read from the REAL `tokens.css`/`THEMES` off disk); `canvas/__tests__/selection-cycle.test.ts` 26; `canvas/__tests__/placement.test.ts` 29; `app/__tests__/announce.test.ts` 37; `keyboard.test.ts` +21; `interaction.test.ts` +14; and 26 axe tests (`canvas-a11y` 10 / `panels.a11y` 11 / `shell.a11y` 5). S8 added +31: `engine/__tests__/hardening.test.ts` 18 (input-boundary: throw sites, aliasing, id-collision, bounds termination, `importRejection`) and `__tests__/security-headers.test.ts` 13 (CSP drift across the 3 copies + a source scan for policy-incompatible APIs). Ratchet: never let the count drop (95→126→140→181→239→245→296→322→340→613→**644**).
+- `npm test` — vitest, **666 tests** across TWO projects, all green as of 2026-07-23. `|node|` (pure logic, 28 files) + `|dom|` (jsdom + axe, 3 files) — see `vite.config.ts` `test.projects`. S7/a11y added +273: `styles/__tests__/contrast.test.ts` 112 (WCAG maths + every real token pair, read from the REAL `tokens.css`/`THEMES` off disk); `canvas/__tests__/selection-cycle.test.ts` 26; `canvas/__tests__/placement.test.ts` 29; `app/__tests__/announce.test.ts` 37; `keyboard.test.ts` +21; `interaction.test.ts` +14; and 26 axe tests (`canvas-a11y` 10 / `panels.a11y` 11 / `shell.a11y` 5). S8 added +53 net across the whole hardening + follow-on arc: `engine/__tests__/hardening.test.ts` (input-boundary — throw sites, aliasing, id-collision incl. rooms, bounds termination, `importRejection` incl. room-id length) and `__tests__/security-headers.test.ts` (CSP drift across the 3 copies + a source scan for policy-incompatible APIs incl. outerHTML/insertAdjacentHTML/document.write), plus the rotation-granularity and +Door/+Window-chip fixes (`keyboard.test.ts`/`interaction.test.ts`). Ratchet: never let the count drop (95→126→140→181→239→245→296→322→340→613→644→649→655→659→**666**).
 - `npm run lint` — **(S5)** flat ESLint (`eslint.config.js`): @eslint/js + typescript-eslint + eslint-plugin-react-hooks `recommended-latest`, scoped to `src`, ignoring `.claude`/`dist`/`coverage`. Clean (0 problems) as of 2026-07-19. exhaustive-deps is enforced; 5 documented survivor suppressions remain (SimCanvas:250/398 mount-once, Toast/Menu/LayoutGallery/ScenarioCompare mount-once) — see each file.
 - `npm run build` — tsc --noEmit + vite build (**403.5 kB / 130.1 kB gzip** JS + **43.19 kB / 8.24 kB gz** CSS + **1.31 kB** HTML after S8; JS +0.6 kB gz for `importRejection`/`cleanVec`/`clampSpan`, HTML 0.87→1.31 kB for the injected CSP meta. `src/security-headers.ts` is BUILD/TEST-ONLY — imported by `vite.config.ts`, never by a client module, so it does not reach the bundle (verified by grep against `dist/assets/*.js`). Pre-S8 was ~402 kB / 129.5 kB gz; JS +2.4 kB gz / CSS +0.19 kB gz vs S16 for `selection-cycle.ts`/`placement.ts`/`canvas-help.ts`/`announce.ts`/`useAnnouncer.ts`/`LiveAnnouncer.tsx` + the a11y CSS). `src/styles/contrast.ts` and everything under `src/test/` are TEST-ONLY and tree-shake out of the bundle. Self-hosted fonts are static assets in `public/fonts/` (7 Latin-subset woff2 + `LICENSE.md`, ~148 kB total, 2 preloaded ≈36 kB — NOT in the JS/CSS bundle). Run all four (lint/test/build) before claiming done.
 
@@ -381,6 +381,23 @@ legitimate 10-room house already costs ~200 ms. Bounding it needs an iteration c
   injects an inline `<script>` and asserts it is blocked AND raises a violation. Without it, a policy that failed
   to apply at all would look identical to a perfect one. Same discipline as the S7 focus-ring pixel-diff: a policy
   that parses is not a policy that enforces.
+- **A CSS `transform` used for POSITIONING is silently clobbered by any `transform` animation (post-S8):** the
+  +Door/+Window chip (`.wall-actions`) positioned itself with `transform: translate(-50%, calc(-100% - 10px))`,
+  but its `pop-in` keyframe also animates `transform` — and a running animation REPLACES the element's own
+  `transform` for its whole duration. So the chip rendered at the raw anchor while popping in, then jumped ~70px
+  the instant the animation ended: the "it runs away from the mouse" report. Fix: position with the INDEPENDENT
+  `translate` property, which composes with an animated `transform` instead of being overridden. And `getBoundingClientRect`
+  reports the *post-animation* rect, so this is invisible to an API-readback check — it only fell out of dumping
+  the element's position + opacity + `elementFromPoint` mid-interaction (the TRAP-5 discipline).
+- **An on-canvas overlay chip needs BOTH the relocate-guard and a pointerleave carve-out (post-S8):** the same
+  chip had two more independent kill switches. (a) The hover scan kept `prev.id === found.id ? prev : found`, so
+  crossing within the appear-radius of ANY nearer wall relocated it — deadly on a 15-wall floorplan; fix: test
+  the chip's own screen box (`insideRect`, pure/tested) BEFORE the nearest-wall test so a chip you're reaching for
+  can't be stolen. (b) The canvas's `onPointerLeave` cleared the hover unconditionally, and the chip overlays the
+  canvas, so moving onto "+ Door" fired pointerleave and destroyed it; fix: ignore a leave whose `relatedTarget`
+  is inside the chip, and have the chip clear itself on its own leave. Three independent causes, each sufficient
+  alone — the lesson is to drive the REAL trajectory end-to-end (place a door, assert count 0→1), not to stop at
+  the first fix that makes one probe pass.
 
 ## NEXT UP: read-only 3D view — see docs/3d-view-plan.md
 

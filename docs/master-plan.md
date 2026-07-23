@@ -1320,10 +1320,45 @@ proven, host plumbing is not.
 
 ---
 
-Next: **Session 12 (auto-detect walls accuracy overhaul)** — kickoff in
-[`kickoff-session-12.md`](kickoff-session-12.md). Unscheduled ideas, prioritized, live in
-[`ideas.md`](ideas.md) — including the owner-requested **guided tutorial mode** (P1, with a full
-design written up).
+---
+
+### Post-S8 owner-reported fixes + self-review closeout (2026-07-23) ✅
+
+Landed on `main` after the S8-remainder evidence block above, in order:
+
+- **Finer rotation** (`8511446`): the rotate step was 5°/tap — too coarse to sit furniture flush against a wall
+  (real walls sit at arbitrary angles; Maple Court's front wall is −11.73°, where a 5° step oscillates between
+  −10° and −15° and can never land). Now **1° fine / 15° with ⇧**, and the touch HUD gained **press-and-hold to
+  repeat** (tap = one step, hold = continuous sweep, whole hold = one undo entry; Delete opts out). Live-verified
+  in headless Chrome reading rotations back from IndexedDB: tap 1.000°, ⇧+E 15.000°, hold 1.2 s → 20.00°, 0.00°
+  after release.
+- **+Door/+Window chip made clickable** (`ddbd1f4`): the owner reported "i cant click it cause it runs away from
+  the mouse." THREE independent causes, each fatal alone — a `transform`-vs-`translate` clash under the `pop-in`
+  animation (the chip jumped ~70px), relocation to the nearest of 15 walls, and the canvas's `onPointerLeave`
+  destroying the chip the instant it was touched. All three fixed and proven end-to-end (place a door → scene
+  goes 0→1). New hard-won lessons recorded in `CLAUDE.md`.
+- **Self-review closeout** (`b94832c`, `004683c`): the S8 self-review's security skeptic (read late — I'd
+  extracted the journal at 6 of 8 agents) had a FINAL ACTION LIST I completed here. A false "low seconds" CPU
+  claim corrected to the measured ~157 s (and `MAX_IMPORT_SPEAKERS` tightened 200→64); rooms brought into
+  `seenIds` dedup and `importRejection`'s id-length cap (they bypassed both — a shared room id made `deleteRoom`
+  remove both areas, and a 5 MB room id sailed through); the "no modulepreload polyfill" claim corrected (Vite
+  bundles it; it just never runs); and the forbidden-API scan extended to `outerHTML`/`insertAdjacentHTML`/
+  `document.write`. All failing-first tested.
+
+Test ratchet across this arc: 644 → 649 → 655 → 659 → **666** (34 files). Frozen engine files byte-unchanged
+throughout. Owner's real layout verified byte-identical (`updatedAt` 1784738154671).
+
+Also written this session: **`docs/kickoff-door-swing.md`** — a full, ready-to-run kickoff for the
+owner-requested door width + swing feature (`ideas.md` item 3b), grounding the next session in the completed
+data-model + UX investigations and front-loading the acoustics/spec/skeptic pass that hit the usage limit.
+
+---
+
+Next: **the owner-requested door width + swing feature** — kickoff in
+[`kickoff-door-swing.md`](kickoff-door-swing.md) — is the natural continuation. Otherwise **Session 12
+(auto-detect walls accuracy overhaul)** in [`kickoff-session-12.md`](kickoff-session-12.md). Unscheduled ideas,
+prioritized, live in [`ideas.md`](ideas.md) — including the owner-requested **guided tutorial mode** (P1, with a
+full design written up) and the **grid-loop iteration cap** (P0 — safety + real per-edit slowness).
 
 ---
 
