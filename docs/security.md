@@ -30,8 +30,10 @@ frame-ancestors 'none'                        ← HTTP header only
 ```
 
 No nonce and no hash are needed: the build emits exactly one module script, zero
-inline `<script>`, zero inline `<style>`, and — because the app has no dynamic
-imports — no modulepreload polyfill.
+inline `<script>`, and zero inline `<style>`. Vite does bundle its modulepreload
+polyfill, but the app has no dynamic imports, so no `<link rel="modulepreload">`
+is ever inserted and the polyfill never runs — and `connect-src 'none'` would
+block its `fetch` even if it did.
 
 ### What the meta tag cannot do
 

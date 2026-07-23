@@ -237,6 +237,44 @@ describe('sanitizeScene — a colliding id must not move the active seat', () =>
     expect(scene.speakers).toHaveLength(2);
     expect(scene.pairs).toHaveLength(1);
   });
+
+  it('gives two rooms sharing an id distinct ids (so deleting one keeps the other)', () => {
+    // Rooms did not participate in `seenIds`, so two imported areas could share
+    // an id. `deleteRoom` filters by id, so removing one would silently remove
+    // BOTH. Rooms now dedup like every other entity.
+    const scene = sanitizeScene({
+      objects: [],
+      speakers: [],
+      listener: { pos: { x: 1, y: 1 }, z: 1.2 },
+      rooms: [
+        { id: 'dup', name: 'Kitchen', at: { x: 1, y: 1 } },
+        { id: 'dup', name: 'Den', at: { x: 2, y: 2 } },
+      ],
+    })!;
+    expect(scene.rooms).toHaveLength(2);
+    expect(new Set(scene.rooms!.map((r) => r.id)).size).toBe(2);
+    // Deleting the first id must leave exactly one area (the filter the app runs).
+    const firstId = scene.rooms![0].id;
+    expect(scene.rooms!.filter((r) => r.id !== firstId)).toHaveLength(1);
+  });
+
+  it('does not let a room id collide with an object or seat id', () => {
+    const scene = sanitizeScene({
+      objects: [{ kind: 'wall', id: 'shared', a: { x: 0, y: 0 }, b: { x: 1, y: 1 } }],
+      speakers: [],
+      listeners: [{ id: 'shared', name: 'Couch', pos: { x: 1, y: 1 }, z: 1.2 }],
+      activeListenerId: 'shared',
+      rooms: [{ id: 'shared', name: 'Den', at: { x: 2, y: 2 } }],
+    })!;
+    const ids = [
+      ...scene.objects.map((o) => o.id),
+      ...scene.listeners!.map((l) => l.id),
+      ...scene.rooms!.map((r) => r.id),
+    ];
+    expect(new Set(ids).size).toBe(ids.length); // all distinct
+    // The seat kept the original id (seats claim first); the active seat is intact.
+    expect(scene.activeListenerId).toBe(scene.listeners![0].id);
+  });
 });
 
 describe('importRejection — refuse hostile files, never mangle the user’s own', () => {
@@ -282,6 +320,21 @@ describe('importRejection — refuse hostile files, never mangle the user’s ow
         wrap([{ kind: 'wall', id: 'x'.repeat(5000), a: { x: 0, y: 0 }, b: { x: 1, y: 1 } }]),
       ),
     ).toMatch(/identifier longer/);
+  });
+
+  it('rejects an over-long ROOM id too (the tooLong scan skipped rooms)', () => {
+    // Room ids round-trip into IndexedDB forever exactly like object/speaker
+    // ids, and `rr.name` is already `.slice(0, 32)`, so leaving the id unbounded
+    // was the one string on a room record with no cap. A 5 MB room id used to
+    // sail straight through the very function whose rationale is "ids round-trip
+    // into IndexedDB forever".
+    const scene = wrap([], { rooms: [{ id: 'r'.repeat(5000), name: 'Den', at: { x: 1, y: 1 } }] });
+    expect(importRejection(scene)).toMatch(/identifier longer/);
+  });
+
+  it('accepts a room id at exactly the length cap', () => {
+    const scene = wrap([], { rooms: [{ id: 'r'.repeat(256), name: 'Den', at: { x: 1, y: 1 } }] });
+    expect(importRejection(scene)).toBeNull();
   });
 
   it('ACCEPTS the layouts the app itself produces', () => {

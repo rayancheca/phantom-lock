@@ -689,14 +689,22 @@ export function sanitizeScene(raw: unknown): Scene | null {
         const rr = r as { id?: unknown; name?: unknown; at?: { x?: unknown; y?: unknown } };
         const rw = (r as { w?: unknown }).w;
         const rh = (r as { h?: unknown }).h;
-        return typeof rr.name === 'string' && isNum(rr.at?.x) && isNum(rr.at?.y)
-          ? [{
-              id: typeof rr.id === 'string' ? rr.id : createId('room'),
-              name: rr.name.slice(0, 32),
-              at: { x: rr.at.x, y: rr.at.y },
-              ...(isNum(rw) && isNum(rh) && rw > 0.2 && rh > 0.2 ? { w: rw, h: rh } : {}),
-            }]
-          : [];
+        if (!(typeof rr.name === 'string' && isNum(rr.at?.x) && isNum(rr.at?.y))) return [];
+        // Rooms dedup against the shared id set too — otherwise two imported
+        // areas could share an id, and `deleteRoom` (which filters by id) would
+        // remove BOTH. Rooms come last of all (nothing references a room by id
+        // across entity types), so they never re-issue a seat/speaker/object id.
+        let id = typeof rr.id === 'string' ? rr.id : createId('room');
+        if (seenIds.has(id)) id = createId('room');
+        seenIds.add(id);
+        return [
+          {
+            id,
+            name: rr.name.slice(0, 32),
+            at: { x: rr.at.x, y: rr.at.y },
+            ...(isNum(rw) && isNum(rh) && rw > 0.2 && rh > 0.2 ? { w: rw, h: rh } : {}),
+          },
+        ];
       })
     : [];
   return { objects, speakers, pairs, listener, listeners: finalSeats, activeListenerId, underlay, rooms };
@@ -844,7 +852,11 @@ export function importRejection(scene: Scene): string | null {
   if (
     scene.objects.some((o) => tooLong(o.id)) ||
     scene.speakers.some((sp) => tooLong(sp.id)) ||
-    (scene.listeners ?? []).some((l) => tooLong(l.id))
+    (scene.listeners ?? []).some((l) => tooLong(l.id)) ||
+    // Rooms too — a room id round-trips into IndexedDB exactly like the others,
+    // and `rr.name` is already length-capped, so the id was the one string on a
+    // room record with no bound.
+    (scene.rooms ?? []).some((r) => tooLong(r.id))
   ) {
     return `That layout contains an identifier longer than ${MAX_IMPORT_ID_LEN} characters.`;
   }

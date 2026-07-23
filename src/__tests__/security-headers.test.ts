@@ -156,6 +156,11 @@ describe('the codebase stays compatible with the policy', () => {
     ['new Function — blocked by script-src', /\bnew\s+Function\s*\(/],
     ['dangerouslySetInnerHTML', /dangerouslySetInnerHTML/],
     ['innerHTML', /\.innerHTML\s*=/],
+    // docs/security.md §3 asserts these three are absent; enforce it rather than
+    // trust it, so the claim can't quietly become false.
+    ['outerHTML', /\.outerHTML\s*=/],
+    ['insertAdjacentHTML', /insertAdjacentHTML\s*\(/],
+    ['document.write', /document\.write\s*\(/],
   ];
 
   for (const [label, pattern] of forbidden) {

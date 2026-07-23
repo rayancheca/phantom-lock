@@ -22,8 +22,10 @@ export const CSP_DIRECTIVES: readonly string[] = [
   // Deny by default; every resource type is then opted in explicitly.
   "default-src 'none'",
   // One same-origin module script. No inline, no eval, no nonce needed:
-  // `dist/index.html` carries zero inline <script> and the app has zero dynamic
-  // imports, so Vite emits a single chunk and no modulepreload polyfill.
+  // `dist/index.html` carries zero inline <script>. Vite DOES emit its
+  // modulepreload polyfill into the bundle, but the app has zero dynamic imports
+  // so no `<link rel="modulepreload">` is ever inserted and the polyfill never
+  // runs — and `connect-src 'none'` would block its `fetch` even if it did.
   "script-src 'self'",
   // No 'unsafe-inline'. React 19 writes inline styles through CSSOM
   // (`style.setProperty`), never `setAttribute('style')`, so the ~31 elements
