@@ -131,6 +131,11 @@ export function makeOpening(
     role,
     height: role === 'door' ? 2.05 : 2.2,
     doorOpen: role === 'door' ? true : undefined,
+    // Swing defaults for a fresh door (plan-symbol only — no acoustic effect).
+    // Windows carry none (mirrors `doorOpen: undefined`).
+    swingDeg: role === 'door' ? 90 : undefined,
+    hingeEnd: role === 'door' ? 'start' : undefined,
+    swingSide: role === 'door' ? 'in' : undefined,
   };
 }
 

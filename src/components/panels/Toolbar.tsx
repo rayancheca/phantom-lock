@@ -18,6 +18,8 @@ const ICONS: Record<string, string> = {
   rect: 'M5 7 h14 v10 h-14 Z',
   circle: 'M12 5 a7 7 0 1 0 0.001 0 Z',
   speaker: 'M12 4 a8 8 0 0 1 8 8 M12 8 a4 4 0 0 1 4 4 M12 12 m-1.6 0 a1.6 1.6 0 1 0 3.2 0 a1.6 1.6 0 1 0 -3.2 0',
+  // Door-in-wall: two jambs, a leaf, and its quarter swing arc.
+  opening: 'M3 20 h4 M17 20 h4 M7 20 V8 M7 20 a10 10 0 0 0 10 -10',
   fit: 'M4 9 V4 h5 M15 4 h5 v5 M20 15 v5 h-5 M9 20 H4 v-5',
   marquee: 'M5 5 h4 M11 5 h4 M17 5 h2 v2 M19 11 v4 M19 17 v2 h-2 M13 19 h-4 M7 19 H5 v-2 M5 13 V9',
   lasso: 'M12 4 c4.5 0 8 2.2 8 5 s-3.5 5 -8 5 -8 -2.2 -8 -5 3.5 -5 8 -5 Z M8.5 13.5 C7 16 7 18.5 8.5 20.5',
@@ -93,14 +95,24 @@ export default function Toolbar({
         onClick={() => onTool('lasso')}
       />
       {isBuild && (
-        <ToolButton
-          icon={ICONS.wall}
-          label="Draw walls"
-          kbd="2"
-          title="Click corner by corner; click the first corner to close (2)"
-          active={mode === 'wall'}
-          onClick={() => onTool('wall')}
-        />
+        <>
+          <ToolButton
+            icon={ICONS.wall}
+            label="Draw walls"
+            kbd="2"
+            title="Click corner by corner; click the first corner to close (2)"
+            active={mode === 'wall'}
+            onClick={() => onTool('wall')}
+          />
+          <ToolButton
+            icon={ICONS.opening}
+            label="Door / window"
+            kbd="5"
+            title="Click a wall to cut a door · ⇧-click for a window (5)"
+            active={mode === 'opening'}
+            onClick={() => onTool('opening')}
+          />
+        </>
       )}
       {isFurnish && (
         <>

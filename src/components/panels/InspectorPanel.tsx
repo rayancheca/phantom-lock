@@ -6,6 +6,10 @@ import * as v from '../../engine/vec';
 import Icon from '../ui/Icon';
 import './panels.css';
 
+/** Real-world clear-opening widths (metres): 70 / 80 / 90 cm cover interior,
+ *  bedroom, and accessible doors — the common cases as one-click presets. */
+const DOOR_WIDTHS = [0.7, 0.8, 0.9] as const;
+
 interface Props {
   scene: Scene;
   selection: Selection;
@@ -324,7 +328,90 @@ export default function InspectorPanel({
         </>
       )}
 
-      {obj.kind === 'rect' && (
+      {obj.kind === 'rect' && obj.role === 'door' && (
+        <>
+          {/* Width first, bounded to real door sizes and labelled as the clear
+              opening (it doubles as the drawn swing radius). Depth (the leaf
+              thickness) and the free Rotation slider are deliberately dropped —
+              a door's rotation is wall-locked, and its "depth" is meaningless. */}
+          <NumField
+            label="Width (clear opening)"
+            value={obj.w}
+            min={0.6}
+            max={2.4}
+            onChange={(n) => patch({ w: n })}
+          />
+          <div className="preset-row" role="group" aria-label="Door width presets">
+            {DOOR_WIDTHS.map((w) => (
+              <button
+                key={w}
+                type="button"
+                className={`btn ${Math.abs(obj.w - w) < 0.005 ? 'btn-active' : ''}`}
+                aria-pressed={Math.abs(obj.w - w) < 0.005}
+                onClick={() => patch({ w })}
+              >
+                {Math.round(w * 100)} cm
+              </button>
+            ))}
+          </div>
+
+          <label className="field">
+            <span>Swing</span>
+            <input
+              type="range"
+              min={0}
+              max={180}
+              step={5}
+              value={obj.swingDeg ?? 90}
+              onChange={(e) => patch({ swingDeg: Number(e.target.value) })}
+            />
+            <output aria-live="off">{obj.swingDeg ?? 90}°</output>
+          </label>
+
+          <div className="preset-row" role="group" aria-label="Hinge side">
+            {(['start', 'end'] as const).map((he) => (
+              <button
+                key={he}
+                type="button"
+                className={`btn ${(obj.hingeEnd ?? 'start') === he ? 'btn-active' : ''}`}
+                aria-pressed={(obj.hingeEnd ?? 'start') === he}
+                onClick={() => patch({ hingeEnd: he })}
+              >
+                {he === 'start' ? 'Hinge left' : 'Hinge right'}
+              </button>
+            ))}
+          </div>
+
+          <div className="preset-row" role="group" aria-label="Swing direction">
+            {(['in', 'out'] as const).map((ss) => (
+              <button
+                key={ss}
+                type="button"
+                className={`btn ${(obj.swingSide ?? 'in') === ss ? 'btn-active' : ''}`}
+                aria-pressed={(obj.swingSide ?? 'in') === ss}
+                onClick={() => patch({ swingSide: ss })}
+              >
+                {ss === 'in' ? 'Swing in' : 'Swing out'}
+              </button>
+            ))}
+          </div>
+
+          <label className="field field-check">
+            <input
+              type="checkbox"
+              checked={obj.doorOpen !== false}
+              onChange={(e) => patch({ doorOpen: e.target.checked })}
+            />
+            <span>Door is open — sound passes through the doorway</span>
+          </label>
+          <p className="card-sub">
+            The swing arc draws the clearance the leaf needs — it doesn’t change the sound. Only open
+            vs closed does. f / ⇧F flip the hinge and swing side.
+          </p>
+        </>
+      )}
+
+      {obj.kind === 'rect' && obj.role !== 'door' && (
         <>
           <div className="field-pair">
             <NumField label="Width" value={obj.w} min={0.1} onChange={(n) => patch({ w: n })} />
@@ -342,16 +429,7 @@ export default function InspectorPanel({
             />
             <output aria-live="off">{Math.round((obj.rotation * 180) / Math.PI)}°</output>
           </label>
-          {obj.role === 'door' ? (
-            <label className="field field-check">
-              <input
-                type="checkbox"
-                checked={obj.doorOpen !== false}
-                onChange={(e) => patch({ doorOpen: e.target.checked })}
-              />
-              <span>Door is open — sound passes through the doorway</span>
-            </label>
-          ) : obj.role !== 'window' ? (
+          {obj.role !== 'window' ? (
             <label className="field field-check">
               <input
                 type="checkbox"

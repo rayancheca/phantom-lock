@@ -37,9 +37,9 @@ import type { Scenario } from '../compare/ScenarioCompare';
 import type { ToastData } from '../ui/Toast';
 import { initialMode, modeTheme, subStepForTool, type AppMode, type DesignSubStep, type ModeEntry } from './mode';
 import type { Deleted, DialogState } from './app-types';
-import { nudgeSelection, rotateSelectedRect, type KeyCommand } from './keyboard';
+import { flipDoor, nudgeSelection, rotateSelectedRect, type KeyCommand } from './keyboard';
 import { cycleOrder, describePosition, selectionForEntry, stepCycle } from '../canvas/selection-cycle';
-import { keyboardPlacementPoint, openingOnWall, placeSpeakerAt } from '../canvas/placement';
+import { keyboardPlacementPoint, openingNearPoint, openingOnWall, placeSpeakerAt } from '../canvas/placement';
 import { announcementFor, speakableUnits, type AnnounceInput } from './announce';
 import { useAnnouncer } from './hooks/useAnnouncer';
 import LiveAnnouncer from './LiveAnnouncer';
@@ -368,6 +368,18 @@ function AppInner({ initialStore, persistMode, showFirstRun, droppedCount }: App
     if (!preset) return;
     const b = sceneBounds(scene);
     const center: Vec2 = { x: (b.min.x + b.max.x) / 2, y: (b.min.y + b.max.y) / 2 };
+    // A door/window preset drops onto the nearest wall (correctly aligned) rather
+    // than floating unrotated in mid-room. `makeOpening` gives byte-identical
+    // defaults to the preset, so there is no dimensional drift; if the scene has
+    // no wall yet, fall through to the plain centre drop below.
+    if (preset.role === 'door' || preset.role === 'window') {
+      const res = openingNearPoint(scene, center, preset.role);
+      if (res) {
+        setScene(() => res.scene);
+        setSelection({ type: 'object', id: res.objectId });
+        return;
+      }
+    }
     const obj: SceneObject =
       preset.kind === 'circle'
         ? {
@@ -739,6 +751,20 @@ function AppInner({ initialStore, persistMode, showFirstRun, droppedCount }: App
         setSelection({ type: 'object', id: res.objectId });
         return;
       }
+      case 'flip-door': {
+        if (selection?.type !== 'object') return;
+        const next = flipDoor(scene, selection.id, cmd.field);
+        // `flipDoor` returns the SAME ref for a non-door — the dispatcher is
+        // scene-independent so it can't tell a door from a wall/furniture. Say
+        // so rather than push a no-op scene (which would still spawn an undo
+        // entry, the S14 lesson).
+        if (next === scene) {
+          setNotice('Select a door to flip its hinge or swing side.');
+          return;
+        }
+        setScene(() => next);
+        return;
+      }
     }
   };
 
@@ -859,6 +885,7 @@ function AppInner({ initialStore, persistMode, showFirstRun, droppedCount }: App
           onRoomDrawn={(zone) => setDialog({ kind: 'room-name', zone })}
           onSplitWall={splitWall}
           onActivateSeat={switchSeat}
+          onNotice={setNotice}
           appMode={appMode}
           designSubStep={designSubStep}
           onTool={applyTool}

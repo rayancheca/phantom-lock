@@ -13,7 +13,7 @@ effort — a small high-value item beats a large one.
 | 1 | Auto-detect walls accuracy overhaul | **P0 — broken feature** | 1 session *(scheduled as S12)* |
 | 2 | Grid-loop iteration cap | **P0 — safety + real slowness** | ½ session |
 | 3 | **Guided tutorial mode** | **P1 — high** | 1–2 sessions |
-| 3b | **Door width + swing angle** (owner-requested) | **P1 — high** | ½–1 session |
+| 3b | ✅ **Door width + swing angle** (owner-requested) — **DONE S17** (G2f corridors deferred) | ~~P1~~ done | — |
 | 4 | Snap furniture to a wall's angle | **P1 — high** | ½ session |
 | 5 | Read-only 3D view | P2 | 1 session *(plan exists)* |
 | 6 | Component/hook tests | P2 | 1 session |
@@ -153,10 +153,31 @@ and chapters 0–4 first; 5–7 can follow once the runner is proven.
 
 ---
 
-## 3b. Door width + swing angle — **P1 (high)** — owner-requested
+## 3b. Door width + swing angle — ✅ **DONE (S17, 2026-07-23)** — owner-requested
 
 > *Owner:* "i want it to be easy to make doors and windows and also select for [how] far
 > the door swings given its size".
+
+**SHIPPED in S17.** "Easy to make": a DESIGN/Build **door/window tool** (digit 5, click a wall,
+⇧=window, with a live ghost), plus the palette drop now lands on the nearest wall, plus the `d`/`w`
+keys and the (now overlay-gated, DESIGN-scoped) hover chip. "Select how far it swings given its
+size": a **door-specific inspector** (Width 0.6–2.4 "clear opening" + 70/80/90 cm presets, a Swing
+slider 0–180°, Hinge left/right + Swing in/out flips) + `f`/`⇧F` canvas flips, drawn on the plan as
+the classic leaf + quarter arc + jamb ticks in both themes. The swing is **plan-symbol only** (no
+acoustic effect — proven byte-identical across swing values by an equivalence test; the 6 frozen
+engine files are untouched); `doorOpen` remains the sole acoustic switch. See
+`docs/sessions/S17/design-pass.md` + the S17 progress-log Evidence block.
+
+**Deferred (own block): G2f — swing-aware furniture corridors in `arrange.ts`.** Today the arranger
+keeps a *rectangular* keep-out corridor at each door; a swing-aware version would carve the quarter-
+circle swept footprint so furniture never lands where the leaf opens. Named acceptance: (1)
+`arrange`/`suggestInventory` place no furniture intersecting a door's swept arc (given
+`swingDeg`/`hingeEnd`/`swingSide`); (2) `swingDeg:0` behaves exactly as today; (3) a door+sofa test
+asserts the sofa lands clear of the arc; (4) existing corridor tests stay green. Swing stays
+render-only until then. Also noted: a door's rotation is wall-locked in the inspector + `q`/`e`, but
+dragging a door to a differently-angled wall re-snaps rotation — auto-reorient-on-drag is unchanged.
+
+<details><summary>Original pre-S17 groundwork (kept for history)</summary>
 
 The "easy to make" half was a bug and is **fixed** (the chip was unclickable for three separate
 reasons — see the `fix: make the +Door/+Window chip clickable` commit). The **swing** half is not
@@ -204,6 +225,11 @@ acoustically), and lists the ranked change set + minimum shippable slice. Start 
 model is binary. A swing control that looks physical but changes nothing acoustically would be a
 decorative lie; an elaborate partial-transmission model would be unverifiable. Resolve that before
 writing code, and be explicit in the UI about what it does and does not affect.
+
+*(S17 resolution: PLAN-ONLY. The swing draws the leaf's clearance and changes no acoustics; the UI
+says so verbatim. `doorOpen` stays the sole acoustic switch — the honest, testable model.)*
+
+</details>
 
 ## 4. Snap furniture to a wall's angle — **P1 (high)**
 

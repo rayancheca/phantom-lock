@@ -11,6 +11,7 @@ import type { AudioMetrics, PairMetrics } from '../../engine/stereo';
 import type { Proposal } from '../../engine/optimize';
 import type { ListeningField } from '../../engine/bestspot';
 import { rectCorners } from '../../engine/geometry';
+import { doorSwing } from './door-swing';
 import { CAPTURE_RADIUS, wallKeptSpans } from '../../engine/raytrace';
 import { SPEAKER_MODELS } from '../../engine/speakers';
 import { activeListener, sceneBounds, sceneListeners } from '../../engine/scene';
@@ -533,32 +534,74 @@ function drawObject(
   const isDoor = o.kind === 'rect' && o.role === 'door';
 
   if (isDoor && o.kind === 'rect') {
-    // Classic plan symbol: leaf + quarter swing arc from the hinge jamb.
-    const c = rectCorners(o);
-    const jambH = v.lerp(c[0], c[3], 0.5); // hinge side
-    const jambL = v.lerp(c[1], c[2], 0.5); // latch side
-    const hinge = w2s(jambH, view);
+    // Classic plan symbol: two jamb ticks + a leaf + a quarter swing arc. The
+    // hinge/side/angle math lives in the pure `doorSwing` helper (node-tested);
+    // the swing is a PLAN SYMBOL ONLY — it never touches acoustics.
+    const sw = doorSwing(o);
+    const hinge = w2s(sw.hingeWorld, view);
+    const latch = w2s(sw.latchWorld, view);
     const open = o.doorOpen !== false;
-    const along = Math.atan2(jambL.y - jambH.y, jambL.x - jambH.x);
-    const leafAngle = open ? along - Math.PI / 2.6 : along;
-    const rPx = o.w * view.scale;
+    const rPx = sw.radiusM * view.scale;
+    const drawSwing = sw.swingDeg > 0;
+    const leafScreen = sw.leafAngle + view.rot;
+
     ctx.strokeStyle = selected ? T.select : T.wall;
-    ctx.lineWidth = 2.5;
+
+    // Jamb ticks at BOTH opening ends, perpendicular to the wall. Always drawn,
+    // so a door is NEVER mistaken for a plain wall segment — in particular an
+    // OPEN 0°-swing door (which draws no leaf) still reads as a doorway.
+    const tick = Math.max(4, 0.07 * view.scale);
+    const nx = Math.cos(sw.alongAngle + view.rot + Math.PI / 2);
+    const ny = Math.sin(sw.alongAngle + view.rot + Math.PI / 2);
+    ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(hinge.x, hinge.y);
-    ctx.lineTo(hinge.x + Math.cos(leafAngle + view.rot) * rPx, hinge.y + Math.sin(leafAngle + view.rot) * rPx);
+    for (const j of [hinge, latch]) {
+      ctx.moveTo(j.x - nx * tick, j.y - ny * tick);
+      ctx.lineTo(j.x + nx * tick, j.y + ny * tick);
+    }
     ctx.stroke();
-    if (open) {
-      ctx.setLineDash([3, 4]);
-      ctx.lineWidth = 1;
+
+    // Leaf: a CLOSED door always draws its (dashed) leaf standing in the frame;
+    // an OPEN door draws the swung leaf only when it actually swings — an open
+    // 0°-swing door is a bare passage, so the gap stays open rather than being
+    // filled by a flush leaf that would look exactly like an unbroken wall.
+    if (!open || drawSwing) {
+      ctx.lineWidth = 2.5;
+      if (!open) ctx.setLineDash([4, 3]);
       ctx.beginPath();
-      ctx.arc(hinge.x, hinge.y, rPx, leafAngle + view.rot, along + view.rot, false);
+      ctx.moveTo(hinge.x, hinge.y);
+      ctx.lineTo(hinge.x + Math.cos(leafScreen) * rPx, hinge.y + Math.sin(leafScreen) * rPx);
       ctx.stroke();
       ctx.setLineDash([]);
     }
+
+    // Clearance arc — drawn whenever the door has a swing, INDEPENDENT of
+    // doorOpen (so the clearance is visible even on a closed door). arcStart/End
+    // are ordered so the sweep is the minor (swingDeg) wedge in both directions.
+    if (drawSwing) {
+      ctx.setLineDash([3, 4]);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(hinge.x, hinge.y, rPx, sw.arcStart + view.rot, sw.arcEnd + view.rot, false);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // Blueprint mode: dimension the opening + swing like a real floor plan.
+    // Theme colour via T.ink (never a hardcoded literal — the S13 trap).
+    if (st.theme === 'plan' && view.scale >= 22 && !selected) {
+      const m = w2s(o.center, view);
+      labelPill(ctx, T, `${o.w.toFixed(2)} m · ${sw.swingDeg}°`, m.x, m.y - 16, T.ink);
+    }
     if (selected) {
       const p = w2s(o.center, view);
-      labelPill(ctx, T, `${o.label} · ${open ? 'open — sound passes' : 'closed'}`, p.x, p.y + 20);
+      labelPill(
+        ctx,
+        T,
+        `${o.label} · ${o.w.toFixed(2)} m · ${sw.swingDeg}° · ${open ? 'open — sound passes' : 'closed'}`,
+        p.x,
+        p.y + 20,
+      );
     }
     return;
   }

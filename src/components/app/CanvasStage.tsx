@@ -45,6 +45,8 @@ interface CanvasStageProps {
   onRoomDrawn: (zone: { center: Vec2; w: number; h: number }) => void;
   onSplitWall: (id: string, at: Vec2) => void;
   onActivateSeat: (id: string) => void;
+  /** Transient hint (e.g. the opening tool clicked off every wall). */
+  onNotice: (msg: string) => void;
 
   appMode: AppMode;
   designSubStep: DesignSubStep;
@@ -92,8 +94,11 @@ export default function CanvasStage(p: CanvasStageProps) {
   // overlay OR while drawing walls — mirroring the keyboard dispatcher's gates
   // (handleKeydown blocks these commands on overlayOpen / wall mode).
   const sel = p.selection;
-  const canRotateSel =
-    sel?.type === 'object' && p.scene.objects.find((o) => o.id === sel.id)?.kind === 'rect';
+  const selObj = sel?.type === 'object' ? p.scene.objects.find((o) => o.id === sel.id) : undefined;
+  // Doors are excluded: their rotation is wall-locked (no inspector rotation,
+  // and `rotateSelectedRect` no-ops on them), so the touch HUD must not offer a
+  // rotate button that would silently do nothing.
+  const canRotateSel = selObj?.kind === 'rect' && selObj.role !== 'door';
   const hudHidden = p.overlayOpen || p.mode === 'wall';
   const photoRef = useRef<HTMLInputElement>(null);
   return (
@@ -119,6 +124,7 @@ export default function CanvasStage(p: CanvasStageProps) {
         onRoomDrawn={p.onRoomDrawn}
         onSplitWall={p.onSplitWall}
         onActivateSeat={p.onActivateSeat}
+        onNotice={p.onNotice}
       />
       <Toolbar
         appMode={p.appMode}

@@ -70,9 +70,9 @@ say so.
 ## Commands
 
 - `npm run dev` — Vite (user usually has this running on :5173 already; autoPort will move yours)
-- `npm test` — vitest, **666 tests** across TWO projects, all green as of 2026-07-23. `|node|` (pure logic, 28 files) + `|dom|` (jsdom + axe, 3 files) — see `vite.config.ts` `test.projects`. S7/a11y added +273: `styles/__tests__/contrast.test.ts` 112 (WCAG maths + every real token pair, read from the REAL `tokens.css`/`THEMES` off disk); `canvas/__tests__/selection-cycle.test.ts` 26; `canvas/__tests__/placement.test.ts` 29; `app/__tests__/announce.test.ts` 37; `keyboard.test.ts` +21; `interaction.test.ts` +14; and 26 axe tests (`canvas-a11y` 10 / `panels.a11y` 11 / `shell.a11y` 5). S8 added +53 net across the whole hardening + follow-on arc: `engine/__tests__/hardening.test.ts` (input-boundary — throw sites, aliasing, id-collision incl. rooms, bounds termination, `importRejection` incl. room-id length) and `__tests__/security-headers.test.ts` (CSP drift across the 3 copies + a source scan for policy-incompatible APIs incl. outerHTML/insertAdjacentHTML/document.write), plus the rotation-granularity and +Door/+Window-chip fixes (`keyboard.test.ts`/`interaction.test.ts`). Ratchet: never let the count drop (95→126→140→181→239→245→296→322→340→613→644→649→655→659→**666**).
+- `npm test` — vitest, **711 tests** across TWO projects, all green as of 2026-07-23 (S17 doors+swing added +45: `engine/__tests__/door-swing-migration.test.ts` 5 · `engine/__tests__/door-swing-equivalence.test.ts` 4 (swing is acoustically inert — `traceScene`/`computeAudio`/`bestListeningSpot` byte-identical across swing, open+closed, with a `doorOpen` negative control) · `canvas/__tests__/door-swing.test.ts` 8 (the pure hinge/side/angle math incl. the arc-ordering guard) · `panels/__tests__/InspectorPanel.door.test.tsx` 7 (jsdom) · plus additions to `keyboard.test.ts`/`mode.test.ts`/`interaction.test.ts`/`placement.test.ts`/`canvas-a11y.test.tsx`). `|node|` (pure logic, 28 files) + `|dom|` (jsdom + axe, 3 files) — see `vite.config.ts` `test.projects`. S7/a11y added +273: `styles/__tests__/contrast.test.ts` 112 (WCAG maths + every real token pair, read from the REAL `tokens.css`/`THEMES` off disk); `canvas/__tests__/selection-cycle.test.ts` 26; `canvas/__tests__/placement.test.ts` 29; `app/__tests__/announce.test.ts` 37; `keyboard.test.ts` +21; `interaction.test.ts` +14; and 26 axe tests (`canvas-a11y` 10 / `panels.a11y` 11 / `shell.a11y` 5). S8 added +53 net across the whole hardening + follow-on arc: `engine/__tests__/hardening.test.ts` (input-boundary — throw sites, aliasing, id-collision incl. rooms, bounds termination, `importRejection` incl. room-id length) and `__tests__/security-headers.test.ts` (CSP drift across the 3 copies + a source scan for policy-incompatible APIs incl. outerHTML/insertAdjacentHTML/document.write), plus the rotation-granularity and +Door/+Window-chip fixes (`keyboard.test.ts`/`interaction.test.ts`). Ratchet: never let the count drop (95→126→140→181→239→245→296→322→340→613→644→649→655→659→666→**711**).
 - `npm run lint` — **(S5)** flat ESLint (`eslint.config.js`): @eslint/js + typescript-eslint + eslint-plugin-react-hooks `recommended-latest`, scoped to `src`, ignoring `.claude`/`dist`/`coverage`. Clean (0 problems) as of 2026-07-19. exhaustive-deps is enforced; 5 documented survivor suppressions remain (SimCanvas:250/398 mount-once, Toast/Menu/LayoutGallery/ScenarioCompare mount-once) — see each file.
-- `npm run build` — tsc --noEmit + vite build (**403.5 kB / 130.1 kB gzip** JS + **43.19 kB / 8.24 kB gz** CSS + **1.31 kB** HTML after S8; JS +0.6 kB gz for `importRejection`/`cleanVec`/`clampSpan`, HTML 0.87→1.31 kB for the injected CSP meta. `src/security-headers.ts` is BUILD/TEST-ONLY — imported by `vite.config.ts`, never by a client module, so it does not reach the bundle (verified by grep against `dist/assets/*.js`). Pre-S8 was ~402 kB / 129.5 kB gz; JS +2.4 kB gz / CSS +0.19 kB gz vs S16 for `selection-cycle.ts`/`placement.ts`/`canvas-help.ts`/`announce.ts`/`useAnnouncer.ts`/`LiveAnnouncer.tsx` + the a11y CSS). `src/styles/contrast.ts` and everything under `src/test/` are TEST-ONLY and tree-shake out of the bundle. Self-hosted fonts are static assets in `public/fonts/` (7 Latin-subset woff2 + `LICENSE.md`, ~148 kB total, 2 preloaded ≈36 kB — NOT in the JS/CSS bundle). Run all four (lint/test/build) before claiming done.
+- `npm run build` — tsc --noEmit + vite build (**410.66 kB / 132.32 kB gzip** JS + **43.18 kB / 8.24 kB gz** CSS + **1.31 kB** HTML after S17; JS +~2.5 kB gz vs S8's 130.1 for the new `canvas/door-swing.ts` module + the door inspector branch + the opening tool. Pre-S8 baseline for context: **403.5 kB / 130.1 kB gz**; JS +0.6 kB gz for `importRejection`/`cleanVec`/`clampSpan`, HTML 0.87→1.31 kB for the injected CSP meta. `src/security-headers.ts` is BUILD/TEST-ONLY — imported by `vite.config.ts`, never by a client module, so it does not reach the bundle (verified by grep against `dist/assets/*.js`). Pre-S8 was ~402 kB / 129.5 kB gz; JS +2.4 kB gz / CSS +0.19 kB gz vs S16 for `selection-cycle.ts`/`placement.ts`/`canvas-help.ts`/`announce.ts`/`useAnnouncer.ts`/`LiveAnnouncer.tsx` + the a11y CSS). `src/styles/contrast.ts` and everything under `src/test/` are TEST-ONLY and tree-shake out of the bundle. Self-hosted fonts are static assets in `public/fonts/` (7 Latin-subset woff2 + `LICENSE.md`, ~148 kB total, 2 preloaded ≈36 kB — NOT in the JS/CSS bundle). Run all four (lint/test/build) before claiming done.
 
 **GitHub (as of 2026-07-19):** the repo is public at **github.com/rayancheca/phantom-lock** (`origin`, default
 branch `main`). The owner wants visible contribution activity, so **push `main` after every session lands the
@@ -125,7 +125,19 @@ is unchanged. Do not re-tighten this without the owner saying so.
 - **`components/panels/TuneToolsCard.tsx` (S14/UX-2)** — the TUNE-context home for the (de-duplicated) TV/Music writer (`.mode-toggle`) + Suggest placement, re-homed out of the global header (both were inert in DESIGN). MetricsPanel/OptimizeDialog now only MIRROR `settings.tvAnchor`.
 - **`components/canvas/SelectionActions.tsx` (S14/UX-2)** — on-selection touch HUD (rotate/nudge/delete) shown ONLY on `(hover:none) and (pointer:coarse)`, pinned above the mobile bottom rail. Dispatches the SAME `runKeyCommand` commands as the keyboard (zero logic dup). `role="group"`; rotate disabled unless the selection is a rect; delete disabled for a listener; HIDDEN when `overlayOpen || mode==='wall'` (so its buttons can't fire a command the keyboard path blocks).
 - `components/app/AppHeader.tsx` — **(S14/UX-2) rescoped to ONLY global chrome:** brand (dual-span wordmark → `PL` monogram ≤560px, `aria-label="Phantom Lock"`) + pinned layout switcher + `<SegmentSwitch variant="mode">` + undo/redo. TV/Music + Compare + Suggest MOVED into TUNE.
-- `components/panels/Toolbar.tsx` — floating dock; per-mode tools (DESIGN/Build: wall · DESIGN/Furnish: rect/circle · TUNE: speaker) + Fit. **(S14) theme-toggle + undo/redo removed** (theme is the mode's; undo/redo moved to the header). At ≤960px the whole `.toolstrip` un-floats to a bottom, full-width, horizontally-scrollable rail (CSS-only, no JSX change).
+- **Doors & swing (S17):** a door is a `RectObj` with `role:'door'` + `doorOpen?` + the PLAN-ONLY swing fields
+  `swingDeg?`(0–180, default 90)/`hingeEnd?`('start'|'end')/`swingSide?`('in'|'out') — clamped in `scene.ts`
+  `sanitizeObject`, defaulted in `interaction.ts` `makeOpening`. **`components/canvas/door-swing.ts`** is the pure,
+  node-tested hinge/side/angle math (`doorSwing(o)` → `{hingeWorld, latchWorld, alongAngle, leafAngle, arcStart,
+  arcEnd, radiusM, swingDeg}`); `render.ts` draws jamb ticks + leaf (solid=open, dashed=closed) + the swing arc from
+  it. The **`InspectorPanel` door branch** (before the generic rect branch) shows Width(0.6–2.4, "clear opening")
+  + 70/80/90 cm presets + a Swing slider(`<output aria-live=off>`) + Hinge/Swing `aria-pressed` flip pairs(role=group,
+  NOT radiogroup) + the doorOpen checkbox, and DROPS Depth/Rotation (keeps shared Height+Absorption). Creation: the
+  DESIGN/Build **`opening` tool** (digit 5, click a wall — ⇧=window — placing on pointer-DOWN since a door's h:0.1 is
+  below the draw-commit floor; ghost via the canvas `preview` path), the `d`/`w` keys on a selected wall, the hover
+  chip (DESIGN+`!overlayOpen`-gated), and the Furnish palette (`addPreset`→`placement.ts` `openingNearPoint`, nearest
+  wall). `f`/`⇧F` flip hinge/swing (`keyboard.ts` `flipDoor`, DESIGN-scoped, same-ref no-op on a non-door).
+- `components/panels/Toolbar.tsx` — floating dock; per-mode tools (DESIGN/Build: wall · **door/window (S17)** · DESIGN/Furnish: rect/circle · TUNE: speaker) + Fit. **(S14) theme-toggle + undo/redo removed** (theme is the mode's; undo/redo moved to the header). At ≤960px the whole `.toolstrip` un-floats to a bottom, full-width, horizontally-scrollable rail (CSS-only, no JSX change).
 - `components/app/Sidebar.tsx` — mode-driven column: DESIGN leads with the Build/Furnish `<SegmentSwitch>` (then Guide + UnderlayCard/FurniturePalette); **(S15/UX-3) TUNE leads with the pinned `<VerdictHero>`** (then `<TuneToolsCard>` + Guide + Speakers + Seats + Audio + Controls + Echogram). Inspector always. Threads `canCompare` (from App) to `ListenerCard`. `GuidePanel` re-keyed to `build`/`furnish`/`tune`. `.sidebar` gained `scroll-padding-top:150px` so a keyboard-focused card scrolls clear of the sticky hero (WCAG 2.4.11).
 - `components/ui/` — Icon (no emoji anywhere! + `redo`/`rotate` added S14), Dialog (focus trap/restore), Toast (single-slot, hover-pause), Menu (full ARIA keyboard contract)
 - `components/panels/` — sidebar cards; **(S15/UX-3) `MetricsPanel` is now a per-pair DETAIL view under the `VerdictHero`**: the four metrics (ITD / level / angle / lock) render as a **Geist-Mono `tabular-nums` spec sheet** (`SpecRow`/`.spec-sheet` — dotted-underline labels as the visible affordance, right-aligned value column, tone fills on the 3 status rows + `--signal` on the Lock row), keeping the `<details>` "Distances & detail". Its inline per-pair `.verdict` block now renders ONLY when `pairCount > 1` (multi-pair detail); a single pair shows the hero as the sole verdict, so no double-verdict. Imports the shared `causeSentence` from `verdict.ts` (one definition).
@@ -398,6 +410,47 @@ legitimate 10-room house already costs ~200 ms. Bounding it needs an iteration c
   is inside the chip, and have the chip clear itself on its own leave. Three independent causes, each sufficient
   alone — the lesson is to drive the REAL trajectory end-to-end (place a door, assert count 0→1), not to stop at
   the first fix that makes one probe pass.
+
+- **Door swing is PLAN-SYMBOL ONLY — verified by an adversarial acoustics trace, not assumed (S17):** doors gained
+  `swingDeg?`(0–180, default 90) / `hingeEnd?`('start'|'end') / `swingSide?`('in'|'out') on `RectObj`, drawn by
+  `canvas/door-swing.ts` (pure hinge/angle math) + `render.ts`, edited in the door-only `InspectorPanel` branch, and
+  flipped by `f`/`⇧F` (`flipDoor`, DESIGN-scoped). The engine NEVER reads them: all 12 door read-sites bottom out in
+  `{role, doorOpen, w, rectCorners(center,w,h,rotation), absorption, height}` — `doorOpen` stays the SOLE acoustic
+  switch, `w` is the clear opening that cuts the wall gap. `door-swing-equivalence.test.ts` proves `traceScene`/
+  `computeAudio`/`bestListeningSpot` are byte-identical across swing values (open AND closed) with a `doorOpen`
+  negative control; the 6 frozen engine files are byte-unchanged. The ONE intended visible delta for a migrated door:
+  its OPEN leaf standardises from the arbitrary `Math.PI/2.6`≈69.23° to 90° (hinge jamb + swing side preserved).
+- **`ctx.arc(…, false)` with `startAngle > endAngle` draws the REFLEX arc, not the minor wedge (S17):** the door
+  clearance arc naively called `arc(hinge, r, leafAngle, alongAngle, false)`. For `swingSide:'out'` the leaf angle
+  exceeds `alongAngle`, so anticlockwise=false swept the `360−swingDeg` reflex arc — a 90°-out door drew a ~270°
+  near-circle. Invisible to any test that only checks `getComputedStyle`/DOM (this is raw canvas), and my first
+  screenshot CAPTURED it but I under-read it — the code-reviewer caught it. Fix: `doorSwing` returns
+  `arcStart=min(leafAngle,alongAngle)`, `arcEnd=max(...)`; since `|leafAngle−alongAngle| = swingRad ≤ π`, min→max is
+  always the swing wedge. Guarded by a node test asserting `arcEnd−arcStart == swingDeg` for both directions × several
+  angles. Lesson: for a canvas drawing bug, extract the geometry into a pure helper and TEST it — a screenshot alone
+  needs careful reading and a code reviewer's eye.
+- **A 0°-swing OPEN door was pixel-identical to an unbroken wall (S17):** at `swingDeg:0`+open the leaf drew flush,
+  solid, in `T.wall`, exactly filling the gap `wallKeptSpans` had cut — and in the `sound` theme there is no
+  dimension pill, ever, so the door vanished. Silent-failure-hunter caught it. Fix: draw JAMB TICKS at both opening
+  ends ALWAYS (a door is never mistaken for a wall), and draw the leaf only when it's off the wall — an open door
+  shows the swung leaf only if `swingDeg>0` (an open 0° door is a bare ticked passage), a closed door always shows its
+  dashed leaf. Lesson: a control that exposes a value (slider min=0) must render every value it allows without
+  colliding with another symbol.
+- **Door creation is a DESIGN concern — scope every route to it, and the chip's `overlayOpen` gate was a real fix
+  (S17):** the new `opening` tool (ToolMode `'opening'`, `DIGIT_TOOL.design['5']`, `subStepForTool→'build'`), the
+  `d`/`w` keys, and the hover chip are now all DESIGN-only. The chip's render+scan gate gained `theme==='plan' &&
+  !overlayOpen` — not just tidiness: `insertOpening` calls `onScene` directly, bypassing the keyboard `overlayOpen`
+  gate, so +Door/+Window could mutate the scene behind an open OptimizeDialog/ArrangeDialog (the S14
+  mutate-through-a-dialog class). A door's rotation is wall-locked: the inspector drops the rotation slider, so
+  `rotateSelectedRect` + `canRotateSel` now no-op/disable on doors (`q`/`e` + touch HUD) — a "wall-locked" claim must
+  be ENFORCED, not just commented, or `q`/`e` silently detaches the door from its wall with no way to see the drift.
+- **Headless canvas click-drive: activate tools via the DOM button, not a synthetic digit key (S17):** in the
+  fresh-profile CDP harness a synthesised `'5'` keydown did NOT activate the opening tool (the active tool stayed
+  Move), and a canvas click then did nothing. Clicking the real `.strip-btn` "Door / window" button worked, and the
+  subsequent wall click placed a door (IDB doors 6→7, read back). Also: seed a disposable layout by navigating FIRST
+  to a same-origin BLANK HTML page (not the app, not a `.md` served as octet-stream — that DENIES localStorage),
+  setting `localStorage['phantom-lock:v2']`, THEN navigating to the app so `loadFromIDB` is empty and
+  `initialStoreForBoot` loads it; booting the app first seeds Maple Court into IDB and your localStorage is ignored.
 
 ## NEXT UP: read-only 3D view — see docs/3d-view-plan.md
 

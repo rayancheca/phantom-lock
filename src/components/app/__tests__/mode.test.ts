@@ -49,7 +49,7 @@ const scene = (objects: SceneObject[], speakerCount = 0): Scene =>
     activeListenerId: 'seat-1',
   } as unknown as Scene);
 
-const ALL_TOOLS: ToolMode[] = ['select', 'wall', 'rect', 'circle', 'speaker', 'calibrate', 'room', 'marquee', 'lasso'];
+const ALL_TOOLS: ToolMode[] = ['select', 'wall', 'rect', 'circle', 'speaker', 'calibrate', 'room', 'marquee', 'lasso', 'opening'];
 
 // --- modeTheme (the single theme controller) ------------------------------
 
@@ -79,7 +79,7 @@ describe('toolMode', () => {
 // --- subStepForTool -------------------------------------------------------
 
 describe('subStepForTool', () => {
-  it.each(['wall', 'room', 'calibrate'] as ToolMode[])('%s belongs to build', (tool) => {
+  it.each(['wall', 'room', 'calibrate', 'opening'] as ToolMode[])('%s belongs to build', (tool) => {
     expect(subStepForTool(tool)).toBe('build');
   });
   it.each(['rect', 'circle'] as ToolMode[])('%s belongs to furnish', (tool) => {
@@ -102,9 +102,12 @@ describe('isToolInMode', () => {
   it('DESIGN hides the speaker tool', () => {
     expect(isToolInMode('speaker', 'design')).toBe(false);
   });
-  it.each(['wall', 'rect', 'circle', 'room', 'calibrate'] as ToolMode[])('TUNE hides the DESIGN tool %s', (tool) => {
-    expect(isToolInMode(tool, 'tune')).toBe(false);
-  });
+  it.each(['wall', 'rect', 'circle', 'room', 'calibrate', 'opening'] as ToolMode[])(
+    'TUNE hides the DESIGN tool %s',
+    (tool) => {
+      expect(isToolInMode(tool, 'tune')).toBe(false);
+    },
+  );
   it('TUNE shows the speaker tool', () => {
     expect(isToolInMode('speaker', 'tune')).toBe(true);
   });
@@ -123,11 +126,13 @@ describe('digitTool', () => {
     ['2', 'wall'],
     ['3', 'rect'],
     ['4', 'circle'],
+    ['5', 'opening'],
   ] as const)('DESIGN digit %s selects %s', (digit, tool) => {
     expect(digitTool(digit, 'design')).toBe(tool);
   });
-  it('DESIGN digit 5 is unbound (speaker is TUNE-only)', () => {
-    expect(digitTool('5', 'design')).toBeNull();
+  it('DESIGN digit 5 is the opening tool, TUNE digit 5 is the speaker (no cross-mode leak)', () => {
+    expect(digitTool('5', 'design')).toBe('opening');
+    expect(digitTool('5', 'tune')).toBe('speaker');
   });
   it.each([
     ['1', 'select'],

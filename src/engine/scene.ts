@@ -494,6 +494,18 @@ function sanitizeObject(raw: unknown, seenIds: Set<string>): SceneObject | null 
       role:
         o.role === 'tv' ? 'tv' : o.role === 'window' ? 'window' : o.role === 'door' ? 'door' : 'furniture',
       doorOpen: o.role === 'door' ? o.doorOpen !== false : undefined,
+      // Door swing is PLAN-SYMBOL ONLY (no engine site reads it), but the
+      // sanitizer is allow-list reconstruction — a field not copied here is
+      // dropped on the first save→load, so the swing would silently reset.
+      // `swingDeg` is clamped finite to [0,180]; unlike the S8 `r:1e308` class
+      // it feeds no size/coordinate (`rPx` reads `w`, `sceneBounds` reads
+      // `rectCorners`), so it cannot enlarge the scene box. Both enums are
+      // 2-value allow-lists → junk falls to the default. Non-door rects get
+      // `undefined`, mirroring `doorOpen`, so windows/furniture carry no dead keys.
+      swingDeg:
+        o.role === 'door' ? (isNum(o.swingDeg) ? Math.max(0, Math.min(180, o.swingDeg)) : 90) : undefined,
+      hingeEnd: o.role === 'door' ? (o.hingeEnd === 'end' ? 'end' : 'start') : undefined,
+      swingSide: o.role === 'door' ? (o.swingSide === 'out' ? 'out' : 'in') : undefined,
       height: clampH(o.height, 0.9),
     };
   }

@@ -12,6 +12,7 @@ export const MODE_HINT: Record<ToolMode, string> = {
   room: 'Drag a box over part of the plan to label it as an area · then name it (Kitchen, Bedroom…)',
   marquee: 'Drag a box to select everything inside · ⇧ adds to the selection',
   lasso: 'Draw around objects to select them · ⇧ adds to the selection',
+  opening: 'Click a wall to cut a door · ⇧-click for a window · d / w also work',
 };
 
 /** Header DESIGN/TUNE switch items. */

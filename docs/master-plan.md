@@ -1403,3 +1403,61 @@ full design written up) and the **grid-loop iteration cap** (P0 — safety + rea
 >   Screenshots section is an explicit "coming soon" **placeholder** (which the repo's own
 >   standard bans outright), its walkthrough describes the pre-S13/S14 UI, and it claims
 >   140 tests.
+
+### S17 — Doors & Windows: easy placement + door swing (2026-07-23) ✅
+
+Implements `docs/ideas.md` **3b** (owner-requested: "make doors/windows easy + select how far the
+door swings given its size"). Heavy by the objective triggers (data model + migration + sanitizer +
+>1 file), so it ran under the full protocol.
+
+**What shipped (Group 1 + Group 2a–e):**
+- **Data model** — `RectObj` gains door-only `swingDeg?`(0–180, default 90)/`hingeEnd?`('start'|'end')/
+  `swingSide?`('in'|'out'); clamped in `scene.ts` `sanitizeObject` (allow-list, finite, `undefined` for
+  non-doors), defaulted in `makeOpening`. `ToolMode` gains `'opening'`.
+- **Render** — new pure `canvas/door-swing.ts` (`doorSwing(o)`: hinge/latch/along/leaf/arc math);
+  `render.ts` replaces the hardcoded `Math.PI/2.6` with `swingDeg`, honours hinge/side, draws jamb
+  ticks + leaf (solid=open, dashed=closed) + the minor-wedge clearance arc + a plan-theme dimension
+  pill. Both themes.
+- **Creation** — DESIGN/Build `opening` tool (digit 5, click a wall, ⇧=window, ghost via the canvas
+  `preview` path, places on pointer-DOWN); `addPreset`→`openingNearPoint` drops onto the nearest wall;
+  the hover chip is DESIGN+`!overlayOpen`-gated (closing a pre-existing mutate-through-a-dialog hole);
+  `d`/`w` keys unchanged.
+- **Inspector** — door-only branch: Width 0.6–2.4 "clear opening" + 70/80/90 cm presets, Swing slider
+  (`<output aria-live=off>`), Hinge/Swing `aria-pressed` flip pairs (role=group, not radiogroup),
+  doorOpen checkbox, honest hint ("the swing arc … doesn't change the sound"); Depth/Rotation dropped.
+- **Keyboard** — `f`/`⇧F` flip hinge/swing (`flipDoor`, DESIGN-scoped, same-ref no-op on non-doors);
+  `canvas-help.ts` + Legend + GuidePanel copy. Door rotation is now wall-locked (`rotateSelectedRect`
+  + `canRotateSel` no-op/disable on doors).
+
+**Acoustic decision: PLAN-ONLY.** The swing changes no acoustics — `doorOpen` stays the sole switch.
+The 6 frozen engine files (`optimize/rooms/stereo/raytrace/pairspot/bestspot`) are **byte-unchanged**
+(`git diff --stat` empty). **Deferred to its own block: G2f** (swing-aware furniture corridors in
+`arrange.ts`) with named acceptance — see `docs/ideas.md` §3b.
+
+**EVIDENCE BLOCK**
+- **Agents (role → verdict):** design-pass Workflow (4 agents) — acoustics-equivalence prover →
+  **CONFIRMED** (plan-only exact; all 12 door read-sites bottom out in role/doorOpen/w/rectCorners/
+  absorption/height); migration-safety skeptic → **CONFIRMED** (additive; only visible delta is
+  69.23°→90°); UX/a11y/security skeptic → **5 RISK, 0 BLOCK** (all guarded); synthesis → locked spec.
+  Self-review: **code-reviewer** → 1 HIGH (reflex arc on `swing out`) + 1 MED (ghost not cleared on
+  pointer-leave) → both fixed; **silent-failure-hunter** → 1 HIGH (click-off-wall silent no-op) + 1
+  MED-HIGH (door rotation unenforced) + 1 MED (0°-swing open door = solid wall) → all fixed;
+  **a11y-architect** → MEETS the S7 bar, 0 regressions. All findings re-verified.
+- **Test count:** 666 → **711** (+45; ratchet respected, none skipped/weakened).
+- **Gate (literal tails pasted in the session):** `npm run lint` → 0 problems · `npm test` → **711
+  passed (38 files)** · `npm run build` → clean, **410.66 kB / 132.32 kB gz** JS + 43.18/8.24 gz CSS
+  + 1.31 kB HTML.
+- **Coverage (touched files):** door-swing.ts **100%**, mode/app-constants/canvas-help **100%**,
+  interaction **99.5%**, placement **100%**, keyboard **97.1%**, scene **97.6%**, Legend **96.9%**,
+  CanvasStage/GuidePanel/Toolbar ~86–88%. `render.ts` (10.7%) + `SimCanvas.tsx` (24%) are the canvas
+  renderer + pointer component that are structurally un-unit-testable here (documented); their pure
+  logic lives in the 100%-covered helpers and the paths were driven LIVE.
+- **Live (CDP, fresh Chrome profile — owner's real data never touched):** seeded a disposable 6-door
+  showcase; screenshots `docs/sessions/S17/{live-canvas-plan,live-canvas-sound,live-inspector-door}.jpg`
+  verify the swing symbol in BOTH themes (90/45/hinge-flip/side-flip/closed/0°, arc-fix + jamb ticks +
+  0°-door-not-wall), and an interactive drive placed a door via the tool (IDB doors **6→7**), rendered
+  the door inspector (swing slider present), and surfaced the off-wall notice.
+- **Acceptance:** create-easy ✅ · width-bounds+presets ✅ · swing selectable+drawn ✅ · acoustic-meaning
+  stated+tested ✅ · migration proven (old-shape door → defaults, acoustics == fresh) ✅ · tests
+  failing-first ✅ · gate green ✅ · frozen engine unchanged ✅ · CSP intact (React inline styles only;
+  security-headers test green) ✅.

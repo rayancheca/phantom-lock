@@ -1,6 +1,6 @@
 import type { Scene, SceneObject, SpeakerModel, Vec2 } from '../../engine/types';
 import { activeListener, createId, makeSpeaker } from '../../engine/scene';
-import { pointInRect } from '../../engine/geometry';
+import { closestPointOnSegment, pointInRect } from '../../engine/geometry';
 import * as v from '../../engine/vec';
 import { makeOpening } from './interaction';
 
@@ -116,6 +116,39 @@ export function openingOnWall(
   if (!target || target.kind !== 'wall') return null;
   const at: Vec2 = { x: (target.a.x + target.b.x) / 2, y: (target.a.y + target.b.y) / 2 };
   const opening: SceneObject = makeOpening(target, at, role, createId(role));
+  return {
+    scene: { ...scene, objects: [...scene.objects, opening] },
+    objectId: opening.id,
+  };
+}
+
+/**
+ * Drop a door/window on the wall NEAREST `point`, at the closest point on it —
+ * the Furnish-palette path. A preset dropped at the scene centre would otherwise
+ * float unrotated in mid-room until dragged onto a wall (the advertised route's
+ * first result looked broken). Returns null when the scene has no walls, so the
+ * caller can fall back to the plain centre drop.
+ */
+export function openingNearPoint(
+  scene: Scene,
+  point: Vec2,
+  role: 'door' | 'window',
+): { scene: Scene; objectId: string } | null {
+  let best: Extract<SceneObject, { kind: 'wall' }> | null = null;
+  let bestAt: Vec2 = point;
+  let bestD = Infinity;
+  for (const o of scene.objects) {
+    if (o.kind !== 'wall') continue;
+    const cp = closestPointOnSegment(point, o.a, o.b);
+    const d = v.dist(point, cp.point);
+    if (d < bestD) {
+      bestD = d;
+      best = o;
+      bestAt = cp.point;
+    }
+  }
+  if (!best) return null;
+  const opening: SceneObject = makeOpening(best, bestAt, role, createId(role));
   return {
     scene: { ...scene, objects: [...scene.objects, opening] },
     objectId: opening.id,

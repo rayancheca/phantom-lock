@@ -38,7 +38,7 @@ export function toolMode(tool: ToolMode): AppMode {
 /** Which DESIGN sub-step a tool belongs to (null = universal or TUNE-owned).
  *  `applyTool` reads this to flip the sub-step within DESIGN — never the mode. */
 export function subStepForTool(tool: ToolMode): DesignSubStep | null {
-  if (tool === 'wall' || tool === 'room' || tool === 'calibrate') return 'build';
+  if (tool === 'wall' || tool === 'room' || tool === 'calibrate' || tool === 'opening') return 'build';
   if (tool === 'rect' || tool === 'circle') return 'furnish';
   return null; // select, marquee, lasso, speaker
 }
@@ -58,7 +58,7 @@ export function isToolInMode(tool: ToolMode, mode: AppMode): boolean {
  *  `applyTool` then flips the sub-step to match — preserving the old muscle
  *  memory while keeping the theme controller single. */
 export const DIGIT_TOOL: Record<AppMode, Record<string, ToolMode>> = {
-  design: { '1': 'select', '2': 'wall', '3': 'rect', '4': 'circle' },
+  design: { '1': 'select', '2': 'wall', '3': 'rect', '4': 'circle', '5': 'opening' },
   tune: { '1': 'select', '5': 'speaker' },
 };
 export function digitTool(digit: string, mode: AppMode): ToolMode | null {

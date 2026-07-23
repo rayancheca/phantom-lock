@@ -60,7 +60,10 @@ export type KeyCommand =
   | { type: 'place-speaker' }
   /** Cut a door/window into the SELECTED wall — the keyboard equivalent of the
    *  hover chips, which no keyboard user can reach. */
-  | { type: 'opening'; role: 'door' | 'window' };
+  | { type: 'opening'; role: 'door' | 'window' }
+  /** Flip the SELECTED door's hinge jamb (f) or swing side (⇧F). The App handler
+   *  enforces door-ness (the dispatcher is scene-independent). */
+  | { type: 'flip-door'; field: 'hinge' | 'swing' };
 
 export interface KeyResult {
   command: KeyCommand;
@@ -145,6 +148,16 @@ export function handleKeydown(e: KeyEvt, env: KeyEnv): KeyResult | null {
         return { command: { type: 'opening', role: e.key === 'd' ? 'door' : 'window' } };
       }
     }
+    // f / ⇧F flip the selected door's hinge / swing side. Mode-scoped to DESIGN
+    // exactly like d/w — a letter key must not become the cross-mode loophole.
+    // Match on the lowercased key (⇧+f yields 'F'); the App handler enforces
+    // door-ness (a non-door returns the same scene ref → no undo churn).
+    if (e.key.toLowerCase() === 'f' && env.appMode === 'design' && env.selection?.type === 'object') {
+      return {
+        command: { type: 'flip-door', field: e.shiftKey ? 'swing' : 'hinge' },
+        preventDefault: true,
+      };
+    }
   }
 
   // Digit shortcuts bind only to tools present in the CURRENT app-mode, so a
@@ -186,6 +199,10 @@ export function handleKeydown(e: KeyEvt, env: KeyEnv): KeyResult | null {
 export function rotateSelectedRect(scene: Scene, id: string, dir: -1 | 1, coarse = false): Scene {
   const target = scene.objects.find((o) => o.id === id);
   if (!target || target.kind !== 'rect') return scene;
+  // A door's rotation is wall-locked (the inspector offers no rotation for it),
+  // so q/e — and the touch HUD rotate — must NOT desync it from its wall. Same
+  // ref ⇒ no phantom undo entry, mirroring the non-rect guard above.
+  if (target.role === 'door') return scene;
   const stepDeg = coarse ? ROTATE_COARSE_DEG : ROTATE_FINE_DEG;
   return {
     ...scene,
@@ -197,6 +214,24 @@ export function rotateSelectedRect(scene: Scene, id: string, dir: -1 | 1, coarse
       return { ...o, rotation: rot };
     }),
   };
+}
+
+/**
+ * Flip a door's hinge jamb ('hinge') or swing side ('swing'). Doors only: for
+ * any other target (wall, circle, furniture rect, unknown id) this returns the
+ * SAME scene reference so `historyPush`'s reference-dedup drops the no-op — a
+ * stray f/⇧F on a non-door can't push a phantom undo entry (the S14 lesson). An
+ * absent field defaults before flipping (migration safety). Plan-symbol only —
+ * no acoustic effect.
+ */
+export function flipDoor(scene: Scene, id: string, field: 'hinge' | 'swing'): Scene {
+  const target = scene.objects.find((o) => o.id === id);
+  if (!target || target.kind !== 'rect' || target.role !== 'door') return scene;
+  const next =
+    field === 'hinge'
+      ? { ...target, hingeEnd: (target.hingeEnd ?? 'start') === 'start' ? ('end' as const) : ('start' as const) }
+      : { ...target, swingSide: (target.swingSide ?? 'in') === 'in' ? ('out' as const) : ('in' as const) };
+  return { ...scene, objects: scene.objects.map((o) => (o.id === id ? next : o)) };
 }
 
 /** Translate whatever is selected by `d`. Listener moves go through the seat

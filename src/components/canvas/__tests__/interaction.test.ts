@@ -57,11 +57,16 @@ describe('makeOpening', () => {
       role: 'door',
       height: 2.05,
       doorOpen: true,
+      // S17: a fresh door carries the swing defaults so the inspector shows real
+      // values immediately (no save round-trip) — hinge 'start', side 'in', 90°.
+      swingDeg: 90,
+      hingeEnd: 'start',
+      swingSide: 'in',
     });
     expect(o.kind === 'rect' && o.center).toEqual({ x: 1, y: 0 });
   });
 
-  it('builds a window with the documented field set (no doorOpen)', () => {
+  it('builds a window with the documented field set (no doorOpen, no swing fields)', () => {
     const o = makeOpening(wall('w', { x: 0, y: 0 }, { x: 2, y: 0 }), { x: 1, y: 0 }, 'window', 'rect-2');
     expect(o).toMatchObject({
       w: 1.2,
@@ -71,7 +76,11 @@ describe('makeOpening', () => {
       role: 'window',
       height: 2.2,
     });
-    expect(o.kind === 'rect' && o.doorOpen).toBeUndefined();
+    const r = o as Extract<SceneObject, { kind: 'rect' }>;
+    expect(r.doorOpen).toBeUndefined();
+    expect(r.swingDeg).toBeUndefined();
+    expect(r.hingeEnd).toBeUndefined();
+    expect(r.swingSide).toBeUndefined();
   });
 
   it('aligns rotation to the wall direction (horizontal, vertical, 45°)', () => {

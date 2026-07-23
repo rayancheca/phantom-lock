@@ -32,6 +32,16 @@ export interface RectObj {
   role: 'furniture' | 'tv' | 'window' | 'door';
   /** Doors only: open lets sound through the doorway; closed blocks like wood. */
   doorOpen?: boolean;
+  /** Doors only: leaf swing in degrees, 0..180 (default 90). PLAN SYMBOL ONLY —
+      the drawn clearance the leaf needs; NO acoustic effect (the engine never
+      reads it; `doorOpen` is the sole acoustic switch). */
+  swingDeg?: number;
+  /** Doors only: which jamb the door is hinged on — 'start' = the a-ward (−w/2)
+      end (default), 'end' = the b-ward end. Plan-only. */
+  hingeEnd?: 'start' | 'end';
+  /** Doors only: which side the leaf swings toward — 'in' = the current
+      subtract direction (default), 'out' = the opposite. Plan-only. */
+  swingSide?: 'in' | 'out';
   /** Top of the object above the floor, metres. Sound passes over low furniture. */
   height: number;
 }
@@ -212,7 +222,9 @@ export type ToolMode =
   | 'calibrate'
   | 'room'
   | 'marquee'
-  | 'lasso';
+  | 'lasso'
+  /** DESIGN/Build: click a wall to cut a door (⇧-click = window). */
+  | 'opening';
 
 export type Selection =
   | { type: 'object'; id: string }

@@ -3,6 +3,7 @@ import type { Scene, SceneObject } from '../../../engine/types';
 import {
   SNAP_STEP,
   keyboardPlacementPoint,
+  openingNearPoint,
   openingOnWall,
   placeSpeakerAt,
   snapPoint,
@@ -213,6 +214,43 @@ describe('openingOnWall', () => {
   it('does not mutate the input scene', () => {
     const s = scene({ objects: [wallObj('w')] });
     openingOnWall(s, 'w', 'door');
+    expect(s.objects).toHaveLength(1);
+  });
+});
+
+describe('openingNearPoint (Furnish-palette drop onto the nearest wall)', () => {
+  it('returns null when the scene has no walls', () =>
+    expect(openingNearPoint(scene({ objects: [] }), { x: 1, y: 1 }, 'door')).toBeNull());
+
+  it('snaps to the closest point on the nearest of several walls', () => {
+    // A horizontal wall at y=0 and a vertical wall at x=10; the point (2, 0.3)
+    // is nearest the horizontal one, at its foot (2, 0).
+    const s = scene({ objects: [wallObj('h', 0, 0, 4, 0), wallObj('v', 10, 0, 10, 4)] });
+    const res = openingNearPoint(s, { x: 2, y: 0.3 }, 'door')!;
+    const added = res.scene.objects.find((o) => o.id === res.objectId)!;
+    expect(added.kind).toBe('rect');
+    if (added.kind === 'rect') {
+      expect(added.center.x).toBeCloseTo(2, 6);
+      expect(added.center.y).toBeCloseTo(0, 6);
+      expect(added.role).toBe('door');
+      expect(added.rotation).toBeCloseTo(0, 6); // aligned to the horizontal wall
+    }
+  });
+
+  it('creates a window aligned to the wall it lands on', () => {
+    const s = scene({ objects: [wallObj('v', 5, 0, 5, 4)] });
+    const res = openingNearPoint(s, { x: 4.6, y: 2 }, 'window')!;
+    const added = res.scene.objects.find((o) => o.id === res.objectId)!;
+    if (added.kind === 'rect') {
+      expect(added.role).toBe('window');
+      expect(added.center.x).toBeCloseTo(5, 6);
+      expect(Math.abs(added.rotation)).toBeCloseTo(Math.PI / 2, 6); // vertical wall
+    }
+  });
+
+  it('does not mutate the input scene', () => {
+    const s = scene({ objects: [wallObj('w')] });
+    openingNearPoint(s, { x: 2, y: 0 }, 'door');
     expect(s.objects).toHaveLength(1);
   });
 });

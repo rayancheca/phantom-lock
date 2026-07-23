@@ -50,6 +50,7 @@ function renderStage(over: Record<string, unknown> = {}) {
       onRoomDrawn={noop}
       onSplitWall={noop}
       onActivateSeat={noop}
+      onNotice={noop}
       appMode="tune"
       designSubStep="build"
       onTool={noop}
@@ -122,6 +123,7 @@ describe('the canvas is a focusable, AT-legible widget (S7 deliverable 1)', () =
     expect(help.textContent).toMatch(/Press N for the next item/);
     expect(help.textContent).toMatch(/P places a speaker/);
     expect(help.textContent).toMatch(/D adds a door/);
+    expect(help.textContent).toMatch(/F flips its hinge and Shift F flips its swing side/);
   });
 
   it('renders exactly one help element (the IDREF must be unambiguous)', () => {

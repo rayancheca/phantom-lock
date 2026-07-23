@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { handleKeydown, nudgeSelection, rotateSelectedRect, type KeyEnv, type KeyEvt } from '../keyboard';
+import {
+  flipDoor,
+  handleKeydown,
+  nudgeSelection,
+  rotateSelectedRect,
+  type KeyEnv,
+  type KeyEvt,
+} from '../keyboard';
 import type { Scene, SceneObject, Selection, SpeakerObj } from '../../../engine/types';
 
 // --- fixtures -------------------------------------------------------------
@@ -183,11 +190,9 @@ describe('handleKeydown tool keys — DESIGN mode', () => {
     ['2', 'wall'],
     ['3', 'rect'],
     ['4', 'circle'],
+    ['5', 'opening'],
   ])('key %s selects the %s tool', (k, tool) => {
     expect(handleKeydown(key(k), env({ appMode: 'design' }))?.command).toEqual({ type: 'tool', tool });
-  });
-  it('key 5 (speaker) is unbound in DESIGN', () => {
-    expect(handleKeydown(key('5'), env({ appMode: 'design' }))).toBeNull();
   });
 });
 
@@ -340,6 +345,96 @@ describe('rotateSelectedRect', () => {
     // tap on a wall can't push a no-op undo entry.
     expect(rotateSelectedRect(scene, 'w1', 1)).toBe(scene);
   });
+  it('returns the SAME scene reference for a DOOR (rotation is wall-locked)', () => {
+    const door: SceneObject = {
+      id: 'd1', kind: 'rect', center: { x: 1, y: 0 }, w: 0.9, h: 0.1, rotation: 0,
+      absorption: 0.25, label: 'Door', role: 'door', doorOpen: true, height: 2.05,
+    } as SceneObject;
+    const scene = baseScene([door], []);
+    // A door must not be rotatable off its wall via q/e or the touch HUD.
+    expect(rotateSelectedRect(scene, 'd1', 1)).toBe(scene);
+  });
+});
+
+// --- S17: flipDoor pure mutator -------------------------------------------
+
+const doorObj = (id: string, over: Partial<SceneObject> = {}): SceneObject =>
+  ({
+    id,
+    kind: 'rect',
+    center: { x: 1, y: 0 },
+    w: 0.9,
+    h: 0.1,
+    rotation: 0,
+    absorption: 0.25,
+    label: 'Door',
+    role: 'door',
+    doorOpen: true,
+    height: 2.05,
+    swingDeg: 90,
+    hingeEnd: 'start',
+    swingSide: 'in',
+    ...over,
+  }) as SceneObject;
+
+describe('flipDoor', () => {
+  it('flips hingeEnd start↔end', () => {
+    const scene = baseScene([doorObj('d1')], []);
+    const out = flipDoor(scene, 'd1', 'hinge').objects[0];
+    expect(out.kind === 'rect' && out.hingeEnd).toBe('end');
+    expect(flipDoor(scene, 'd1', 'hinge').objects[0]).not.toBe(scene.objects[0]); // new ref
+  });
+  it('flips swingSide in↔out', () => {
+    const scene = baseScene([doorObj('d1')], []);
+    const out = flipDoor(scene, 'd1', 'swing').objects[0];
+    expect(out.kind === 'rect' && out.swingSide).toBe('out');
+  });
+  it('defaults an absent field before flipping (migration safety)', () => {
+    const scene = baseScene([doorObj('d1', { hingeEnd: undefined, swingSide: undefined })], []);
+    expect((flipDoor(scene, 'd1', 'hinge').objects[0] as { hingeEnd?: string }).hingeEnd).toBe('end');
+    expect((flipDoor(scene, 'd1', 'swing').objects[0] as { swingSide?: string }).swingSide).toBe('out');
+  });
+  it('leaves the other swing field untouched', () => {
+    const scene = baseScene([doorObj('d1')], []);
+    const out = flipDoor(scene, 'd1', 'hinge').objects[0] as { swingSide?: string; swingDeg?: number };
+    expect(out.swingSide).toBe('in');
+    expect(out.swingDeg).toBe(90);
+  });
+  it('returns the SAME scene reference for a non-door rect (no undo churn)', () => {
+    const scene = baseScene([rect('r1')], []);
+    expect(flipDoor(scene, 'r1', 'hinge')).toBe(scene);
+  });
+  it('returns the SAME scene reference for a wall / unknown id', () => {
+    const wall = { id: 'w1', kind: 'wall', a: { x: 0, y: 0 }, b: { x: 3, y: 0 }, height: 2.4, absorption: 0.1 } as SceneObject;
+    const scene = baseScene([wall], []);
+    expect(flipDoor(scene, 'w1', 'swing')).toBe(scene);
+    expect(flipDoor(scene, 'nope', 'hinge')).toBe(scene);
+  });
+});
+
+// --- S17: f / ⇧F flip-door canvas keys ------------------------------------
+
+describe('S17: flip door hinge / swing (f / ⇧F)', () => {
+  const base = { canvasFocused: true, appMode: 'design' as const, selection: { type: 'object' as const, id: 'd1' } };
+  it('f emits flip-door hinge in DESIGN with an object selected', () =>
+    expect(handleKeydown(key('f'), env(base))?.command).toEqual({ type: 'flip-door', field: 'hinge' }));
+  it('⇧F emits flip-door swing', () =>
+    expect(handleKeydown(key('F', { shiftKey: true }), env(base))?.command).toEqual({
+      type: 'flip-door',
+      field: 'swing',
+    }));
+  it('is inert in TUNE (mode-scoped like d/w)', () =>
+    expect(handleKeydown(key('f'), env({ ...base, appMode: 'tune' }))).toBeNull());
+  it('is inert without an object selection', () =>
+    expect(handleKeydown(key('f'), env({ ...base, selection: null }))).toBeNull());
+  it('is inert for a speaker/listener selection', () => {
+    expect(handleKeydown(key('f'), env({ ...base, selection: { type: 'speaker', id: 's1' } }))).toBeNull();
+    expect(handleKeydown(key('f'), env({ ...base, selection: { type: 'listener' } }))).toBeNull();
+  });
+  it('requires canvas focus', () =>
+    expect(handleKeydown(key('f'), env({ ...base, canvasFocused: false }))).toBeNull());
+  it('is inert while a control has focus (interactiveTarget)', () =>
+    expect(handleKeydown(key('f'), env({ ...base, interactiveTarget: true }))).toBeNull());
 });
 
 describe('nudgeSelection', () => {

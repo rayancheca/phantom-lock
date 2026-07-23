@@ -93,6 +93,9 @@ interface Props {
   onSplitWall: (id: string, at: Vec2) => void;
   /** Clicked an inactive listening seat — make it the active one. */
   onActivateSeat: (id: string) => void;
+  /** Transient hint (e.g. the opening tool clicked off every wall — a silent
+   *  no-op there is indistinguishable from a broken app on the live region). */
+  onNotice: (msg: string) => void;
 }
 
 type DrawTool = 'rect' | 'circle' | 'room';
@@ -142,6 +145,7 @@ export default function SimCanvas({
   onRoomDrawn,
   onSplitWall,
   onActivateSeat,
+  onNotice,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   /** The +Door/+Window chip, measured so it can keep itself alive under the cursor. */
@@ -208,6 +212,12 @@ export default function SimCanvas({
   // don't reflow off fallback metrics on the first paint (FOUT guard). No-ops
   // in the vitest node env (no document.fonts); cleanup cancels a late repaint.
   useEffect(() => repaintOnFontLoad(() => setRedrawTick((n) => n + 1)), []);
+
+  // Drop the opening-tool ghost the moment the tool changes, so a stale ghost
+  // can't linger or be picked up by the rect/circle draw-commit path.
+  useEffect(() => {
+    if (mode !== 'opening') setPreview(null);
+  }, [mode, setPreview]);
 
   /** Rotate the whole view by dr radians around the canvas centre. */
   const rotateBy = useCallback((dr: number) => {
@@ -637,6 +647,25 @@ export default function SimCanvas({
       return;
     }
 
+    if (mode === 'opening') {
+      // Place on the click, NOT via startDrag('draw'): a door is h:0.1, below the
+      // onPointerUp draw-commit floor (w,h >= 0.15), so the draw path would
+      // silently reject it. ⇧ cuts a window instead of a door.
+      const hover = wallHoverAt(sceneRef.current.objects, p, WALL_HOVER_APPEAR_PX / view.scale);
+      const wall = hover ? sceneRef.current.objects.find((o) => o.id === hover.id) : null;
+      if (wall && wall.kind === 'wall') {
+        const obj = makeOpening(wall, hover!.at, e.shiftKey ? 'window' : 'door', createId('rect'));
+        onScene({ ...sceneRef.current, objects: [...sceneRef.current.objects, obj] });
+        onSelection({ type: 'object', id: obj.id });
+        setPreview(null);
+      } else {
+        // Clicked off every wall — say so, mirroring the keyboard d/w path. A
+        // silent no-op on the advertised primary route reads as a broken app.
+        onNotice(`Click a wall to cut a ${e.shiftKey ? 'window' : 'door'}.`);
+      }
+      return;
+    }
+
     if (mode !== 'select') {
       startDrag({ kind: 'draw', pointerId: e.pointerId, tool: mode, anchor: snap(p) });
       return;
@@ -754,9 +783,29 @@ export default function SimCanvas({
     }
     const drag = dragRef.current;
 
+    // Opening tool: ghost the door/window at the nearest wall point so the user
+    // sees exactly where a click will cut (⇧ previews a window). Reuses the
+    // canvas `preview` path — zero new DOM, so no transform-clobber / motion work.
+    if (!drag && mode === 'opening' && view) {
+      const hp = s2w(native);
+      const hover = wallHoverAt(sceneRef.current.objects, hp, WALL_HOVER_APPEAR_PX / view.scale);
+      const w = hover ? sceneRef.current.objects.find((o) => o.id === hover.id) : null;
+      if (w && w.kind === 'wall') {
+        const role = native.shiftKey ? 'window' : 'door';
+        setPreview({ ...makeOpening(w, hover!.at, role, 'preview'), id: 'preview' });
+      } else {
+        setPreview(null);
+      }
+      return;
+    }
+
     // Select-mode hover: offer door/window insertion on a wall, and show a grab
-    // cursor over anything draggable. Only runs on a no-drag hover.
-    if (!drag && mode === 'select' && view) {
+    // cursor over anything draggable. Only runs on a no-drag hover. Scoped to the
+    // DESIGN (plan) canvas and gated on overlays — `insertOpening` writes the
+    // scene directly, so without the overlay gate the chip would mutate behind an
+    // open dialog (the S14 mutate-through-a-dialog class), and it has no business
+    // popping over the TUNE sound canvas.
+    if (!drag && mode === 'select' && theme === 'plan' && !overlayOpenRef.current && view) {
       const cursorS = { x: native.offsetX, y: native.offsetY };
       const hp = s2w(native);
       setWallHover((prev) => {
@@ -989,8 +1038,16 @@ export default function SimCanvas({
     if (pointersRef.current.has(e.pointerId)) {
       pointersRef.current.set(e.pointerId, { x: native.offsetX, y: native.offsetY });
     }
-    // Select-mode hovers must flow through too (wall chips + grab cursor).
-    if (!dragRef.current && !pinchRef.current && mode !== 'wall' && mode !== 'select') return;
+    // Select-mode hovers (wall chips + grab cursor) and the opening-tool ghost
+    // must flow through too.
+    if (
+      !dragRef.current &&
+      !pinchRef.current &&
+      mode !== 'wall' &&
+      mode !== 'select' &&
+      mode !== 'opening'
+    )
+      return;
     pendingRef.current = native;
     if (rafRef.current) return;
     rafRef.current = requestAnimationFrame(() => {
@@ -1124,6 +1181,9 @@ export default function SimCanvas({
           if (!dragRef.current) {
             setWallHover(null);
             setHoverGrab(false);
+            // Clear the opening-tool ghost too — otherwise the dashed door/window
+            // ghost freezes on the plan when the cursor moves onto a panel.
+            if (mode === 'opening') setPreview(null);
           }
         }}
         onDoubleClick={(e) => {
@@ -1161,7 +1221,7 @@ export default function SimCanvas({
           )}
         </svg>
       )}
-      {wallHover && view && mode === 'select' && (
+      {wallHover && view && mode === 'select' && theme === 'plan' && !overlayOpen && (
         <div
           ref={chipRef}
           className="wall-actions"

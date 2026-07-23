@@ -17,5 +17,6 @@ export const CANVAS_HELP =
   'Q and E rotate it. Delete removes it. ' +
   'In Tune mode, P places a speaker beside your listening spot. ' +
   'In Design mode, with a wall selected, D adds a door and W adds a window. ' +
+  'With a door selected, F flips its hinge and Shift F flips its swing side. ' +
   'R rotates the view. Hold Space and drag to pan. Escape deselects. ' +
   'A spoken summary of the plan and the current verdict updates below.';

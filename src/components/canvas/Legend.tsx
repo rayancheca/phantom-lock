@@ -62,6 +62,7 @@ export default function Legend({ appMode, settings }: Props) {
         ]
       : [
           { swatch: <span className="legend-line" />, label: 'Walls' },
+          { swatch: <span className="legend-line legend-line-dashed" />, label: 'Door swing (dashed = clearance)' },
           { swatch: <span className="legend-square" />, label: 'Furniture' },
           { swatch: <span className="legend-square legend-square-tv" />, label: 'TV (cinema anchor)' },
           { swatch: <span className="legend-square legend-square-area" />, label: 'Marked area' },

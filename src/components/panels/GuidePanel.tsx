@@ -25,7 +25,8 @@ const GUIDES: Record<GuideKey, { title: string; hint: string; lines: string[] }>
       'Got a floorplan photo? Import it below and trace right over it.',
       'Click corner by corner — labels show length, lines snap straight.',
       'Click your first corner again to close the room. Backspace undoes a corner, Esc finishes.',
-      'Add windows and doors from the Furnish palette — they snap onto walls.',
+      'Pick the Door / window tool (5) and click a wall to cut a door — ⇧-click for a window. d / w also work on a selected wall.',
+      'Select a door to set its width and swing; f / ⇧F flip the hinge and swing side.',
     ],
   },
   furnish: {
