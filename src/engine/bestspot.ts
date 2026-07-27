@@ -160,6 +160,49 @@ export function bestListeningSpot(scene: Scene, tvAnchor: boolean, coarse = fals
     .filter((x): x is readonly [SpeakerObj, SpeakerObj] => Boolean(x[0] && x[1]));
   const pairedIds = new Set(scene.pairs.flat());
   const solos = scene.speakers.filter((s) => !pairedIds.has(s.id));
+  /**
+   * When every speaker is paired, a cell whose geometry scores zero for EVERY
+   * pair is guaranteed to score exactly `+0` overall — so it can be skipped
+   * before any occlusion work, which is the entire cost of the cell.
+   *
+   * The proof, against the loop below. `pairQualityAt` is pure geometry: it
+   * reads only the speakers, `p`, `earZ` and the TV centre — never a surface —
+   * so it can be evaluated first, for free. If it is `+0` for every pair then
+   * `pairScore` accumulates `+0 * min(attA, attB)`, and `atten` values are
+   * always in [0, 1] (a graze product) or [0, 0.6] (a reflection credit), so
+   * each term is `+0` and `pairPart = +0 / validPairs = +0`. With no solos,
+   * `soloPart` is 0 and the branch below selects `score = pairPart`, i.e. `+0`.
+   * The two remaining multipliers — the reach ratio and the TV factor — are
+   * finite and positive, so `score` stays `+0`, and `+0 <= 0.02` takes the
+   * `continue` at the bottom. Nothing outside the cell is written on that path.
+   *
+   * `solos.length === 0` is load-bearing and is policed by a negative control:
+   * with a solo present the score comes from `soloPart` (or a blend of the two),
+   * so zero pair quality proves nothing, and dropping that clause breaks 8 of
+   * the 153 golden entries. `pairs.length > 0` is belt-and-braces — it is in
+   * fact implied here (no solos and at least one speaker means everything is
+   * paired) and the residual case of an all-dangling `scene.pairs` scores 0
+   * anyway — so no control can make it fail. Kept because it states the
+   * precondition the proof below actually uses.
+   *
+   * A THRESHOLD instead of `=== 0` would need an error budget: skipping cells
+   * with `q < 0.05` also passes the whole corpus, yet it is wrong — a cell whose
+   * quality is 0.03 scores above the `0.02` floor and belongs in `samples`. It
+   * only escapes detection because it takes a scene whose BEST cell is itself
+   * near 0.02 to make that observable. Exactness is not an optimization here;
+   * it is what removes the need for that argument entirely.
+   *
+   * The one gap worth naming: a NaN `atten` (reachable only if the reflection
+   * search returns NaN) makes `pairScore` NaN rather than `+0`, so the original
+   * pushes `{p, NaN}` into `samples` where the skip does not. That is still
+   * output-identical — `NaN > bestScore` is false so the best is untouched, and
+   * the zone filter `s.s >= bestScore * 0.82` drops the NaN entry before the
+   * sort — but the identity is via the filter, not via the `+0` algebra above.
+   *
+   * `q !== 0` is a STRICT test, so a NaN quality never triggers the skip and
+   * takes the original path. Conservative by construction.
+   */
+  const canSkipByGeometry = solos.length === 0 && pairs.length > 0;
 
   let best: Vec2 | null = null;
   let bestScore = 0;
@@ -169,6 +212,23 @@ export function bestListeningSpot(scene: Scene, tvAnchor: boolean, coarse = fals
     for (let y = bounds.min.y + step / 2; y <= bounds.max.y; y += step) {
       const p = { x, y };
       if (insideFurnitureOrWall(scene, p)) continue;
+
+      if (canSkipByGeometry) {
+        let anyQuality = false;
+        for (const [a, b] of pairs) {
+          if (pairQualityAt(a, b, p, earZ, tv) !== 0) {
+            anyQuality = true;
+            break;
+          }
+        }
+        // Deliberately does NOT cache these values for the scoring loop below.
+        // A scratch array indexed in parallel with a loop that has its own
+        // `continue` is a desync waiting to happen — a future guard added above
+        // it would silently pair one pair's quality with another's attenuation,
+        // producing a plausible wrong score no aggregate test would catch.
+        // `pairQualityAt` is pure, so recomputing returns the identical double.
+        if (!anyQuality) continue;
+      }
 
       const atten = new Map<string, number>();
       let anyReached = false;

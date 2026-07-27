@@ -272,6 +272,48 @@ export function reflectionProbeScenes(): Array<{ name: string; scene: Scene }> {
       })(),
     },
     { name: 'seeded pseudo-random clutter', scene: pseudoRandomScene() },
+    {
+      // `bestListeningSpot`'s zero-geometry cell skip is gated on
+      // `solos.length === 0 && pairs.length > 0`. Every scene above — and every
+      // entry in `legit-scenes.ts`, whose `withSpeakers` always pairs
+      // (0,1),(2,3),… with an even count — satisfies both, so NEITHER guard is
+      // exercised anywhere and dropping either passes the whole suite. These
+      // three fixtures are the ones that police them.
+      name: 'ALL SOLO speakers (skip must stay disarmed)',
+      scene: (() => {
+        const s = scene(
+          [...box('r', 0, 0, 9, 7), wall('mid', { x: 4.5, y: 0 }, { x: 4.5, y: 4 })],
+          [speaker('a', { x: 2, y: 2 }), speaker('b', { x: 7, y: 2 }), speaker('c', { x: 4.5, y: 6 })],
+          { x: 4.5, y: 3.5 },
+        );
+        return { ...s, pairs: [] };
+      })(),
+    },
+    {
+      name: 'MIXED one pair + one solo (skip must stay disarmed)',
+      scene: (() => {
+        const s = scene(
+          [...box('r', 0, 0, 9, 7), wall('mid', { x: 4.5, y: 0 }, { x: 4.5, y: 4 })],
+          [speaker('a', { x: 2, y: 2 }), speaker('b', { x: 7, y: 2 }), speaker('c', { x: 4.5, y: 6 })],
+          { x: 4.5, y: 3.5 },
+        );
+        return { ...s, pairs: [['a', 'b']] };
+      })(),
+    },
+    {
+      // A pair whose `base < 0.5` makes `pairQualityAt` return 0 everywhere, so
+      // the skip fires on EVERY live cell — the case where a wrong proof would
+      // erase the whole field rather than nudge it.
+      name: 'coincident pair (quality zero at every cell)',
+      scene: (() => {
+        const s = scene(
+          [...box('r', 0, 0, 9, 7)],
+          [speaker('a', { x: 4.4, y: 2 }), speaker('b', { x: 4.6, y: 2 })],
+          { x: 4.5, y: 4 },
+        );
+        return { ...s, pairs: [['a', 'b']] };
+      })(),
+    },
   ];
 }
 

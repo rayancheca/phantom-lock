@@ -116,9 +116,17 @@ export function bestPairSpot(
       const p = { x, y };
       if (insideFurnitureOrWall(scene, p)) continue;
 
+      // Short-circuit the COMPUTATION, not just the predicate. `||` already
+      // stops evaluating once `ra` fails, but `rb` was computed before the test
+      // ran — and `reachDb` is the expensive call (a full occlusion scan, then
+      // the reflection search when that is blocked). `reachDb` is pure, so
+      // declining to compute a value the original discarded changes nothing;
+      // NaN behaves identically too, since `NaN < UNREACHABLE_DB` is false in
+      // both forms and falls through to `rb` either way.
       const ra = reachDb(surfaces, refl, a, p, earZ);
+      if (ra.db < UNREACHABLE_DB) continue;
       const rb = reachDb(surfaces, refl, b, p, earZ);
-      if (ra.db < UNREACHABLE_DB || rb.db < UNREACHABLE_DB) continue;
+      if (rb.db < UNREACHABLE_DB) continue;
 
       const dA = Math.hypot(v.dist(a.pos, p), a.z - earZ);
       const dB = Math.hypot(v.dist(b.pos, p), b.z - earZ);

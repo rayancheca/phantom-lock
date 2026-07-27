@@ -350,6 +350,56 @@ describe('prepareReflections leaves its inputs — and the grid cap — alone', 
     }
   });
 
+  it('finds a blocker its bounding-box fast pass cannot see, via the exhaustive rescan', () => {
+    // The rescan exists because a bounding box is a search ORDER, not a filter —
+    // `raySegment` can report a hit outside the box it was derived from. That
+    // pathology needs ill-conditioned geometry and never occurs in the fixture
+    // corpus, which is why these lines were the only ones left uncovered.
+    //
+    // A circle with a NEGATIVE radius reproduces the same *shape* of failure
+    // deterministically: `rayCircle` squares `r`, so it occludes exactly like
+    // radius |r|, but `boxOf` computes `c ± r` and yields an INVERTED box that
+    // intersects nothing. The fast pass therefore skips it on every query, and
+    // only the unfiltered rescan can find it. If someone ever "simplifies" the
+    // rescan away, this test fails — which is precisely its job.
+    const blocker: Surface = {
+      type: 'circle',
+      c: { x: 2.5, y: 0.2 },
+      r: -1.2, // occludes like 1.2; boxes as an empty, inverted rectangle
+      absorption: 0.2,
+      height: 3,
+      objectId: 'blocker',
+    };
+    const wall: WallObj = {
+      id: 'w',
+      kind: 'wall',
+      a: { x: 5, y: -3 },
+      b: { x: 5, y: 3 },
+      absorption: 0.2,
+      label: 'w',
+      height: 3,
+    };
+    const sp: SpeakerObj = {
+      id: 's',
+      pos: { x: 0, y: 0 },
+      z: 1,
+      label: 's',
+      model: 'homepod',
+      trimDb: 0,
+    };
+    const surfaces = [blocker, ...collectSurfaces([wall])];
+    const ctx = prepareReflections(surfaces, [wall], [wall]);
+    const p = { x: 0.5, y: 0.6 };
+
+    // The reference implementation routes through `directPath`, which has no box
+    // test at all — so agreeing with it IS the proof the rescan did its job.
+    const expected = referenceReflectionDb(surfaces, [wall], [wall], sp, p, 1.2);
+    expect(Object.is(reflectionDb(ctx, sp, p, 1.2), expected)).toBe(true);
+    // …and the blocker really is doing something: drop it and the answer moves.
+    const withoutBlocker = prepareReflections(collectSurfaces([wall]), [wall], [wall]);
+    expect(reflectionDb(withoutBlocker, sp, p, 1.2)).not.toBe(expected);
+  });
+
   it('drops zero-length walls from the prepared list, exactly as the original skipped them', () => {
     const zero: WallObj = {
       id: 'z',
