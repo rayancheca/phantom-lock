@@ -51,7 +51,7 @@ describe('layout persistence', () => {
   it('saves and loads a layout with no underlay', async () => {
     const layout = makeLayout('Test', blankScene());
     await saveLayout(layout);
-    await saveMeta(layout.id);
+    await saveMeta(layout.id, []);
 
     const loaded = await loadFromIDB();
     expect(loaded).not.toBeNull();
@@ -66,7 +66,7 @@ describe('layout persistence', () => {
     const scene = { ...blankScene(), underlay: underlay(PNG_1PX) };
     const layout = makeLayout('With photo', scene);
     await saveLayout(layout);
-    await saveMeta(layout.id);
+    await saveMeta(layout.id, []);
 
     const loaded = await loadFromIDB();
     const back = loaded!.layouts[0].scene.underlay;
@@ -80,7 +80,7 @@ describe('layout persistence', () => {
     const scene = { ...blankScene(), underlay: underlay(PNG_1PX) };
     const layout = makeLayout('With photo', scene);
     await saveLayout(layout, true);
-    await saveMeta(layout.id);
+    await saveMeta(layout.id, []);
 
     // Geometry-only edit: move the active seat, save without rewriting the image.
     const moved = { ...layout, scene: updateActiveListener(scene, { pos: { x: 1, y: 1 } }) };
@@ -95,7 +95,7 @@ describe('layout persistence', () => {
   it('keeps a layout whose underlay blob is missing (per-record isolation)', async () => {
     const layout = makeLayout('Lost photo', { ...blankScene(), underlay: underlay(PNG_1PX) });
     await saveLayout(layout, true);
-    await saveMeta(layout.id);
+    await saveMeta(layout.id, []);
     // Simulate an evicted/lost image blob: delete just the underlays row.
     const db = await openDB();
     await new Promise<void>((res, rej) => {
@@ -115,7 +115,7 @@ describe('layout persistence', () => {
     const scene = { ...blankScene(), underlay: underlay('data:image/jpeg;base64,not valid base64!!') };
     const layout = makeLayout('Bad img', scene);
     await expect(saveLayout(layout, true)).resolves.toBeUndefined();
-    await saveMeta(layout.id);
+    await saveMeta(layout.id, []);
     const loaded = await loadFromIDB();
     expect(loaded!.layouts[0].name).toBe('Bad img');
     expect(loaded!.layouts[0].scene.underlay ?? null).toBeNull();
@@ -126,7 +126,7 @@ describe('layout persistence', () => {
     const b = makeLayout('B', { ...blankScene(), underlay: underlay(PNG_1PX) });
     await saveLayout(a);
     await saveLayout(b);
-    await saveMeta(a.id);
+    await saveMeta(a.id, []);
 
     await removeLayout(b.id);
     const loaded = await loadFromIDB();
@@ -137,6 +137,7 @@ describe('layout persistence', () => {
 describe('migration', () => {
   it('migrates a localStorage-shaped store into IDB idempotently', async () => {
     const store: LayoutStore = {
+      projects: [{ id: 'p1', name: 'Home', createdAt: 1 }],
       layouts: [
         makeLayout('Maple Court', apartmentScene()),
         makeLayout('Photo', { ...blankScene(), underlay: underlay(PNG_1PX) }),
@@ -158,7 +159,7 @@ describe('bootstrapPersistence', () => {
     let legacyCalls = 0;
     const legacy = (): LayoutStore => {
       legacyCalls += 1;
-      return { layouts: [makeLayout('Legacy', apartmentScene())], activeId: 'x' };
+      return { layouts: [makeLayout('Legacy', apartmentScene())], activeId: 'x', projects: [] };
     };
 
     const first = await bootstrapPersistence(legacy);
@@ -182,6 +183,7 @@ describe('export bundle', () => {
     const store: LayoutStore = {
       layouts: [makeLayout('One', blankScene()), makeLayout('Two', apartmentScene())],
       activeId: 'x',
+      projects: [],
     };
     const bundle = buildExportBundle(store);
     expect(bundle.app).toBe('phantom-lock');

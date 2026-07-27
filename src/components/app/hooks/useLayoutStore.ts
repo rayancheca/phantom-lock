@@ -50,7 +50,10 @@ export function useLayoutStore(
       copy.id = createId('layout');
       copy.name = `${source.name} copy`;
       copy.updatedAt = Date.now();
-      setStore((st) => ({ layouts: [...st.layouts, copy], activeId: copy.id }));
+      // structuredClone carries `projectId` across, so a duplicate stays in the
+      // same folder as its source — which is the whole point of "variants of one
+      // project".
+      setStore((st) => ({ ...st, layouts: [...st.layouts, copy], activeId: copy.id }));
     },
     [store.layouts, active, setStore],
   );

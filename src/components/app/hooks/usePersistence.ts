@@ -103,7 +103,7 @@ export function usePersistence({ store, persistMode, showToast }: Args): { expor
         }
       }
       try {
-        await saveMeta(st.activeId);
+        await saveMeta(st.activeId, st.projects);
       } catch {
         anyFailed = true;
       }

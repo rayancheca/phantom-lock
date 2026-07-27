@@ -20,8 +20,9 @@
  *   - No runtime deps: a thin promise wrapper over the raw IDB API. Fully unit-
  *     testable in Node via `fake-indexeddb` (image helpers avoid fetch/FileReader).
  */
-import type { Layout, LayoutStore, Scene, Underlay } from './types';
+import type { Layout, LayoutStore, Project, Scene, Underlay } from './types';
 import { defaultStore, sanitizeLayout, STORAGE_KEY } from './scene';
+import { assembleStore, defaultProject } from './projects';
 
 export const DB_NAME = 'phantom-lock';
 export const DB_VERSION = 1;
@@ -41,6 +42,15 @@ interface LayoutRecord {
   scene: StoredScene;
   settings: Layout['settings'];
   updatedAt: number;
+  /**
+   * Owning project. OPTIONAL, because optional-on-disk is the TRUTH: every record
+   * written before S20 genuinely has no such key, and typing it required would be
+   * a lie the compiler then lets you dereference. (`LayoutRecord` is a separate
+   * interface from `Layout`, so nothing here is checked against the in-memory
+   * type — this is a silent-drop site, which is why it must be listed explicitly
+   * in both `saveLayout`'s literal and `loadFromIDB`'s `raw`.)
+   */
+  projectId?: string;
 }
 interface UnderlayRecord {
   id: string; // == layout id
@@ -52,6 +62,14 @@ interface UnderlayRecord {
 interface MetaRecord {
   key: typeof META_KEY;
   activeId: string;
+  /** The folder list. It rides the singleton meta row rather than a fourth object
+   *  store ON PURPOSE: a new store would need a DB_VERSION bump, and this file's
+   *  `openDB` REJECTS on `onblocked` (an old tab still holding v1), which routes
+   *  the user through `bootstrapPersistence`'s catch into localStorage mode —
+   *  where autosave then overwrites the FROZEN pre-migration snapshot. Adding a
+   *  field to an existing record needs no schema change at all: IndexedDB stores
+   *  structured clones with no declared schema. Absent on pre-S20 rows. */
+  projects?: Project[];
   schemaVersion: number;
   updatedAt: number;
   migratedFromLocalStorage: boolean;
@@ -182,6 +200,7 @@ export async function saveLayout(layout: Layout, writeImage = true): Promise<voi
     scene: stripUnderlay(layout.scene),
     settings: layout.settings,
     updatedAt: layout.updatedAt,
+    projectId: layout.projectId,
   };
   const underlay = layout.scene.underlay;
   // Encode the image BEFORE opening the write transaction. A malformed data URL
@@ -223,12 +242,19 @@ export async function removeLayout(id: string): Promise<void> {
   await txDone(tx);
 }
 
-export async function saveMeta(activeId: string): Promise<void> {
+/**
+ * `projects` is a REQUIRED parameter, not optional. This function rebuilds the
+ * whole meta record, so an optional argument would let every autosave tick erase
+ * the user's folders — a guaranteed bug, not a theoretical one. Required means the
+ * compiler stops at both call sites (`usePersistence` and `migrateFromLocalStorage`).
+ */
+export async function saveMeta(activeId: string, projects: Project[]): Promise<void> {
   const db = await openDB();
   const tx = db.transaction(STORE_META, 'readwrite');
   const rec: MetaRecord = {
     key: META_KEY,
     activeId,
+    projects,
     schemaVersion: DB_VERSION,
     updatedAt: Date.now(),
     migratedFromLocalStorage: true,
@@ -288,6 +314,9 @@ export async function loadFromIDB(onDrop?: (id: string) => void): Promise<Layout
         scene: attachUnderlay(rec.scene, src),
         settings: rec.settings,
         updatedAt: rec.updatedAt,
+        // `undefined` on every pre-S20 record — sanitizeLayout defaults it and
+        // assembleStore re-homes it below. The second silent-drop site.
+        projectId: rec.projectId,
       };
       const clean = sanitizeLayout(raw);
       if (clean) layouts.push(clean);
@@ -304,8 +333,32 @@ export async function loadFromIDB(onDrop?: (id: string) => void): Promise<Layout
   }
   if (layouts.length === 0) return null;
 
-  const activeId = layouts.some((l) => l.id === meta.activeId) ? meta.activeId : layouts[0].id;
-  return { layouts, activeId };
+  // `meta.projects` is undefined on a pre-S20 row: assembleStore then mints the
+  // default folder and homes every layout into it, and it also re-derives activeId
+  // against the final ids exactly as the hand-rolled check here used to.
+  //
+  // WRAPPED, and this is load-bearing. Everything from here down used to sit
+  // OUTSIDE every try in this function. A throw at this point does not merely fail
+  // the grouping: it escapes `bootstrapPersistence`'s try, lands in its catch, and
+  // switches the app to `mode: 'localStorage'` — where the fallback loader reads
+  // the FROZEN pre-migration snapshot (months stale, or absent) and autosave
+  // overwrites that snapshot ~400 ms later. The user's IndexedDB records would be
+  // perfectly intact, invisible, and their one rollback artifact destroyed.
+  //
+  // So: records that reconstructed MUST reach the caller. Grouping is the only
+  // thing allowed to degrade, and it degrades to "one default folder holding
+  // everything" — which is exactly the pre-S20 shape.
+  try {
+    return assembleStore(meta.projects, layouts, meta.activeId, (reason) => onDrop?.(reason));
+  } catch {
+    onDrop?.('the folder structure could not be read');
+    const fallback = defaultProject();
+    return {
+      layouts: layouts.map((l) => ({ ...l, projectId: fallback.id })),
+      activeId: layouts.some((l) => l.id === meta.activeId) ? meta.activeId : layouts[0].id,
+      projects: [fallback],
+    };
+  }
 }
 
 /**
@@ -317,7 +370,9 @@ export async function migrateFromLocalStorage(store: LayoutStore): Promise<Layou
   for (const layout of store.layouts) {
     await saveLayout(layout, true);
   }
-  await saveMeta(store.activeId);
+  // Without `store.projects` here, a localStorage-mode user who regains IDB
+  // loses every folder at the migration moment.
+  await saveMeta(store.activeId, store.projects);
   return store;
 }
 
@@ -373,22 +428,41 @@ interface ExportedLayout {
   name: string;
   scene: Scene; // underlay.src is a data: URL in memory, so this is self-contained
   settings: Layout['settings'];
+  /**
+   * Owning project's NAME, not its id — an id is meaningless in another store, and
+   * honouring an imported id would let a file mint a folder that collides with one
+   * the user already has. A reader matches on name and creates the folder if it is
+   * missing. Absent in a v1 bundle.
+   */
+  project?: string;
 }
 export interface ExportBundle {
   app: 'phantom-lock';
   kind: 'layout-bundle';
-  version: 1;
+  /**
+   * 2 since S20 (each layout carries its project name). The bump is honest
+   * signalling only — v1 and v2 bundles are mutually readable, because the field
+   * is additive and a reader that does not know it simply groups everything into
+   * the default folder.
+   */
+  version: 1 | 2;
   exportedAt: number;
   layouts: ExportedLayout[];
 }
 
 export function buildExportBundle(store: LayoutStore): ExportBundle {
+  const nameOf = new Map(store.projects.map((p) => [p.id, p.name]));
   return {
     app: 'phantom-lock',
     kind: 'layout-bundle',
-    version: 1,
+    version: 2,
     exportedAt: Date.now(),
-    layouts: store.layouts.map((l) => ({ name: l.name, scene: l.scene, settings: l.settings })),
+    layouts: store.layouts.map((l) => ({
+      name: l.name,
+      scene: l.scene,
+      settings: l.settings,
+      project: nameOf.get(l.projectId),
+    })),
   };
 }
 

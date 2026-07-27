@@ -112,6 +112,26 @@ export interface RoomLabel {
   h?: number;
 }
 
+/**
+ * A project — a named folder grouping several designs of one space.
+ *
+ * Deliberately tiny: a project owns NO geometry, NO settings and NO engine state.
+ * Everything the gallery shows about it (how many layouts, how many lock) is
+ * DERIVED from `store.layouts`, never stored — a stored count is a second source
+ * of truth that drifts the moment a layout is deleted through any of the several
+ * paths in `useLayoutActions`.
+ *
+ * There is deliberately no `layoutIds: string[]`. Membership points ONE way
+ * (`Layout.projectId` → `Project.id`), so removing a layout removes it from its
+ * folder for free and no list can ever dangle.
+ */
+export interface Project {
+  id: string;
+  name: string;
+  /** Minted once, never rewritten — the one fact that cannot be backfilled. */
+  createdAt: number;
+}
+
 export interface Scene {
   objects: SceneObject[];
   speakers: SpeakerObj[];
@@ -160,11 +180,38 @@ export interface Layout {
   scene: Scene;
   settings: SimSettings;
   updatedAt: number;
+  /**
+   * Owning project. REQUIRED, and it ALWAYS resolves to a real entry in
+   * `LayoutStore.projects` — `assembleStore` re-homes any dangling pointer on
+   * every read, exactly as `sanitizeScene` re-derives `activeListenerId` and
+   * `loadFromIDB` re-derives `meta.activeId`. There is no "unfiled" sentinel, so
+   * every consumer has one code path instead of two.
+   *
+   * WRITE ONLY through `moveLayoutToProject` — it bumps `updatedAt`, which is the
+   * ENTIRE change detector for the IndexedDB autosave (`usePersistence`). A move
+   * that forgets it renders perfectly and vanishes on reload.
+   */
+  projectId: string;
 }
 
 export interface LayoutStore {
   layouts: Layout[];
   activeId: string;
+  /**
+   * Folders. REQUIRED and ALWAYS length ≥ 1. Array order IS the display order.
+   *
+   * Required rather than optional on purpose: optional would type-check at every
+   * `setStore` literal that does not spread the store, and silently reset every
+   * folder to `undefined` on duplicate / new / undo-delete / delete / import —
+   * i.e. on every layout CRUD action.
+   *
+   * There is deliberately NO `activeProjectId`: the active project is DERIVED
+   * from the active layout (`activeProject`). Six call sites move `activeId`, and
+   * each would have to move a stored `activeProjectId` in lockstep or the header
+   * would show one folder while the canvas showed a layout in another — the S2
+   * seat/verdict desync one level up. Deriving it makes that unexpressible.
+   */
+  projects: Project[];
 }
 
 /** Flattened collision primitive used by the tracer. */

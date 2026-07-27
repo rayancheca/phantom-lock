@@ -8,6 +8,7 @@ const layout = (id: string, name: string, updatedAt = 1): Layout =>
 const store = (): LayoutStore => ({
   layouts: [layout('a', 'A'), layout('b', 'B'), layout('c', 'C')],
   activeId: 'b',
+  projects: [{ id: 'p1', name: 'Home', createdAt: 1 }],
 });
 
 describe('updateLayout', () => {

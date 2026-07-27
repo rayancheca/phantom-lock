@@ -16,12 +16,13 @@ import type {
 import { closestPointOnSegment, rectCorners } from './geometry';
 import { vec } from './vec';
 import * as v from './vec';
+import { createId } from './ids';
+import { DEFAULT_PROJECT_ID, assembleStore } from './projects';
 
-let idCounter = 0;
-export function createId(prefix: string): string {
-  idCounter += 1;
-  return `${prefix}-${Date.now().toString(36)}-${idCounter}-${Math.random().toString(36).slice(2, 7)}`;
-}
+// Re-exported so every existing `import { createId } from './scene'` keeps working.
+// The definition moved to the `ids` leaf in S20 so `projects.ts` can mint ids
+// without creating a `scene → projects → scene` cycle.
+export { createId };
 
 const deg = (d: number): number => (d * Math.PI) / 180;
 
@@ -782,13 +783,25 @@ export function sanitizeSettings(raw: unknown): SimSettings | null {
 export const STORAGE_KEY = 'phantom-lock:v2';
 export const LEGACY_KEY = 'phantom-lock:v1';
 
-export function makeLayout(name: string, scene: Scene, settings = DEFAULT_SETTINGS): Layout {
-  return { id: createId('layout'), name, scene, settings, updatedAt: Date.now() };
+/**
+ * `projectId` defaults to `DEFAULT_PROJECT_ID` so hand-built fixtures stay terse
+ * and `assembleStore` re-homes anything that does not resolve. Production callers
+ * that create a layout while the user is looking at a folder MUST pass that
+ * folder's id explicitly — otherwise a "New layout" clicked inside "Studio" would
+ * quietly appear in "My layouts". Guarded behaviourally, not by the compiler:
+ * see the "creates layouts in the ACTIVE project" tests.
+ */
+export function makeLayout(
+  name: string,
+  scene: Scene,
+  settings = DEFAULT_SETTINGS,
+  projectId: string = DEFAULT_PROJECT_ID,
+): Layout {
+  return { id: createId('layout'), name, scene, settings, updatedAt: Date.now(), projectId };
 }
 
 export function defaultStore(): LayoutStore {
-  const home = makeLayout('Maple Court', apartmentScene());
-  return { layouts: [home], activeId: home.id };
+  return assembleStore(undefined, [makeLayout('Maple Court', apartmentScene())], undefined);
 }
 
 export function sanitizeLayout(raw: unknown): Layout | null {
@@ -802,6 +815,11 @@ export function sanitizeLayout(raw: unknown): Layout | null {
     scene,
     settings: sanitizeSettings(l.settings) ?? DEFAULT_SETTINGS,
     updatedAt: isNum(l.updatedAt) ? l.updatedAt : Date.now(),
+    // A missing/junk pointer must NEVER make this return null: `loadFromIDB`
+    // throws "layouts unreadable" when every record fails, which drops a returning
+    // user into localStorage mode over their FROZEN pre-migration snapshot. An
+    // unresolvable id here is re-homed by `assembleStore` a moment later.
+    projectId: typeof l.projectId === 'string' && l.projectId ? l.projectId : DEFAULT_PROJECT_ID,
   };
 }
 
@@ -944,11 +962,10 @@ export function loadStore(storage: Pick<Storage, 'getItem'>): LayoutStore {
           .map(sanitizeLayoutIsolated)
           .filter((l): l is Layout => l !== null);
         if (layouts.length > 0) {
-          const activeId =
-            typeof parsed.activeId === 'string' && layouts.some((l) => l.id === parsed.activeId)
-              ? parsed.activeId
-              : layouts[0].id;
-          return { layouts, activeId };
+          // `parsed.projects` is absent in every pre-S20 blob; `assembleStore`
+          // then mints the default folder and homes every layout into it, so an
+          // old save loads with all of its layouts intact and grouped.
+          return assembleStore(parsed.projects, layouts, parsed.activeId);
         }
       }
     }
@@ -970,7 +987,7 @@ export function loadStore(storage: Pick<Storage, 'getItem'>): LayoutStore {
           sanitizeSettings(parsed.settings) ?? DEFAULT_SETTINGS,
         );
         const home = makeLayout('Maple Court', apartmentScene());
-        return { layouts: [home, migrated], activeId: home.id };
+        return assembleStore(undefined, [home, migrated], home.id);
       }
     }
   } catch {

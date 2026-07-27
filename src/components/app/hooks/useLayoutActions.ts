@@ -11,6 +11,7 @@ import {
   sanitizeScene,
 } from '../../../engine/scene';
 import type { ToastData } from '../../ui/Toast';
+import { activeProject } from '../../../engine/projects';
 import { initialMode, type ModeEntry } from '../mode';
 import type { Deleted } from '../app-types';
 
@@ -61,18 +62,23 @@ export function useLayoutActions(a: Args): LayoutActions {
     if (next) afterLayoutSwitch(next.scene);
   };
 
+  /** New designs land in the folder the user is looking at, never in the default
+   *  one — `makeLayout`'s `projectId` default exists for fixtures, not for here. */
+  const currentProjectId = (): string => activeProject(a.store).id;
+
   const addLayout = (kind: 'blank' | 'apartment') => {
+    const pid = currentProjectId();
     const layout =
       kind === 'blank'
-        ? makeLayout('New layout', blankScene())
-        : makeLayout('Maple Court', apartmentScene());
-    a.setStore((st) => ({ layouts: [...st.layouts, layout], activeId: layout.id }));
+        ? makeLayout('New layout', blankScene(), undefined, pid)
+        : makeLayout('Maple Court', apartmentScene(), undefined, pid);
+    a.setStore((st) => ({ ...st, layouts: [...st.layouts, layout], activeId: layout.id }));
     afterLayoutSwitch(layout.scene);
   };
 
   const addRoomLayout = (w: number, d: number) => {
-    const layout = makeLayout(`Room ${w}×${d}`, rectRoomScene(w, d));
-    a.setStore((st) => ({ layouts: [...st.layouts, layout], activeId: layout.id }));
+    const layout = makeLayout(`Room ${w}×${d}`, rectRoomScene(w, d), undefined, currentProjectId());
+    a.setStore((st) => ({ ...st, layouts: [...st.layouts, layout], activeId: layout.id }));
     a.setDialog(null);
     a.setGalleryOpen(false);
     afterLayoutSwitch(layout.scene);
@@ -98,8 +104,17 @@ export function useLayoutActions(a: Args): LayoutActions {
             l.scene.objects.length > 0 ||
             l.scene.speakers.length > 0,
         );
-        layouts.splice(Math.min(deleted.index, layouts.length), 0, deleted.layout);
-        return { layouts, activeId: deleted.layout.id };
+        // Its folder may have been deleted while it was gone. Undo writes STRAIGHT
+        // into the live store — it never passes through `assembleStore` — so the
+        // orphan repair has to be applied here too, or the restored layout renders
+        // in no group at all: present in the store, autosaved back to IndexedDB,
+        // and invisible. That is a worse outcome than the delete it is undoing.
+        // `updatedAt` MUST bump, or the re-home never reaches disk.
+        const restored = st.projects.some((p) => p.id === deleted.layout.projectId)
+          ? deleted.layout
+          : { ...deleted.layout, projectId: st.projects[0].id, updatedAt: Date.now() };
+        layouts.splice(Math.min(deleted.index, layouts.length), 0, restored);
+        return { ...st, layouts, activeId: restored.id };
       });
       a.setResetViewToken((n) => n + 1);
       a.applyMode(initialMode(deleted.layout.scene), deleted.layout.scene);
@@ -144,16 +159,18 @@ export function useLayoutActions(a: Args): LayoutActions {
       return;
     }
     const remaining = a.store.layouts.filter((l) => l.id !== id);
-    let nextLayout;
+    let nextLayout: Layout;
     let replacementId: string | undefined;
     if (remaining.length === 0) {
-      nextLayout = makeLayout('New layout', blankScene());
+      // The auto-created replacement keeps the deleted layout's folder, so
+      // deleting the last design in "Studio" does not silently move you elsewhere.
+      nextLayout = makeLayout('New layout', blankScene(), undefined, layout.projectId);
       replacementId = nextLayout.id;
-      a.setStore({ layouts: [nextLayout], activeId: nextLayout.id });
+      a.setStore((st) => ({ ...st, layouts: [nextLayout], activeId: nextLayout.id }));
       a.reap(new Set([nextLayout.id]), id);
     } else {
       nextLayout = remaining[Math.max(0, index - 1)];
-      a.setStore({ layouts: remaining, activeId: nextLayout.id });
+      a.setStore((st) => ({ ...st, layouts: remaining, activeId: nextLayout.id }));
       a.reap(new Set(remaining.map((l) => l.id)), id);
     }
     a.lastDeletedRef.current = { type: 'layout', layout, index, replacementId };
@@ -194,9 +211,16 @@ export function useLayoutActions(a: Args): LayoutActions {
           return;
         }
         // A fresh id, without mutating the object we just built (immutability
-        // rule; the old code assigned `layout.id` in place).
-        const layout: Layout = { ...sanitized, id: createId('layout') };
-        a.setStore((st) => ({ layouts: [...st.layouts, layout], activeId: layout.id }));
+        // rule; the old code assigned `layout.id` in place). The file's own
+        // `projectId` is deliberately IGNORED — an id from another store is
+        // meaningless here and honouring it would mint a phantom folder — so the
+        // import lands in the folder the user is looking at.
+        const layout: Layout = {
+          ...sanitized,
+          id: createId('layout'),
+          projectId: currentProjectId(),
+        };
+        a.setStore((st) => ({ ...st, layouts: [...st.layouts, layout], activeId: layout.id }));
         afterLayoutSwitch(layout.scene);
         a.showToast(`Imported “${layout.name}”`, { tone: 'ok' });
       })
