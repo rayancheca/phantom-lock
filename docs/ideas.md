@@ -12,8 +12,8 @@ effort — a small high-value item beats a large one.
 |---|---|---|---|
 | 1 | Auto-detect walls accuracy overhaul | **P0 — broken feature** | 1 session *(scheduled as S12)* |
 | 2 | ✅ **Grid-loop iteration cap** — **DONE S18** (safety half; slowness half → 2b) | ~~P0~~ done | — |
-| 2b | ✅ **Bound the reflection search** (`bestReflectionDb`) — **DONE S19** (50-room 13.7 s → 0.50 s) | ~~P1~~ done | — |
-| 2d | Close the last wall-heavy residual (12.0 s → <10 s): `bestPairSpot`'s 32 null sweeps | P2 | ½ session |
+| 2b | ✅ **Bound the reflection search** (`bestReflectionDb`) — **DONE S19** (50-room 13.7 s → ~0.5 s) | ~~P1~~ done | — |
+| 2d | Close the last wall-heavy residual (12–14 s → <10 s): `bestPairSpot`'s 32 null sweeps | P2 | ½ session |
 | 2c | Bound `traceScene` + `arrange.openSlots` | P2 | ½ session |
 | 3 | **Guided tutorial mode** | **P1 — high** | 1–2 sessions |
 | 3b | ✅ **Door width + swing angle** (owner-requested) — **DONE S17** (G2f corridors deferred) | ~~P1~~ done | — |
@@ -80,15 +80,15 @@ all. Three independent wins, all bit-identical:
 
 | payload | before | after | |
 |---|---|---|---|
-| 50-room chain | 13.7 s | **0.50 s** | 27× |
-| 100-room chain | 102.8 s | **1.8 s** | 58× |
-| 10-room chain | 179.8 ms | **39.5 ms** | 4.6× |
-| bundled demo | 64.4 ms | **49.9 ms** | 1.3× |
-| wall-heavy span 399 | 129.7 s | **12.0 s** | 10.8× |
+| 50-room chain | 13.7 s | **0.50–0.58 s** | 24–27× |
+| 100-room chain | 102.8 s | **1.8–2.0 s** | ~52× |
+| 10-room chain | 179.8 ms | **40–48 ms** | ~4× |
+| bundled demo | 64.4 ms | **50–60 ms** | ~1.2× |
+| wall-heavy span 399 | 129.7 s | **12.0–13.9 s** | 9–11× |
 
-**Acceptance:** 50-room < ~2 s ✅ (0.50 s) · byte-identical on the protected set ✅
-(153/153 new golden + 30/30 S18 golden, with failing negative controls) · ratchet ✅
-(760 → 807) · wall-heavy < ~10 s ❌ (12.0 s) → §2d.
+**Acceptance:** 50-room < ~2 s ✅ (0.50–0.58 s) · byte-identical on the protected set ✅
+(162/162 new golden + 30/30 S18 golden, with failing negative controls) · ratchet ✅
+(760 → 810) · wall-heavy < ~10 s ❌ (12–14 s) → §2d.
 
 Note the §2 argument this did NOT overturn: a walls-aware cost proxy is still
 forbidden, because a legitimate multi-room house remains the wall-heaviest thing the
@@ -97,8 +97,8 @@ app produces. S19 made the work cheaper rather than capping it.
 ## 2d. Close the last wall-heavy residual — **P2**
 
 The wall-heavy import-legal payload (20 walls / 64 speakers / 32 pairs / span 399) sits
-at **12.0 s**, against the ~10 s §2b aimed at. Measured split: `computeAudio` **8.5 s**,
-`bestListeningSpot` **3.4 s**, `traceScene` 0.13 s. The `computeAudio` term is
+at **12–14 s**, against the ~10 s §2b aimed at. Measured split: `computeAudio` **8.5–9.8 s**,
+`bestListeningSpot` **3.4–3.9 s**, `traceScene` 0.13 s. The `computeAudio` term is
 `bestPairSpot` running once per apex-blocked pair — 32 sweeps of ~154 000 cells — and it
 returns `null` for **every** pair, so all 8.5 s produces nothing. The S19 cell-skip does
 not transfer: `bestListeningSpot`'s gate is pure geometry, `bestPairSpot`'s is

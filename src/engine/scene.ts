@@ -828,7 +828,7 @@ export function sanitizeLayout(raw: unknown): Layout | null {
 // `engine/reflection.ts` (S19) then bounded the reflection search, which the cap
 // structurally could not reach. Post-S19 the same object-bomb payload measures
 // 0.12 s, and the WALL-heavy shapes that were the residual measure 4.6 s at span
-// 100 (was 43.2 s) and 12.0 s at span 399 (was 129.7 s).
+// 100 (was 43.2 s) and 12–14 s at span 399 (was 129.7 s).
 //
 // The cap's cost proxy still deliberately does not model `bestReflectionDb`, and
 // that has not changed: a legitimate multi-room house is itself the wall-heaviest

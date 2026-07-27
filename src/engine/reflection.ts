@@ -48,11 +48,26 @@ interface PreparedWall {
   keepDb: number;
   /**
    * Spans along the wall carved out by OPEN doors, as raw `[lo, hi]` pairs in
-   * `objects` order. Deliberately NOT clamped to [0, 1]: the original compares
-   * the raw `u` against raw `tc ± half`, unlike `wallKeptSpans`, which does
-   * clamp. Different semantics — do not share the helper.
+   * `objects` order — `null` until the wall first needs them. Deliberately NOT
+   * clamped to [0, 1]: the original compares the raw `u` against raw
+   * `tc ± half`, unlike `wallKeptSpans`, which does clamp. Different semantics —
+   * do not share the helper.
+   *
+   * LAZY ON PURPOSE, and this is a memory bound, not a micro-optimization. The
+   * table is O(walls x doors-on-that-wall). For a real layout each door sits on
+   * exactly one wall, so that is O(doors) — but "on this wall" is
+   * `distPointSegment <= 0.12`, and a payload of 2 500 near-coincident walls
+   * plus 2 500 open doors (import-ACCEPTED: 5 000 objects, span 100 m) puts
+   * every door on every wall. Building it eagerly measured **144.7 MB per
+   * context**, and `computeAudio` builds one per apex-blocked pair — 32 of them
+   * in one synchronous pass, peaking at ~1.5 GB. The pre-change code scanned
+   * doors inline and allocated nothing, so this would have been a new OOM on an
+   * input the security boundary accepts by design. Filling on demand restores
+   * the original's laziness (only walls that survive the t/u and height guards
+   * ever pay) while keeping the per-cell win (each wall computes its spans at
+   * most once per sweep).
    */
-  openings: number[];
+  openings: number[] | null;
   /** Search-order hints for this wall's two occlusion legs (see `isBlocked`). */
   hintA: LegHint;
   hintB: LegHint;
@@ -88,10 +103,26 @@ interface SurfaceBox {
   maxY: number;
 }
 
+/**
+ * PRECONDITIONS, because the type cannot express them. A context is valid only
+ * for the sweep it was built in:
+ *  - the `surfaces` array must not be mutated — `boxes` is a parallel snapshot,
+ *    so GROWING it would leave `boxes[i]` undefined in the fast pass;
+ *  - no speaker may MOVE while the context is live. `mirrors` memoises each
+ *    speaker's mirror images by object identity and is never invalidated, while
+ *    `reflectionDb` reads `sp.pos`/`sp.z` fresh — a moved speaker would get
+ *    fresh legs against stale mirrors.
+ * Both hold today by construction: every context is a function-local built and
+ * consumed inside one synchronous sweep, and neither sweep writes to the scene.
+ * If a context is ever hoisted across frames (the planned Web Worker), it must
+ * be rebuilt on every scene change.
+ */
 export interface ReflectionContext {
   surfaces: Surface[];
   boxes: SurfaceBox[];
   walls: PreparedWall[];
+  /** Retained only so `openingsFor` can fill a wall's door spans on demand. */
+  objects: SceneObject[];
   /** Lazily filled per speaker; a sweep reuses it across every cell. */
   mirrors: Map<SpeakerObj, MirroredWall[]>;
 }
@@ -129,25 +160,37 @@ export function prepareReflections(
     const q = v.sub(w.b, w.a);
     const dir = v.norm(q);
     const keepDb = 20 * Math.log10(Math.max(0.02, 1 - w.absorption));
-    // The open-door scan, hoisted: only the final `u` comparison depends on the
-    // cell. Order within `objects` is preserved, though the test is existential
-    // so only membership matters.
-    const openings: number[] = [];
-    for (const o of objects) {
-      if (o.kind !== 'rect' || o.role !== 'door' || o.doorOpen === false) continue;
-      if (distPointSegment(o.center, w.a, w.b) > 0.12) continue; // door not on this wall
-      const tc = v.dot(v.sub(o.center, w.a), dir) / wlen;
-      const half = o.w / 2 / wlen; // (o.w / 2) / wlen — NOT o.w / (2 * wlen)
-      openings.push(tc - half, tc + half);
-    }
-    prepared.push({ wall: w, q, dir, wlen, keepDb, openings, hintA: { last: -1 }, hintB: { last: -1 } });
+    prepared.push({ wall: w, q, dir, wlen, keepDb, openings: null, hintA: { last: -1 }, hintB: { last: -1 } });
   }
   return {
     surfaces,
     boxes: surfaces.map(boxOf),
     walls: prepared,
+    objects,
     mirrors: new Map(),
   };
+}
+
+/**
+ * The open-door spans on one wall, computed on first use. Only the final `u`
+ * comparison depends on the grid cell, so this is a per-wall constant; the
+ * arithmetic is transcribed from the original's inline scan, including the
+ * `o.w / 2 / wlen` chain (NOT `o.w / (2 * wlen)`).
+ */
+function openingsFor(ctx: ReflectionContext, pw: PreparedWall): number[] {
+  const cached = pw.openings;
+  if (cached) return cached;
+  const w = pw.wall;
+  const out: number[] = [];
+  for (const o of ctx.objects) {
+    if (o.kind !== 'rect' || o.role !== 'door' || o.doorOpen === false) continue;
+    if (distPointSegment(o.center, w.a, w.b) > 0.12) continue; // door not on this wall
+    const tc = v.dot(v.sub(o.center, w.a), pw.dir) / pw.wlen;
+    const half = o.w / 2 / pw.wlen;
+    out.push(tc - half, tc + half);
+  }
+  pw.openings = out;
+  return out;
 }
 
 function mirrorsFor(ctx: ReflectionContext, sp: SpeakerObj): MirroredWall[] {
@@ -333,7 +376,7 @@ export function reflectionDb(
     // which carves the wall away and reflects nothing. Closed doors and windows
     // are SOLID and stay in play, handled by leg occlusion plus the wall's
     // material approximation.
-    const spans = pw.openings;
+    const spans = openingsFor(ctx, pw);
     let throughOpening = false;
     for (let k = 0; k < spans.length; k += 2) {
       if (u >= spans[k] && u <= spans[k + 1]) {

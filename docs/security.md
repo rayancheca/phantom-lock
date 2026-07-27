@@ -242,34 +242,36 @@ wall-heavy attack **16.0 M calls × 7.7 µs**. S19 attacks the per-call work
 evaluations whose results are provably discarded).
 
 Measured, one full pass — `traceScene` + `computeAudio` + `bestListeningSpot` —
-node 25, same machine, `docs/sessions/S19/bench/{before,after}.txt`:
+node 25, same machine, `docs/sessions/S19/bench/{before,after}.txt`. Ranges are real
+run-to-run spread (the after-runs shared the machine with review agents); the S18
+column was measured on an idle machine, so if anything the ratios are understated:
 
 | payload | S18 | S19 | |
 |---|---|---|---|
-| bundled Maple Court demo | 64.4 ms | **49.9 ms** | 1.3× |
-| 10-room chain, 4 speakers | 179.8 ms | **39.5 ms** | 4.6× |
-| **50-room chain, 4 speakers** | **13.7 s** | **0.50 s** | **27×** |
-| 100-room chain, 4 speakers | 102.8 s | **1.8 s** | 58× |
-| span 399, 100 objects, 64 speakers | 4.9 s | **0.12 s** | 41× |
-| walled span 100, 20 walls, 64 speakers | 42.3 s | **4.6 s** | 9.3× |
-| **walled span 399, 20 walls, 64 speakers** | **129.7 s** | **12.0 s** | **10.8×** |
+| bundled Maple Court demo | 64.4 ms | **50–60 ms** | ~1.2× |
+| 10-room chain, 4 speakers | 179.8 ms | **40–48 ms** | ~4× |
+| **50-room chain, 4 speakers** | **13.7 s** | **0.50–0.58 s** | **24–27×** |
+| 100-room chain, 4 speakers | 102.8 s | **1.8–2.0 s** | ~52× |
+| span 399, 100 objects, 64 speakers | 4.9 s | **0.12–0.15 s** | ~35× |
+| walled span 100, 20 walls, 64 speakers | 42.3 s | **4.6–5.6 s** | ~8× |
+| **walled span 399, 20 walls, 64 speakers** | **129.7 s** | **12.0–13.9 s** | **9–11×** |
 
 Every payload above is inside `importRejection`. The 50-room and 100-room chains
 are the *legitimate* shapes — layouts the "Add a room…" dialog builds one click at
 a time — and they were the everyday-slowness half S18 explicitly could not deliver.
 
 **Bit-identity, not approximation.** None of this changes a single output. It is
-pinned by a golden captured from the pre-S19 engine (git `c95a57b`): 153 entries
-and 8 814 direct `bestReflectionDb` samples over 17 branch-coverage scenes, plus
+pinned by a golden captured from the pre-S19 engine (git `c95a57b`): 162 entries
+and 9 180 direct `bestReflectionDb` samples over 18 branch-coverage scenes, plus
 S18's own 30/30 legit-scene golden. Negative controls confirm the harness fails
 when arithmetic moves — a nested `Math.hypot` rewritten as `sqrt(x*x+y*y)` breaks
 14 entries, `v.norm` → `v.scale(q, 1/len)` breaks 1, and dropping the cell skip's
 `solos.length === 0` guard breaks 8.
 
 **The residual, stated honestly — do not upgrade this claim without measuring.**
-The wall-heavy attack is still the worst import-legal payload at **12.0 s**, above
-the ~10 s this work aimed at. Where that 12.0 s sits, measured: `computeAudio`
-**8.5 s**, `bestListeningSpot` **3.4 s**, `traceScene` 0.13 s. The `computeAudio`
+The wall-heavy attack is still the worst import-legal payload at **12–14 s**, above
+the ~10 s this work aimed at. Where that time sits, measured: `computeAudio`
+**8.5–9.8 s**, `bestListeningSpot` **3.4–3.9 s**, `traceScene` 0.13 s. The `computeAudio`
 term is `bestPairSpot` running once per apex-blocked pair — 32 sweeps of ~154 000
 cells — and it returns `null` for every pair, i.e. it is again work that produces
 nothing. Unlike `bestListeningSpot`, though, its cell gate is *reachability*, which

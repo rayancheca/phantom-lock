@@ -301,6 +301,21 @@ export function reflectionProbeScenes(): Array<{ name: string; scene: Scene }> {
       })(),
     },
     {
+      // A DANGLING pair id: 'a' is in `pairedIds` (so it is not a solo) while the
+      // resolved pair list is empty (the missing partner is filtered out). This
+      // is the shape that proves the cell skip's `pairs.length > 0` clause is
+      // load-bearing rather than implied by `solos.length === 0`.
+      name: 'dangling pair partner (paired but unresolvable)',
+      scene: (() => {
+        const s = scene(
+          [...box('r', 0, 0, 9, 7), wall('mid', { x: 4.5, y: 0 }, { x: 4.5, y: 4 })],
+          [speaker('a', { x: 2, y: 2 }), speaker('c', { x: 7, y: 5 })],
+          { x: 4.5, y: 3.5 },
+        );
+        return { ...s, pairs: [['a', 'ghost'], ['c', 'phantom']] };
+      })(),
+    },
+    {
       // A pair whose `base < 0.5` makes `pairQualityAt` return 0 everywhere, so
       // the skip fires on EVERY live cell — the case where a wrong proof would
       // erase the whole field rather than nudge it.

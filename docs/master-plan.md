@@ -1572,3 +1572,108 @@ payload still costs **132.2 s**). Rescheduled with its own acceptance as `docs/i
   **"limit fully closed" NOT claimed** — three residuals documented with measurements and rescheduled
   (§2b/§2c), which is a deliberate deviation from the kickoff's "sub-second, closed" wording, taken
   because bit-identity on legitimate wall-heavy houses provably forbids it.
+
+### S19 — Bound the reflection search: the everyday-slowness half (2026-07-27) ✅
+
+`ideas.md` §2b. S18 capped the grid sweeps and said plainly that this did nothing for a legitimate
+50-room chain — 14.2 s per edit, unchanged — because that scene's grids are never capped at all. Its
+cost, and the cost of the last security residual, is the same term: `bestReflectionDb`, the
+blocked-line-of-sight fallback, measured at **94–100 % of a simulation pass** on every wall-heavy scene.
+The two shapes load it through *opposite* factors, which is why no single cap could ever have fixed both:
+
+| | calls | µs/call |
+|---|---|---|
+| 50-room chain (legitimate) | 45 901 | 315 |
+| wall-heavy span 399 (attack) | 16 000 000 | 7.7 |
+
+So this session made the work cheaper on both axes rather than capping it.
+
+**What landed.** `src/engine/reflection.ts` (new pure leaf) prepares once per sweep what the old loop
+re-derived per cell: per-wall edge vector / direction / `20·log10(keep)` / open-door spans (an O(objects)
+scan inside the innermost loop becomes an interval list), and per-(speaker, wall) mirror images. Its
+`isBlocked` replaces a per-wall `surfaces.filter(...)` plus two `directPath` calls with one
+allocation-free scan — legal because `bestReflectionDb` reads only `.blocked`, a pure existential.
+`directOcclusion` is left **byte-unchanged**, keeping the four `.attenuation` readers (including the
+on-screen Echogram) out of the blast radius by construction. `geometry.ts` gained `raySegmentT` /
+`rayCircleT` / `surfaceT` — the same `t` without `point`/`normal` — which `directOcclusion` now uses.
+Two caller-level skips: `bestListeningSpot` drops a cell whose pure geometry scores zero for every pair
+(when nothing is unpaired), and `bestPairSpot` short-circuits the second `reachDb` *computation*.
+
+**Measured (node 25, `docs/sessions/S19/bench/{before,after}.txt`), one full simulation pass.**
+Ranges are genuine run-to-run spread: the after-runs shared the machine with the review agents, while
+the before-column was taken on an idle machine — so the ratios are, if anything, understated.
+
+| payload (all import-ACCEPTED unless noted) | S18 | S19 | |
+|---|---|---|---|
+| bundled Maple Court demo | 64.4 ms | 50–60 ms | ~1.2× |
+| 10-room chain, 4 speakers | 179.8 ms | 40–48 ms | ~4× |
+| **50-room chain, 4 speakers** | **13.7 s** | **0.50–0.58 s** | **24–27×** |
+| 100-room chain, 4 speakers (span 600, import-rejected) | 102.8 s | 1.8–2.0 s | ~52× |
+| span 399, 100 objects, 64 speakers | 4.9 s | 0.12–0.15 s | ~35× |
+| walled span 100, 20 walls, 64 speakers | 42.3 s | 4.6–5.6 s | ~8× |
+| **walled span 399, 20 walls, 64 speakers** | **129.7 s** | **12.0–13.9 s** | **9–11×** |
+
+**What was NOT delivered.** The wall-heavy payload is **12–14 s** against the ~10 s the kickoff asked for.
+Measured split: `computeAudio` 8.5–9.8 s, `bestListeningSpot` 3.4–3.9 s, `traceScene` 0.13 s. The 8.5 s is
+`bestPairSpot` sweeping ~154 000 cells once per apex-blocked pair, 32 times, returning `null` for every
+one — again work that produces nothing, but its cell gate is *reachability*, which cannot be decided
+without the occlusion work it would be avoiding, so the S19 cell-skip has no analogue there.
+`reflectionDb` is near its floor at 1.0 µs/call (20 wall iterations, two unavoidable divisions each; the
+single-reciprocal fix is exactly the reassociation bit-identity forbids). Rescheduled with its own
+acceptance as `docs/ideas.md` **§2d**.
+
+**EVIDENCE BLOCK**
+
+- **Agents (role → verdict).** Design Workflow, 12 agents (3 killed by the 5-hour session limit; the run
+  is resumable from its journal). *Understand* ×3 — hot-path anatomist (prototyped and measured three
+  variants, verifying 73 810 real calls with `Object.is`, 0 mismatches), equivalence lawyer (measured the
+  float-rewrite divergence rates this session's comments quote: nested-hypot 54 %, sqrt 37 %, per-component
+  divide 45 %, `2p−s` 3.7 %, product reorder 35 %), blast-radius surveyor (call-site inventory of every
+  `.blocked` vs `.attenuation` reader; flagged that `grid-cap-equivalence.test.ts` hand-mirrors the two
+  `perCellCost` expressions). *Design* ×4 → *Skeptic*: one verdict returned before the limit —
+  **SURVIVES WITH CHANGES** on the caller-level skips, after an 8 000-scene fuzz plus 56 targeted configs
+  with 0 mismatches. Its required changes were all taken: the index-parallel `pairQ` scratch array was
+  dropped as a desync landmine, the missing ALL-SOLO / MIXED / coincident-pair fixtures were added, and
+  every performance number was re-measured on the post-`reflection.ts` tree (it caught the design agent
+  quoting 117× where the real figure was 5.9×, *and* under-selling the same change on the payload it had
+  declared unreachable). *Self-review* Workflow ×4 dimensions × adversarial verify — see below.
+- **Test count:** 760 → **810** (+50). No test skipped, `.only`'d or weakened. Ratchet intact.
+- **Coverage** (`npm run test:coverage`, files touched): `reflection.ts` 100 % stmts / 98.78 % branch ·
+  `geometry.ts` 100 / 98.11 · `raytrace.ts` 100 / 95.50 · `bestspot.ts` 100 / 96.39 · `pairspot.ts`
+  99.03 / 97.56. All ≥ 80 %.
+- **Bit-identity.** A golden captured from the PRE-S19 engine (git `c95a57b`) — re-captured twice as the
+  corpus grew, each time by checking the old engine back out rather than stashing: **162/162 entries,
+  9 180 direct `bestReflectionDb` samples** over 18 branch-coverage scenes. S18's independent legit-scene
+  golden: **30/30**. Negative controls that DO fail the harness: nested `Math.hypot` → `sqrt(x*x+y*y)`
+  (14 entries), `v.norm` → `v.scale(q, 1/wlen)` (1), `proj+(proj−sp)` → `2*proj−sp` (1), dropping the cell
+  skip's `solos.length === 0` guard (8 of 162), and in-suite the `raySegmentT` `u`-tolerance tightening (1 test).
+  Controls that do NOT fail it, recorded rather than hidden: `o.w/2/wlen` → `o.w/(2*wlen)`, `u < 0` →
+  `u <= 0`, dropping `pairs.length > 0` (provably redundant), and a `q < 0.05` threshold in place of
+  `q !== 0` — the first two need an input inside an ulp-wide window, the last needs a scene whose best
+  cell is itself near the 0.02 floor.
+- **Live (ONE browser, headless Chrome over CDP, FRESH profile ⇒ its own IndexedDB; the owner's real
+  layout was never loaded or written).** `docs/sessions/S19/`: `live-tune-sound.jpg`,
+  `live-design-plan.jpg`, `live-tune-after-nudge.jpg`, `live-50room-tune.jpg`,
+  `live-50room-after-nudge.jpg`, `live-50room-design-plan.jpg`. Seeded demo boots with a LIVE locked
+  verdict ("Phantom center locked"); both themes render (`stage` / `stage stage-plan`); a disposable
+  50-room chain seeded via localStorage into a cleared IndexedDB loads, renders its 300 m corridor and
+  shows a live "No lock yet" readout, with arrow-nudge edits round-tripping in 1–9 ms.
+- **Gate:** `npm run lint` clean · `npm test` **810 passed (41 files)** · `npm run build` **413.79 kB /
+  133.52 kB gz** JS + 43.18 kB / 8.24 kB gz CSS + 1.31 kB HTML.
+- **Acceptance, bullet by bullet.**
+  1. 50-room chain < ~2 s — **MET**, 13.7 s → **0.50–0.58 s** (24–27×).
+  2. Wall-heavy span-399 < ~10 s — **MISSED**, 129.7 s → **12.0–13.9 s** (9–11×). Measured cause and the
+     reason the S19 technique does not transfer are above; deferred to `ideas.md` §2d.
+  3. Byte-identical on the protected set *and* the adversarial payloads, against a pre-change golden,
+     with a negative control proving the harness can fail — **MET** (162/162 + 30/30; five controls fail
+     it, four do not and are named).
+  4. New pure helpers failing-first tested; ratchet rises above 760 — **MET** (810).
+  5. Spatial-index correctness tested independently — **MET in the form that shipped.** No index was
+     shipped: an adversarial analysis showed an AABB test over segments is not *provably* conservative
+     (the near-parallel band, which `addRoomShell`'s flush collinear walls reach), so the boxes are used
+     as a search ORDER with an unfiltered rescan settling every negative. The brute-force oracle
+     (`referenceReflectionDb`, the pre-S19 algorithm transcribed) fuzzes it over randomized scenes at
+     origins 0 / 1e3 / 1e5, and a negative-radius-circle test forces the rescan path specifically.
+  6. Gate green with all three tails pasted — **MET**.
+  7. `security.md` §Worst-case CPU updated; `ideas.md` §2b marked done — **MET**, with §2d added for the
+     remainder and the superseded S18 text left as a dated note in the house style.

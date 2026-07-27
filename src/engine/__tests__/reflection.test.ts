@@ -20,7 +20,7 @@ import golden from './fixtures/reflection-golden.json';
  *
  * Three independent nets, because each catches what the others miss:
  *  1. A GOLDEN captured from the pre-optimization engine, sampled directly on
- *     `bestReflectionDb` (7 344 values) as well as end to end. Nothing else can
+ *     `bestReflectionDb` (9 180 values) as well as end to end. Nothing else can
  *     prove "unchanged" — the optimized engine agreeing with itself proves
  *     nothing.
  *  2. A brute-force ORACLE: the original algorithm, transcribed into this file
@@ -30,7 +30,8 @@ import golden from './fixtures/reflection-golden.json';
  *
  * Negative controls (run out of band, `docs/sessions/S19/bench/`): swapping the
  * nested `Math.hypot` for `sqrt(x*x+y*y)` breaks 14 golden entries, `v.norm` for
- * `v.scale(q, 1/wlen)` breaks 1, and `proj+(proj-sp)` for `2*proj-sp` breaks 1 —
+ * `v.scale(q, 1/wlen)` breaks 1, `proj+(proj-sp)` for `2*proj-sp` breaks 1, and
+ * dropping the cell skip's `solos.length === 0` guard breaks 8 —
  * so the harness demonstrably fails when the arithmetic moves. Two further
  * controls (`o.w/2/wlen` → `o.w/(2*wlen)`, and `u < 0` → `u <= 0`) are NOT
  * caught: both need an input landing inside an ulp-wide window, and the corpus
@@ -398,6 +399,70 @@ describe('prepareReflections leaves its inputs — and the grid cap — alone', 
     // …and the blocker really is doing something: drop it and the answer moves.
     const withoutBlocker = prepareReflections(collectSurfaces([wall]), [wall], [wall]);
     expect(reflectionDb(withoutBlocker, sp, p, 1.2)).not.toBe(expected);
+  });
+
+  it('does not build the door-span table until a wall actually needs it', () => {
+    // The table is O(walls x doors-on-that-wall), and "on this wall" is a 0.12 m
+    // proximity test — so a payload of near-coincident walls sharing a pile of
+    // doors puts every door on every wall. Built eagerly that measured 144.7 MB
+    // for ONE context on an import-legal scene, and `computeAudio` builds one
+    // per apex-blocked pair. The pre-change code allocated nothing here, so
+    // eager construction was a new OOM on an input the importer accepts.
+    const objects: SceneObject[] = [];
+    for (let i = 0; i < 40; i++) {
+      objects.push({
+        id: `w${i}`,
+        kind: 'wall',
+        a: { x: 0, y: i * 1e-5 },
+        b: { x: 10, y: i * 1e-5 },
+        absorption: 0.1,
+        label: `w${i}`,
+        height: 2.6,
+      });
+    }
+    for (let i = 0; i < 40; i++) {
+      objects.push({
+        id: `d${i}`,
+        kind: 'rect',
+        center: { x: 1 + i * 0.2, y: 0 },
+        w: 0.8,
+        h: 0.1,
+        rotation: 0,
+        absorption: 0.2,
+        label: `d${i}`,
+        role: 'door',
+        height: 2.1,
+        doorOpen: true,
+      });
+    }
+    const walls = objects.filter((o): o is WallObj => o.kind === 'wall');
+    const ctx = prepareReflections(collectSurfaces(objects), walls, objects);
+    // Nothing is materialised up front — not one wall, however many doors match.
+    expect(ctx.walls.every((w) => w.openings === null)).toBe(true);
+
+    // …and the lazy path, when it IS taken, still produces the original's
+    // answer. Driven on a scene that provably reaches the opening test (a
+    // partition with an OPEN door), so this cannot pass vacuously.
+    const doorScene = reflectionProbeScenes().find((x) =>
+      x.name.startsWith('partition with an OPEN door'),
+    )!.scene;
+    const dSurfaces = collectSurfaces(doorScene.objects);
+    const dWalls = wallsOf(doorScene);
+    const dCtx = prepareReflections(dSurfaces, dWalls, doorScene.objects);
+    expect(dCtx.walls.every((w) => w.openings === null)).toBe(true);
+    for (const sp2 of doorScene.speakers) {
+      for (const p of probePoints(doorScene)) {
+        expect(
+          Object.is(
+            reflectionDb(dCtx, sp2, p, 1.2),
+            referenceReflectionDb(dSurfaces, dWalls, doorScene.objects, sp2, p, 1.2),
+          ),
+        ).toBe(true);
+      }
+    }
+    // Some wall has now filled its table — otherwise the lazy path was never
+    // exercised and the assertions above prove nothing about it.
+    expect(dCtx.walls.some((w) => w.openings !== null)).toBe(true);
   });
 
   it('drops zero-length walls from the prepared list, exactly as the original skipped them', () => {

@@ -179,11 +179,12 @@ export function bestListeningSpot(scene: Scene, tvAnchor: boolean, coarse = fals
    * `solos.length === 0` is load-bearing and is policed by a negative control:
    * with a solo present the score comes from `soloPart` (or a blend of the two),
    * so zero pair quality proves nothing, and dropping that clause breaks 8 of
-   * the 153 golden entries. `pairs.length > 0` is belt-and-braces — it is in
-   * fact implied here (no solos and at least one speaker means everything is
-   * paired) and the residual case of an all-dangling `scene.pairs` scores 0
-   * anyway — so no control can make it fail. Kept because it states the
-   * precondition the proof below actually uses.
+   * the 162 golden entries. `pairs.length > 0` is load-bearing too, and is NOT
+   * implied by the first clause: `speakers = [a]` with `scene.pairs =
+   * [['a','ghost']]` leaves `a` inside `pairedIds` — hence no solos — while the
+   * resolved `pairs` list is empty, because the dangling id is filtered out. No
+   * negative control can make that clause fail only because the residual case
+   * scores 0 by another route, not because the clause is redundant.
    *
    * A THRESHOLD instead of `=== 0` would need an error budget: skipping cells
    * with `q < 0.05` also passes the whole corpus, yet it is wrong — a cell whose
