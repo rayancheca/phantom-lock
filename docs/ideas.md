@@ -11,7 +11,9 @@ effort — a small high-value item beats a large one.
 | # | Idea | Priority | Effort |
 |---|---|---|---|
 | 1 | Auto-detect walls accuracy overhaul | **P0 — broken feature** | 1 session *(scheduled as S12)* |
-| 2 | Grid-loop iteration cap | **P0 — safety + real slowness** | ½ session |
+| 2 | ✅ **Grid-loop iteration cap** — **DONE S18** (safety half; slowness half → 2b) | ~~P0~~ done | — |
+| 2b | **Bound the reflection search** (`bestReflectionDb`) — the everyday-slowness half | **P1 — high** | ½–1 session |
+| 2c | Bound `traceScene` + `arrange.openSlots` | P2 | ½ session |
 | 3 | **Guided tutorial mode** | **P1 — high** | 1–2 sessions |
 | 3b | ✅ **Door width + swing angle** (owner-requested) — **DONE S17** (G2f corridors deferred) | ~~P1~~ done | — |
 | 4 | Snap furniture to a wall's angle | **P1 — high** | ½ session |
@@ -31,24 +33,63 @@ complete. It is P0 because it is a headline feature that currently returns an un
 real floorplan — the owner hit this in a cold clickthrough and the only available action was
 "Discard".
 
-## 2. Grid-loop iteration cap — **P0**
+## 2. Grid-loop iteration cap — ✅ **DONE (S18)**, safety half only
 
-Deferred out of S8 (see [`security.md`](security.md)). `bestspot.ts:150`, `pairspot.ts:141` and
-`arrange.ts:167` walk `sceneBounds` with a fixed step, so cost is multiplicative in
-`objects × pairs × span²` and unbounded from the engine's own side.
+Landed as `src/engine/grid.ts`. It had **two** claimed payoffs; exactly one was delivered, and the
+split is worth recording because the reason is structural, not effort.
 
-Two payoffs, which is why it outranks everything below it despite being small:
+**✅ Safety — done.** One simulation pass on an import-legal payload went from a measured **264.6 s
+to 4.9 s**, and cost is now flat in span. The object-bomb shape (5 000 objects) went from hours to
+4.5 s. A pre-existing non-termination class S8 had missed — `t += step` cannot advance when the box's
+absolute *coordinates* are large, independent of span — is closed too. Full table and the remaining
+caveats in [`security.md`](security.md) §"Worst-case CPU".
 
-- **Safety:** it is the one thing that would let the security posture claim worst-case CPU is
-  *closed* rather than *mitigated*.
-- **Real, everyday slowness:** measured, a legitimately-built 10-room house already costs ~200 ms
-  per simulation — and the memo re-runs on **every scene edit**, so that is 200 ms of lag per
-  nudge. A 50-room layout is ~11 s and effectively unusable. Capping iterations (or making the
-  step adaptive to span, as `rooms.ts` already does) fixes a real usability cliff, not just a
-  theoretical attack.
+**❌ Everyday slowness — NOT fixed, and this cap structurally cannot fix it.** Measured after the cap:
+a 50-room chain still costs 14.2 s per edit and a 100-room chain 106.1 s — *unchanged*, because their
+cost is not span-driven at all. It comes from `bestReflectionDb`, the blocked-line-of-sight fallback,
+which is O(walls × (objects + surfaces)) and fires on nearly every cell in a heavily-walled house. The
+cap's cost proxy deliberately omits that term: a legitimate multi-room house is itself the
+wall-heaviest thing in the app, so a walls-aware budget would fire on real layouts (measured: a legit
+50-room chain scores **20× higher** than the wall-heavy attack under such a model). The two
+populations are not separable by any cheap static cost model.
 
-Do it as its own session: it touches frozen engine files and every change there needs the full
-adversarial treatment.
+→ Rescheduled as **§2b** below with its own acceptance.
+
+## 2b. Bound the reflection search — **P1**
+
+The one thing that would fix both the everyday 50-room slowness AND the last security residual (a
+wall-heavy import-legal payload still costs **132.2 s**). `pairspot.ts` `bestReflectionDb` re-derives
+every candidate wall bounce per cell, per speaker, allocating a fresh `surfaces.filter` array per wall
+(`pairspot.ts:92`) — a GC firehose at scale. Options worth measuring: a per-call spatial index over
+walls; hoisting the `legSurfaces` filter out of the wall loop; an early-out on walls whose mirror
+cannot reach the cell; memoising per (speaker, wall) rather than per (speaker, wall, cell).
+
+**Acceptance:** a 50-room chain drops below ~2 s per pass · the wall-heavy 20-wall/64-speaker/span-399
+payload drops below ~10 s · `bestListeningSpot`/`bestPairSpot`/`computeAudio` stay byte-identical on
+the enumerated protected set in `src/engine/__tests__/fixtures/legit-scenes.ts` (reuse the S18 golden
+harness) · ratchet respected.
+
+## 2c. Bound `arrange.openSlots` (and `traceScene`) — **P1, promoted on measurement**
+
+**`arrange.ts` `openSlots`/`fits()` is the single worst unbounded path left in the codebase** — measured,
+not estimated. It materialises a slot array over `sceneBounds` at a fixed 0.45 m step (~786 k slots at
+span 399), and `fits()` re-concatenates `[...ctx.scene.objects, ...ctx.placed]` — a fresh array — for
+*every* candidate, on *every* `placeOne` call. Measured: span 20 m → 23 ms, 100 m → 428 ms, 399 m →
+**6.85 s** for a 6-item furnish queue; holding span at 399 and adding clutter costs ~**370 ms per
+existing object** (0 → 469 ms, 75 → 27.7 s, 150 → 57.1 s). Extrapolated to the import ceiling that is
+**30+ minutes for one `placeOne`**, and "Decide for me" calls it repeatedly. It is behind a dialog rather
+than the render path, which is the only reason it is not P0 — and `grid.ts` is now sitting right there.
+
+`traceScene` is the smaller, separate half: structurally out of reach of any span-derived cap because
+`MAX_RANGE = 60` (`raytrace.ts`) clips every ray, so its cost is `speakers × rayCount × surfaces` and
+does not depend on span (measured flat, 4.0–10.5 ms across spans 10 → 399 at fixed load). `rayCount` and
+`maxBounces` are sanitized, but object and speaker counts are **not** bounded on the load path — only
+`importRejection` limits those, and it guards a single call site (the JSON importer). Measured linear
+growth: 200 objects → 3.6 ms, 5 000 → 99.7 ms, 20 000 → 396.6 ms; 4 speakers → 2.2 ms, 300 → 125.3 ms.
+
+*(Measured clean and needing nothing: `rooms.ts` `regionOf` stays sub-10 ms at 1 200 walls / 300 rooms —
+the S3 adaptive-cell fix holds — and `optimize.ts` `placeAcrossHouse` scales linearly at ~125 ms
+projected for `MAX_IMPORT_ROOMS`.)*
 
 ---
 

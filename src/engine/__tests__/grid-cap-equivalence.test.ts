@@ -214,16 +214,22 @@ describe('the grid cap DOES fire on the scenes it exists for', () => {
     expect(found).not.toBeNull();
   });
 
-  it('a capped sweep completes in seconds, where the uncapped one took minutes', () => {
+  it('bounds the work of the slowest shape that survives the cap', () => {
     // A 400 m span at the 64-speaker import ceiling. This is the CHEAPEST-per-cell
     // adversarial shape (an empty hall has only 4 surfaces), so the work ceiling
     // barely engages and the cell ceiling carries it — which makes it the slowest
     // case that survives the cap, and therefore the honest one to assert on.
-    // The generous threshold is a CI-jitter allowance, not the measured figure;
-    // `docs/sessions/S18/bench/after.txt` carries the real numbers.
+    //
+    // Asserted as a deterministic CELL COUNT, never as wall-clock: a timing
+    // assertion here failed under `--coverage` at 10.18 s against a 10 s bound
+    // while the code was completely correct. Real timings live in
+    // `docs/sessions/S18/bench/after.txt`, measured without instrumentation.
     const scene = openHall(400, 64);
-    const t = performance.now();
-    bestListeningSpot(scene, false, false);
-    expect(performance.now() - t).toBeLessThan(10_000);
+    const bounds = sceneBounds(scene);
+    const surfaces = collectSurfaces(scene.objects).length;
+    const step = cappedStep(bounds, 0.7, bestCost(scene, surfaces));
+    expect(step).toBeGreaterThan(0.7);
+    expect(gridCells(bounds, step)).toBeLessThanOrEqual(MAX_GRID_CELLS);
+    expect(gridCells(bounds, 0.7) / gridCells(bounds, step)).toBeGreaterThan(2);
   });
 });

@@ -70,9 +70,9 @@ say so.
 ## Commands
 
 - `npm run dev` — Vite (user usually has this running on :5173 already; autoPort will move yours)
-- `npm test` — vitest, **711 tests** across TWO projects, all green as of 2026-07-23 (S17 doors+swing added +45: `engine/__tests__/door-swing-migration.test.ts` 5 · `engine/__tests__/door-swing-equivalence.test.ts` 4 (swing is acoustically inert — `traceScene`/`computeAudio`/`bestListeningSpot` byte-identical across swing, open+closed, with a `doorOpen` negative control) · `canvas/__tests__/door-swing.test.ts` 8 (the pure hinge/side/angle math incl. the arc-ordering guard) · `panels/__tests__/InspectorPanel.door.test.tsx` 7 (jsdom) · plus additions to `keyboard.test.ts`/`mode.test.ts`/`interaction.test.ts`/`placement.test.ts`/`canvas-a11y.test.tsx`). `|node|` (pure logic, 28 files) + `|dom|` (jsdom + axe, 3 files) — see `vite.config.ts` `test.projects`. S7/a11y added +273: `styles/__tests__/contrast.test.ts` 112 (WCAG maths + every real token pair, read from the REAL `tokens.css`/`THEMES` off disk); `canvas/__tests__/selection-cycle.test.ts` 26; `canvas/__tests__/placement.test.ts` 29; `app/__tests__/announce.test.ts` 37; `keyboard.test.ts` +21; `interaction.test.ts` +14; and 26 axe tests (`canvas-a11y` 10 / `panels.a11y` 11 / `shell.a11y` 5). S8 added +53 net across the whole hardening + follow-on arc: `engine/__tests__/hardening.test.ts` (input-boundary — throw sites, aliasing, id-collision incl. rooms, bounds termination, `importRejection` incl. room-id length) and `__tests__/security-headers.test.ts` (CSP drift across the 3 copies + a source scan for policy-incompatible APIs incl. outerHTML/insertAdjacentHTML/document.write), plus the rotation-granularity and +Door/+Window-chip fixes (`keyboard.test.ts`/`interaction.test.ts`). Ratchet: never let the count drop (95→126→140→181→239→245→296→322→340→613→644→649→655→659→666→**711**).
+- `npm test` — vitest, **760 tests** across TWO projects, all green as of 2026-07-27 (S17 doors+swing added +45: `engine/__tests__/door-swing-migration.test.ts` 5 · `engine/__tests__/door-swing-equivalence.test.ts` 4 (swing is acoustically inert — `traceScene`/`computeAudio`/`bestListeningSpot` byte-identical across swing, open+closed, with a `doorOpen` negative control) · `canvas/__tests__/door-swing.test.ts` 8 (the pure hinge/side/angle math incl. the arc-ordering guard) · `panels/__tests__/InspectorPanel.door.test.tsx` 7 (jsdom) · plus additions to `keyboard.test.ts`/`mode.test.ts`/`interaction.test.ts`/`placement.test.ts`/`canvas-a11y.test.tsx`). `|node|` (pure logic, 37 files) + `|dom|` (jsdom + axe, 3 files) — see `vite.config.ts` `test.projects`. S7/a11y added +273: `styles/__tests__/contrast.test.ts` 112 (WCAG maths + every real token pair, read from the REAL `tokens.css`/`THEMES` off disk); `canvas/__tests__/selection-cycle.test.ts` 26; `canvas/__tests__/placement.test.ts` 29; `app/__tests__/announce.test.ts` 37; `keyboard.test.ts` +21; `interaction.test.ts` +14; and 26 axe tests (`canvas-a11y` 10 / `panels.a11y` 11 / `shell.a11y` 5). S8 added +53 net across the whole hardening + follow-on arc: `engine/__tests__/hardening.test.ts` (input-boundary — throw sites, aliasing, id-collision incl. rooms, bounds termination, `importRejection` incl. room-id length) and `__tests__/security-headers.test.ts` (CSP drift across the 3 copies + a source scan for policy-incompatible APIs incl. outerHTML/insertAdjacentHTML/document.write), plus the rotation-granularity and +Door/+Window-chip fixes (`keyboard.test.ts`/`interaction.test.ts`). S18 grid cap added +49: `engine/__tests__/grid.test.ts` 21 (the pure projection/budget/step maths, incl. a fuzz that the projection bounds the REAL loop, and the large-coordinate termination class) · `engine/__tests__/grid-cap-equivalence.test.ts` 25 (bit-identity vs a golden captured from the PRE-cap engine, 2 negative controls, the deliberately-coarsened set, and the adversarial reduction ratios) + the `__tests__/fixtures/` protected-set enumeration and golden. Ratchet: never let the count drop (95→126→140→181→239→245→296→322→340→613→644→649→655→659→666→711→**760**).
 - `npm run lint` — **(S5)** flat ESLint (`eslint.config.js`): @eslint/js + typescript-eslint + eslint-plugin-react-hooks `recommended-latest`, scoped to `src`, ignoring `.claude`/`dist`/`coverage`. Clean (0 problems) as of 2026-07-19. exhaustive-deps is enforced; 5 documented survivor suppressions remain (SimCanvas:250/398 mount-once, Toast/Menu/LayoutGallery/ScenarioCompare mount-once) — see each file.
-- `npm run build` — tsc --noEmit + vite build (**410.66 kB / 132.32 kB gzip** JS + **43.18 kB / 8.24 kB gz** CSS + **1.31 kB** HTML after S17; JS +~2.5 kB gz vs S8's 130.1 for the new `canvas/door-swing.ts` module + the door inspector branch + the opening tool. Pre-S8 baseline for context: **403.5 kB / 130.1 kB gz**; JS +0.6 kB gz for `importRejection`/`cleanVec`/`clampSpan`, HTML 0.87→1.31 kB for the injected CSP meta. `src/security-headers.ts` is BUILD/TEST-ONLY — imported by `vite.config.ts`, never by a client module, so it does not reach the bundle (verified by grep against `dist/assets/*.js`). Pre-S8 was ~402 kB / 129.5 kB gz; JS +2.4 kB gz / CSS +0.19 kB gz vs S16 for `selection-cycle.ts`/`placement.ts`/`canvas-help.ts`/`announce.ts`/`useAnnouncer.ts`/`LiveAnnouncer.tsx` + the a11y CSS). `src/styles/contrast.ts` and everything under `src/test/` are TEST-ONLY and tree-shake out of the bundle. Self-hosted fonts are static assets in `public/fonts/` (7 Latin-subset woff2 + `LICENSE.md`, ~148 kB total, 2 preloaded ≈36 kB — NOT in the JS/CSS bundle). Run all four (lint/test/build) before claiming done.
+- `npm run build` — tsc --noEmit + vite build (**411.72 kB / 132.71 kB gzip** JS + **43.18 kB / 8.24 kB gz** CSS + **1.31 kB** HTML after S18; JS +1.0 kB / +0.36 kB gz vs S17's 410.66/132.32 for the new `engine/grid.ts` + the two call sites. Prior baseline for context: **410.66 kB / 132.32 kB gzip** after S17; JS +~2.5 kB gz vs S8's 130.1 for the new `canvas/door-swing.ts` module + the door inspector branch + the opening tool. Pre-S8 baseline for context: **403.5 kB / 130.1 kB gz**; JS +0.6 kB gz for `importRejection`/`cleanVec`/`clampSpan`, HTML 0.87→1.31 kB for the injected CSP meta. `src/security-headers.ts` is BUILD/TEST-ONLY — imported by `vite.config.ts`, never by a client module, so it does not reach the bundle (verified by grep against `dist/assets/*.js`). Pre-S8 was ~402 kB / 129.5 kB gz; JS +2.4 kB gz / CSS +0.19 kB gz vs S16 for `selection-cycle.ts`/`placement.ts`/`canvas-help.ts`/`announce.ts`/`useAnnouncer.ts`/`LiveAnnouncer.tsx` + the a11y CSS). `src/styles/contrast.ts` and everything under `src/test/` are TEST-ONLY and tree-shake out of the bundle. Self-hosted fonts are static assets in `public/fonts/` (7 Latin-subset woff2 + `LICENSE.md`, ~148 kB total, 2 preloaded ≈36 kB — NOT in the JS/CSS bundle). Run all four (lint/test/build) before claiming done.
 
 **GitHub (as of 2026-07-19):** the repo is public at **github.com/rayancheca/phantom-lock** (`origin`, default
 branch `main`). The owner wants visible contribution activity, so **push `main` after every session lands the
@@ -91,8 +91,9 @@ is unchanged. Do not re-tighten this without the owner saying so.
 **Engine (`src/engine/`, pure TS, fully unit-tested):**
 - `raytrace.ts` — ray casting, `directPath` (3D LOS with graze attenuation), `collectSurfaces`, `wallKeptSpans` (door gaps)
 - `stereo.ts` — `computeAudio`/`computePair`: pair metrics (ITD/ILD/angle/lock), `apexBlocked`, relocated `sweet` spot. **(S3)** the equilateral test (`eqError`/`isEquilateral`) is now pure **2D plan** distances — consistent with the 2D apex/angle/base — while `dA`/`dB` stay 3D for ITD/level; `locked` also requires 3D arrival symmetry (`pathDiff ≤ ITD_LOCK_TOLERANCE_M` = 0.07 m ≈ 0.2 ms) so an elevated-but-plan-symmetric pair locks yet a mismatched-height pair never false-locks.
-- `pairspot.ts` — `bestPairSpot` (per-pair wall-aware seat search), `bestReflectionDb` (image-source first-order bounces, **both legs occlusion-checked**). **(S3)** a bounce is now only credited when its point `u` lands on a **solid (kept) span** of the wall — surfaces filtered by `objectId === w.id` — so reflections no longer pass through door/window openings; plus an explicit zero-length-wall guard.
-- `bestspot.ts` — `bestListeningSpot` field (green ★ + glow): occlusion + reflections for ALL speakers, capability-weighted (mini 0.65), TV-mode gates score on `tvViewQuality`
+- `pairspot.ts` — `bestPairSpot` (per-pair wall-aware seat search — runs once per apex-BLOCKED pair, so up to 32× per `computeAudio`; its fixed `GRID_STEP` 0.35 gives 4× the cells `bestspot` walks over the same bounds), `bestReflectionDb` (image-source first-order bounces, **both legs occlusion-checked**). **(S18)** its sweep step is `cappedStep(bounds, GRID_STEP, objects + 2·surfaces)`. **(S3)** a bounce is now only credited when its point `u` lands on a **solid (kept) span** of the wall — surfaces filtered by `objectId === w.id` — so reflections no longer pass through door/window openings; plus an explicit zero-length-wall guard.
+- `bestspot.ts` — `bestListeningSpot` field (green ★ + glow): occlusion + reflections for ALL speakers, capability-weighted (mini 0.65), TV-mode gates score on `tvViewQuality`. **(S18)** its sweep step is `cappedStep(bounds, baseStep, objects + speakers·surfaces)`.
+- **`grid.ts` (S18, pure leaf — imports `types` ONLY, takes `bounds` as a parameter so there is no `scene→grid→scene` cycle):** bounds the two grid sweeps. `axisCells`/`gridCells` are UPPER bounds on what `for (t = min + step/2; t <= max; t += step)` really iterates (`floor(span/step) + 2`; the exact `floor(span/step − 0.5) + 1` is NOT a bound — float drift makes the real walk exceed it, measured 9 123 times in 560 000 samples). `cellBudget(perCellCost) = min(MAX_GRID_CELLS 160 000, MAX_GRID_WORK 1.5e8 / perCellCost)` — TWO ceilings because they catch different shapes and neither alone suffices (a 400 m square with 20 walls has 1.24 M cells but a work product *below* several legit scenes; a 5 000-object scene costs 47.8 ms per cell so even 100 cells is 5 s). `cappedStep` solves `(spanX/s + 2)(spanY/s + 2) ≤ budget` in closed form via the quadratic root, and **returns `baseStep` through `Math.max` — the identical float — whenever nothing binds, so bit-identity is STRUCTURAL, not a tested coincidence.** `minAdvancingStep` floors every step at `2·|coord|·ε` (closes a pre-existing non-termination class — see the lessons). Both constants are calibrated against the ENUMERATED protected set in `__tests__/fixtures/legit-scenes.ts`; re-derive them against that list if you touch either.
 - `optimize.ts` — `suggestPlacement` with `target: listener | room | house`; TV-behind-wall falls back to music with a note. **(S3)** whole-house `placeAcrossHouse` keeps a **per-room** `Map<roomId, Vec2[]>` and adds a dominant separation reward (`sepR·SEP_WEIGHT`, `MIN_HOUSE_SEP` = 1.0 m) so two pods sharing a room never stack on the same point — yet the most-separated valid spot always wins, so a pod is never silently dropped.
 - `rooms.ts` — `regionOf` flood-fill regions (`doorsBlock` option: true for sound zones, false for walkable floor). **(S3)** the grid cell is now **adaptive** (`max(0.3, span/158)`) instead of a hard 160-cell clamp, so scenes wider than ~48 m no longer silently truncate; bit-identical for spans ≤ 47.4 m.
 - `arrange.ts` — furniture placement brain (door corridors, daylight, feng shui, first-reflection absorbers, `ZONE_AFFINITY`, walkable containment) + `suggestInventory` ("Decide for me")
@@ -305,13 +306,69 @@ overwrites — worse than the DoS it prevents. Untrusted files are refused by `i
 is committed** (span 400 m, coord 100 km, 5 000 objects, 200 speakers, 500 areas, 256-char ids), asserted by a
 test to ACCEPT the bundled demo, a max-size UI room, and a 20-room "Add a room…" layout.
 
-**Honest limit, do not upgrade this claim without measuring:** worst-case CPU for a payload tuned to sit just
-under every import limit is **mitigated, not closed**. Cost is multiplicative in `objects × pairs × span²`, and a
-legitimate 10-room house already costs ~200 ms. Bounding it needs an iteration cap inside `bestspot.ts` /
-`pairspot.ts` — frozen this session, scheduled separately.
+**Worst-case CPU — BOUNDED as of S18** (`engine/grid.ts`), with measured residuals. An import-legal payload at
+64 speakers / span 360 m / 100 objects went from **264.6 s to 4.9 s** per simulation pass, the 5 000-object shape
+from hours to 4.5 s, and cost is now flat in span — which was the unbounded direction. **Do not upgrade the claim
+further without measuring:** three things remain unbounded, documented with numbers in `docs/security.md`
+§"Worst-case CPU" — (a) a WALL-heavy payload still costs **132.2 s**, because the cost proxy omits
+`bestReflectionDb` *deliberately* (a legitimate multi-room house is wall-heavier still, so a walls-aware budget
+would fire on real data — measured 20× higher than the attack); (b) `traceScene` is structurally immune to a
+span-derived cap (`MAX_RANGE` 60 clips every ray) and is unbounded on the load path — though measured, it is NOT
+the dominant term at the ceiling (`bestListeningSpot` 3.5–4.1 s vs `traceScene` 0.6–0.9 s); (c) `arrange.ts`
+`openSlots` measures **6.85 s at span 399** and ~370 ms per existing object, extrapolating to 30+ minutes at the
+ceiling — the worst unbounded path left. Follow-ups: `docs/ideas.md` §2b / §2c.
 
 ## Hard-won lessons
 
+- **A performance cap is calibrated against an ENUMERATED protected set, or it is a data-loss bug (S18):**
+  the first cut of the grid cap was calibrated against a 50-room chain of default 6×6 m rooms and looked
+  fine. A design agent measured it against the UI's actual `clampDim` maximum and found it fired on a
+  **16-room chain of 25×25 m rooms — span exactly 400 m, `importRejection`-ACCEPTED, coarsening with only
+  two speakers.** That is the S8 lesson ("a cap that fires on real data is a data-loss bug, not a fix")
+  reappearing in the CPU domain. "No legitimate scene" is **not a decidable predicate** — `addRoomShell`
+  appends flush with no gap and no room limit, so cell count grows without bound in room count and no
+  finite budget survives every UI-buildable layout. The fix is to write the protected set down as a
+  fixture list (`engine/__tests__/fixtures/legit-scenes.ts`), test every entry, and make the constants'
+  doc comments point at it. Calibrate against a subset and you will reintroduce exactly this bug.
+- **ONE ceiling is never enough — cheap-cell and expensive-cell attacks are disjoint (S18):** a 400 m
+  square with 20 walls reaches 1 243 528 pairspot cells at a work product *below* several legitimate
+  scenes, so a work budget cannot see it; a 5 000-object scene costs **47.8 ms per cell**, so a cell
+  budget large enough for real layouts still allows minutes of work. `grid.ts` therefore caps BOTH
+  `cells` and `cells × perCellCost`, and each one is load-bearing for a shape the other misses.
+- **Bound the DERIVED value through `Math.max`, and bit-identity becomes structural (S18):** `cappedStep`
+  returns its `baseStep` argument via `Math.max`, which yields the *identical float*, and `step` is the
+  only value the cap feeds into either loop — so "unchanged below the threshold" is a property of the
+  code, not a coincidence a test happens to catch. Still prove it: capture a golden from the PRE-cap
+  engine *before* wiring anything up (there is exactly one moment when the old engine exists), and keep
+  a negative control — `bestListeningSpot`'s own `coarse` flag is an in-tree step lever that demonstrably
+  moves the answer, so it proves the harness can fail.
+- **Span is not the only way a `t += step` loop fails to terminate — the ORIGIN is (S18):** S8 clamped the
+  span and recorded termination as closed. It was not. Whether the accumulator advances depends on
+  `ulp(t)`, i.e. the box's absolute coordinates: a room of an **ordinary 400 m span** parked at
+  x ≈ 4.6e15 cannot advance a 0.35 m step, and past ≈ 1e21 `clampSpan` rounds both ends to the midpoint
+  so the span is exactly **0** and every `span > 0` guard waves it straight through. Both are reachable
+  through the load path (`sanitizeScene` clamps no coordinate; `importRejection` guards only the JSON
+  importer). Floor every step at `2·|coord|·ε`. This also breaks the cell PROJECTION: `t += step` rounds
+  *down*, so more cells fit than `span/step` predicts (measured 502 real against 500 projected) — the
+  projection must be origin-aware or the budget it feeds is unsound.
+- **A closed-form cap must solve the projection you actually use, slack included (S18):** the obvious
+  `step = √(area / budget)` ignores the `+2`-per-axis slack in `axisCells` and lands **over** budget
+  (measured 2 116 cells against a 1 953 budget). Solve `(spanX/s + 2)(spanY/s + 2) ≤ budget` properly —
+  it is one quadratic root. An iterative `while (cells > budget) step *= k` would add float noise and
+  need its own termination proof; the closed form needs neither.
+- **Assert the deterministic integer, never the wall clock (S18):** a `performance.now()` assertion that
+  the capped sweep finishes "in under 10 s" passed under `npm test` and **failed at 10.18 s under
+  `npm run test:coverage`**, with the code completely correct — v8 instrumentation is the difference.
+  Cell counts are exact integers and cannot flake; timings belong in a saved benchmark artifact
+  (`docs/sessions/S18/bench/`), not in the suite.
+- **Cap the term that is actually unbounded, and say which ones you did not (S18):** this cap closes
+  `span²`. It does **not** touch `bestReflectionDb` (O(walls × (objects + surfaces)), and deliberately so:
+  a legitimate multi-room house is the wall-heaviest thing in the app, so a walls-aware budget fires on
+  real data — measured **20× higher** for a legit 50-room chain than for the wall-heavy attack. Nor
+  `traceScene`, which `MAX_RANGE` 60 makes span-independent by construction. Consequence to state plainly
+  rather than bury: a 50-room chain still costs 14.2 s per edit and a 100-room chain 106.1 s, **unchanged**
+  — so the "everyday slowness" half of `ideas.md` §2 was NOT delivered by this work and is rescheduled
+  as §2b. Shipping the half you can prove, and naming the half you cannot, beats claiming both.
 - **LOS rays from an object's center hit the object's own surfaces** — always filter `s.objectId !== obj.id` (the TV self-occlusion bug made TV/Music modes identical).
 - Image-source reflections MUST occlusion-check both legs or they pass through walls.
 - `setScene` history push guards against StrictMode double-runs (`h.past.top !== l.scene`).

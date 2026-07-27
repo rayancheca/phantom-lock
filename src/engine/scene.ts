@@ -52,8 +52,13 @@ export const MAX_LISTENERS = 32;
  *
  * 20 km is ~66× the largest scene anyone can practically work in (a 50-room
  * house spans 300 m and already costs ~11 s per edit), so no real layout is
- * affected. It guarantees termination; it does NOT by itself bound worst-case
- * CPU — see `docs/security.md`.
+ * affected. It guarantees termination ONLY against an oversized span — it does
+ * not bound worst-case CPU (`engine/grid.ts` does that, S18), and it does not by
+ * itself guarantee the loop advances, because whether `t += step` moves depends
+ * on the box's absolute COORDINATES rather than its span: a 400 m room at
+ * x ≈ 4.6e15 cannot advance a 0.35 m step, and past ≈ 1e21 both ends of the
+ * clamp round to the midpoint and the span collapses to exactly 0. `grid.ts`
+ * `minAdvancingStep` closes that. See `docs/security.md`.
  */
 export const MAX_SCENE_SPAN = 20_000;
 
@@ -815,15 +820,17 @@ export function sanitizeLayout(raw: unknown): Layout | null {
 //
 // Honest scope: these bounds reject every pathological payload measured (the
 // 354-byte `r: 1e308` brick, 1e17 coordinates, 200 000 objects, span ≥ 600) and
-// they guarantee termination. They do NOT keep an accepted import fast, and they
-// do NOT bound worst-case CPU for a payload hand-tuned to sit just under every
-// limit: a scene at 200 speakers / span 399 m / 100 objects — every value inside
-// these limits — was measured at ~157 s for one simulation pass, and it persists,
-// so the freeze recurs on every load until the layout is deleted. The cost is
-// multiplicative in objects × pairs × span², and a legitimate 10-room
-// house already costs ~200 ms. Truly bounding that needs an iteration cap
-// inside the grid loops themselves (`bestspot.ts` / `pairspot.ts`), which are
-// frozen this session. See `docs/security.md`.
+// they guarantee termination. They do NOT keep an accepted import fast.
+//
+// Worst-case CPU is no longer theirs to carry: `engine/grid.ts` (S18) bounds the
+// grid sweeps themselves, taking a payload at 64 speakers / span 360 m / 100
+// objects from a measured 264.6 s per simulation pass to 4.9 s, and cost is now
+// flat in span. One residual remains — a WALL-heavy payload (20 full-height
+// walls, 64 speakers, span 100 m) still costs 43.2 s, because the cap's cost
+// proxy deliberately does not model `bestReflectionDb`: a legitimate multi-room
+// house is itself wall-heavy, so a walls-aware model inflates the scenes that
+// must stay untouched more than it does the attack. See `docs/security.md`
+// §"Worst-case CPU" for the full table and the reasoning.
 
 /** Largest span (m) an imported scene may occupy on either axis. */
 export const MAX_IMPORT_SPAN = 400;

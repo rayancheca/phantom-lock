@@ -70,10 +70,14 @@ describe('cellBudget', () => {
     expect(cellBudget(1_280_000)).toBe(Math.floor(MAX_GRID_WORK / 1_280_000));
   });
 
-  it('never drops below one cell, however absurd the per-cell cost', () => {
-    expect(cellBudget(Number.MAX_SAFE_INTEGER)).toBeGreaterThanOrEqual(1);
-    expect(cellBudget(Infinity)).toBeGreaterThanOrEqual(1);
-    expect(cellBudget(NaN)).toBeGreaterThanOrEqual(1);
+  it('collapses to one cell for an absurd cost, and FAILS SAFE on a broken one', () => {
+    // `>= 1` would be a tautology — the outer `Math.max(1, …)` guarantees it
+    // whichever way the non-finite branch goes. Pin the DIRECTION: a NaN or
+    // Infinity cost must yield the most protective budget, not the least.
+    expect(cellBudget(Number.MAX_SAFE_INTEGER)).toBe(1);
+    expect(cellBudget(Infinity)).toBe(1);
+    expect(cellBudget(NaN)).toBe(1);
+    expect(cellBudget(-Infinity)).toBe(1);
   });
 
   it('is monotonically non-increasing in the per-cell cost', () => {
@@ -134,24 +138,67 @@ describe('cappedStep — only ever coarsens, and only over budget', () => {
           const step = cappedStep(box(w, h), base, cost);
           expect(Number.isFinite(step)).toBe(true);
           expect(step).toBeGreaterThan(0);
-          // A very thin, very long box is the one case where the "never lose the
-          // last row" clamp outranks the budget. `sceneBounds` guarantees ≥ 2 m
-          // per axis and ≤ MAX_SCENE_SPAN overall, which bounds even that at
-          // ~10,004 cells — so the ceiling still holds everywhere.
           expect(gridCells(box(w, h), step)).toBeLessThanOrEqual(MAX_GRID_CELLS);
         }
       }
     }
   });
 
-  it('always leaves at least one cell on each axis — the star must not vanish', () => {
-    // A thin box with a punishing per-cell cost is where a naive
-    // `step = sqrt(area / budget)` overshoots the short axis and yields zero rows.
-    for (const [w, h] of [[399, 2], [2, 399], [1_000, 2.5], [20_000, 2]]) {
-      const step = cappedStep(box(w, h), 0.7, 1e9);
-      expect(realAxisCount(0, w, step)).toBeGreaterThanOrEqual(1);
-      expect(realAxisCount(0, h, step)).toBeGreaterThanOrEqual(1);
+  it('honours the WORK ceiling too, including for thin corridor boxes', () => {
+    // The cell ceiling alone was asserted here before, and it hid a real hole:
+    // the "never lose the last row" clamp is derived from box SHAPE, so on a
+    // 400 x 2 m corridor (both axes individually import-legal) it silently
+    // overrode the work budget by 1.75x — and on the load path, where per-cell
+    // cost has no limit at all, without bound. The suite stayed green because
+    // nothing asserted `cells x cost`.
+    for (const [w, h] of [
+      [399, 399], [399, 2], [2, 399], [20_000, 2], [2, 20_000], [1_000, 3], [20_000, 20_000],
+    ]) {
+      for (const base of [0.25, 0.35, 0.7]) {
+        for (const cost of [1, 800, 25_600, 1_285_000, 1e9, 1e15]) {
+          const b = box(w, h);
+          const cells = gridCells(b, cappedStep(b, base, cost));
+          // `MAX_GRID_WORK` is the ceiling; `cellBudget`'s floor of one cell and
+          // the projection's 2-per-axis minimum mean the smallest describable
+          // grid is 4 cells, so allow that irreducible slack and nothing more.
+          expect(cells * cost).toBeLessThanOrEqual(Math.max(4 * cost, MAX_GRID_WORK));
+        }
+      }
     }
+  });
+
+  it('keeps the last row on a thin box whenever the budget can afford it', () => {
+    // A thin box with a punishing per-cell cost is where a naive
+    // `step = sqrt(area / budget)` overshoots the short axis and yields zero rows,
+    // so the star silently vanishes. At any cost a real scene reaches, the row
+    // must survive.
+    // Spans here stay inside `MAX_IMPORT_SPAN`; the 20 km case cannot afford a
+    // row at these costs and is asserted in the next test instead.
+    for (const [w, h] of [[399, 2], [2, 399], [1_000, 2.5]]) {
+      for (const cost of [1, 800, 25_600]) {
+        const step = cappedStep(box(w, h), 0.7, cost);
+        expect(realAxisCount(0, w, step)).toBeGreaterThanOrEqual(1);
+        expect(realAxisCount(0, h, step)).toBeGreaterThanOrEqual(1);
+      }
+    }
+  });
+
+  it('lets the budget outrank the last row when even one row cannot be afforded', () => {
+    // The deliberate trade, and the fix for a real hole: the last-row clamp is
+    // computed from box SHAPE alone, so leaving it unconditional let it override
+    // `MAX_GRID_WORK` without bound on a long thin box. Past the point where a
+    // single row busts the budget, the budget wins — the sweep may return
+    // nothing, which for a 20 km x 2 m scene carrying an object bomb is the
+    // honest answer, and a frozen tab is the worse one.
+    const b = box(20_000, 2);
+    const cost = 1e9;
+    const step = cappedStep(b, 0.7, cost);
+    expect(realAxisCount(0, 2, step)).toBe(0);
+    // The projection reports 2 cells per axis minimum, so 4 x cost is the
+    // smallest work any grid can describe — that floor, and nothing above it.
+    expect(gridCells(b, step) * cost).toBeLessThanOrEqual(Math.max(4 * cost, MAX_GRID_WORK));
+    // …and it still terminates, which is the property that must never be traded.
+    expect(realAxisCount(0, 20_000, step)).toBeLessThan(200_000);
   });
 
   it('survives degenerate bounds without returning NaN or zero', () => {
@@ -242,6 +289,30 @@ describe('termination at large coordinates (the origin, not the span)', () => {
           const wy = walks(b.min.y, b.max.y, step);
           expect(wx.terminates && wy.terminates).toBe(true);
           expect(gridCells(b, step)).toBeGreaterThanOrEqual(wx.cells * wy.cells);
+        }
+      }
+    }
+  });
+
+  it('meets the budget when a large origin and real coarsening COMPOSE', () => {
+    // The gap that let a real defect through: budget-compliance was only ever
+    // asserted at origin (0,0), and the large-coordinate tests only asserted
+    // termination. Composed, they failed — `cappedStep` solved for the raw span
+    // while `gridCells` policed the budget against the origin-shrunk effective
+    // step, so the sweep visited up to 3.9x its budget at |coord| ≈ 1e15.
+    for (const origin of [0, 1e10, 1e13, 1.2589254117941673e15, 1e17]) {
+      for (const span of [2, 100, 2_000, 20_000]) {
+        for (const base of [0.25, 0.35, 0.7]) {
+          for (const cost of [8, 800, 3_200, 25_600, 1e6]) {
+            const b = at(origin, span);
+            const budget = Math.max(4, cellBudget(cost));
+            const step = cappedStep(b, base, cost);
+            // Either it fits the budget, or it is the untouched base step
+            // (nothing bound), or the thin-box row is affordable — never over.
+            if (step !== Math.max(base, 0) || gridCells(b, base) > budget) {
+              expect(gridCells(b, step)).toBeLessThanOrEqual(budget);
+            }
+          }
         }
       }
     }

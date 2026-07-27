@@ -1461,3 +1461,114 @@ The 6 frozen engine files (`optimize/rooms/stereo/raytrace/pairspot/bestspot`) a
   stated+tested ✅ · migration proven (old-shape door → defaults, acoustics == fresh) ✅ · tests
   failing-first ✅ · gate green ✅ · frozen engine unchanged ✅ · CSP intact (React inline styles only;
   security-headers test green) ✅.
+
+### S18 — Grid-loop cap: bound the engine's grid sweeps (2026-07-27) ✅
+
+**Closes the S8 "worst-case CPU is mitigated, not closed" limit** (`docs/ideas.md` §2, P0) — the safety
+half of it. `bestListeningSpot` and `bestPairSpot` swept `sceneBounds` at a step with a ceiling
+(`min(0.7, span/24)` and a fixed 0.35), so cell count grew as `span²` with nothing above it.
+
+**What landed.** New pure leaf module `src/engine/grid.ts` (imports `types` only; takes `bounds` as a
+parameter, so no `scene→grid→scene` cycle). It bounds each sweep by TWO ceilings, because neither alone
+is sufficient and they catch disjoint attack shapes:
+
+- `MAX_GRID_CELLS` **160 000** — the huge-span/cheap-cell shape (a 400 m square with 20 walls has
+  1 243 528 pairspot cells at a work product *below* several legitimate scenes, so a work budget cannot
+  see it), and the only guard on the LOAD path, which `importRejection` never inspects: bounded solely
+  by `MAX_SCENE_SPAN`, pairspot projects **3.27 billion** cells — an OOM, not a stall.
+- `MAX_GRID_WORK` **1.5 × 10⁸** on `cells × perCellCost` — the expensive-cell shape, which a cell ceiling
+  cannot bound because per-cell cost is itself unbounded from the boundary's side (5 000 objects × 64
+  speakers measures **47.8 ms per cell**).
+
+Both are calibrated against an **enumerated** protected set (`src/engine/__tests__/fixtures/legit-scenes.ts`),
+not taste. Bit-identity is structural: `cappedStep` returns its `baseStep` through `Math.max` — the
+identical float — and `step` is the only value the cap feeds into either loop.
+
+**Also closed: a non-termination class S8 missed.** Whether `t += step` advances depends on the box's
+absolute **coordinates**, not its span. A room of an ordinary 400 m span at x ≈ 4.6e15 cannot advance a
+0.35 m step; past ≈ 1e21 `clampSpan` rounds both ends to the midpoint so the span is exactly 0 and every
+`span > 0` guard waves it through. Both reachable via the load path. `minAdvancingStep` floors every step
+at `2·|coord|·ε`. The same effect also broke the cell **projection** (`t += step` rounds down, so more
+cells fit than `span/step` predicts — measured 502 real against 500 projected), so `gridCells` is now
+origin-aware.
+
+**Measured (node 25, `docs/sessions/S18/bench/`), one full simulation pass:**
+
+| payload (all import-ACCEPTED) | before | after |
+|---|---|---|
+| bundled demo · 10-room chain | 61 ms · 177 ms | 63 ms · 182 ms (unchanged) |
+| span 90.6 m, 100 obj, 64 spk | 16.5 s | 5.0 s |
+| span 180.6 m, 100 obj, 64 spk | 65.1 s | 5.0 s |
+| **span 359.7 m, 100 obj, 64 spk** | **264.6 s** | **4.9 s** |
+| span 30 m, **5 000 obj**, 64 spk | 93.5 s | 4.7 s |
+| span 399 m, 5 000 obj, 64 spk | hours (never completed) | 4.5 s |
+
+Cost is now flat in span, which was the unbounded direction.
+
+**What was NOT delivered, and why it is structural.** `docs/ideas.md` §2 claimed two payoffs. The
+everyday-slowness half is **not** fixed and this cap cannot fix it: a 50-room chain still costs 14.2 s
+per edit and a 100-room chain 106.1 s, *unchanged*, because their cost is not span-driven — it comes from
+`bestReflectionDb` (O(walls × (objects + surfaces))), which the cost proxy deliberately omits. A
+legitimate multi-room house is the wall-heaviest thing in the app, so a walls-aware budget fires on real
+data: measured, a legit 50-room chain at the 64-speaker import ceiling scores **20× higher** than the
+wall-heavy attack. The same blind spot is the last security residual (a 20-wall/64-speaker/span-399
+payload still costs **132.2 s**). Rescheduled with its own acceptance as `docs/ideas.md` **§2b**
+(bound the reflection search) and **§2c** (`traceScene`, structurally immune to a span cap because
+`MAX_RANGE` 60 clips every ray, plus `arrange.ts` `openSlots`).
+
+**EVIDENCE BLOCK**
+- **Agents (role → verdict):** design Workflow, 11 agents. *Understand* ×4 — cost-model, legitimate-scene
+  sizer, import-boundary, test-scout; the sizer overturned my calibration by finding the UI's `clampDim`
+  max is 25 m (so a 16-room chain spans exactly 400 m), and the test-scout **refuted** the premise that a
+  closed-form cell count can equal the loop count (±1 per axis from float drift). *Design* ×3
+  (shared-helper / inline / cost-aware) → the cost-aware design **caught a live data-loss bug in my
+  own already-landed implementation**: `MAX_GRID_CELLS = 32 000` fired on the span-400,
+  import-ACCEPTED 16×(25×25) chain with only two speakers — the exact S8 failure mode. Recalibrated.
+  *Judge* → full spec. *Skeptics* ×3 — correctness/bit-identity **SURVIVES WITH CAVEATS**;
+  numerics/termination **REFUTED** (found the large-coordinate infinite loop, fixed above);
+  scope/completeness **REFUTED** the "closed" wording (`traceScene` is now dominant and span-immune, so
+  the doc must not claim closure). All three findings were real and are fixed or documented.
+  **Self-review over the actual diff — all three found real defects, all fixed:**
+  `silent-failure-hunter` → **1 CRITICAL** (the "never lose the last row" clamp is derived from box SHAPE
+  alone, so it silently outranked `MAX_GRID_WORK` — 1.75× over on a 400 × 2 m corridor, unbounded on the
+  load path; the suite was green because nothing asserted `cells × cost`) + 1 MED (`cellBudget` failed
+  toward the LEAST protective budget on a non-finite cost, guarded only by a tautological `>= 1` test)
+  + 1 HIGH (the protected-set enumeration omits the photo-import/detect/calibrate path, which has no
+  scale ceiling) + 1 MED (no diagnostic signal when the cap engages). First two fixed with tests that
+  fail against the old code; the latter two documented and rescheduled.
+  `code-reviewer` → **1 real defect**: `cappedStep` solved the closed form against the RAW span while
+  `gridCells` policed the budget against the origin-shrunk *effective* step, so a large-origin box could
+  visit **3.9× its budget**. Fixed by adding the slip back into the solve; the new test was verified
+  falsifiable (fails against the defect: 162 409 > 160 000). Also: a `minStep` naming collision (renamed
+  `coarsened`) and a stale test count — both fixed.
+  `performance-optimizer` → **REFUTED my `traceScene` claim** (at the ceiling `bestListeningSpot` is
+  3.5–4.1 s vs `traceScene` 0.6–0.9 s, so `traceScene` is *not* dominant there — docs corrected), showed
+  the reflection blind spot **grows without bound in wall count** (740× under-estimate at 20 walls →
+  11 600× at 4 000, so the tested 132.2 s is not the ceiling — docs corrected), measured `regionOf` and
+  `optimize.ts` clean, and put real numbers on `arrange.openSlots` (6.85 s at span 399; ~370 ms per
+  existing object; 30+ minutes projected at the ceiling) — promoting §2c from P2 to P1. Confirmed
+  `cappedStep` runs once per sweep with no new per-cell allocation.
+- **Test count:** 711 → **760** (+49; ratchet respected, none skipped/`.only`'d/weakened).
+- **Gate (literal tails pasted in-session):** `npm run lint` → 0 problems · `npm test` → **760 passed
+  (40 files)** · `npm run build` → clean, **411.72 kB / 132.71 kB gz** JS (+1.0 kB / +0.36 kB gz for
+  `grid.ts`) + 43.18/8.24 gz CSS + 1.31 kB HTML.
+- **Coverage (touched files):** `grid.ts` **100%** (stmts/branch/funcs/lines) · `bestspot.ts` 98.28% ·
+  `pairspot.ts` 93.66% · `scene.ts` 97.57% (comment-only change).
+- **Bit-identity proof:** a golden captured from the **pre-cap** engine (`make-golden.ts`, run against a
+  stashed-out cap) → **30/30 byte-identical** across `bestListeningSpot` × {tv, coarse} and
+  `computeAudio().pairs` for the demo, the max-size UI room, the 10-room chain and the 50-room chain at
+  4 and 16 speakers. Plus step-identity over the full enumerated protected set, and **two negative
+  controls** (the `coarse` lever genuinely moves the answer; a moved speaker genuinely breaks the golden).
+- **Live (fresh headless-Chrome profile — owner's real data never touched):**
+  `docs/sessions/S18/live-tune-sound.jpg`, `live-design-plan.jpg`, `live-tune-after-nudge.jpg`. App boots
+  with **zero console errors**, the seeded demo still reads **"Phantom center locked"**, both canvas
+  themes render unchanged, mode switching works, and five seat-nudges (five full re-simulations) took
+  **27 ms** total. ONE browser; no real screen reader was driven.
+- **Acceptance:** worst case bounded + measured before/after ✅ · legitimate scenes bit-identical, proven
+  against a pre-cap golden ✅ · cap is a deterministic integer, tested directly (and the one wall-clock
+  assertion was **removed** after it flaked at 10.18 s under `--coverage`) ✅ · failing-first tests, ratchet
+  up ✅ · frozen engine files other than `bestspot`/`pairspot` byte-unchanged (`git diff --stat`; `scene.ts`
+  is comments only) ✅ · CSP/security posture intact ✅ · `docs/security.md` updated with real numbers ✅ ·
+  **"limit fully closed" NOT claimed** — three residuals documented with measurements and rescheduled
+  (§2b/§2c), which is a deliberate deviation from the kickoff's "sub-second, closed" wording, taken
+  because bit-identity on legitimate wall-heavy houses provably forbids it.

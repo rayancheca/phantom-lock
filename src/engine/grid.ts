@@ -11,10 +11,11 @@ import type { Vec2 } from './types';
  * gets a rougher answer instead of freezing the tab, and the scene the user
  * owns is never mangled.
  *
- * Bit-identity is STRUCTURAL, not a tested coincidence: the step is
- * `Math.max(baseStep, minStep)`, which returns the *identical float* `baseStep`
- * whenever the grid already fits. A scene under budget therefore runs the byte-
- * identical loop it ran before this module existed.
+ * Bit-identity is STRUCTURAL, not a tested coincidence: every path out of
+ * `cappedStep` runs the returned value through `Math.max(baseStep, …)`, which
+ * yields the *identical float* `baseStep` whenever nothing binds — and `step` is
+ * the only value this module feeds into either loop. A scene under budget
+ * therefore runs the byte-identical loop it ran before this module existed.
  */
 
 export interface Bounds {
@@ -144,7 +145,14 @@ export function minAdvancingStep(bounds: Bounds): number {
  * budget shrinks exactly as the real cost per cell grows.
  */
 export function cellBudget(perCellCost: number): number {
-  const cost = Number.isFinite(perCellCost) && perCellCost > 1 ? perCellCost : 1;
+  // A NaN or Infinity cost means something upstream is broken. Fail toward the
+  // SAFE side — one cell — rather than toward `MAX_GRID_CELLS`: treating an
+  // unknown cost as the cheapest possible would hand a broken caller the largest
+  // budget in the table, which is exactly backwards from what this function
+  // promises. (Unreachable from the two real call sites, which are integer
+  // `.length` arithmetic, but this is exported and general-purpose.)
+  if (!Number.isFinite(perCellCost)) return 1;
+  const cost = perCellCost > 1 ? perCellCost : 1;
   return Math.max(1, Math.min(MAX_GRID_CELLS, Math.floor(MAX_GRID_WORK / cost)));
 }
 
@@ -178,21 +186,35 @@ export function cappedStep(bounds: Bounds, baseStep: number, perCellCost: number
   const sum = spanX + spanY;
   const area = spanX * spanY;
   const solved = area / (Math.sqrt(sum * sum + area * (budget - 4)) - sum);
-  const minStep = Math.max(solved, minAdvancingStep(bounds));
-  // A sweep must still visit at least one cell on EACH axis, or the caller loses
-  // its result entirely (`bestListeningSpot` would return `best: null` and the
-  // green ★ would silently vanish). The loop starts half a step in, so a step
+  // `solved` is the required EFFECTIVE step, but `gridCells` — the function that
+  // polices this budget everywhere else — first shrinks any step by the box's
+  // rounding slip. Returning `solved` raw therefore satisfies the algebra and
+  // still busts the budget once the origin is large: measured up to 3.9× over at
+  // |coord| ≈ 1e15. Add the slip back, so `effectiveStep` cancels it exactly.
+  // (When `slip ≥ solved`, `effectiveStep` falls back to half the step, which is
+  // ≥ `solved` too — so the bound holds on both of its branches.)
+  const slip = minAdvancingStep(bounds) / 2;
+  const coarsened = Math.max(solved + slip, minAdvancingStep(bounds));
+  if (!Number.isFinite(coarsened) || coarsened <= 0) return Math.max(floor, 2 * spanY, 2 * spanX);
+  // A sweep should still visit at least one cell on EACH axis where it can, or
+  // the caller loses its result entirely (`bestListeningSpot` returns `best:
+  // null` and the green ★ vanishes). The loop starts half a step in, so a step
   // wider than twice the short axis yields zero rows.
   //
-  // For a box thin enough for this clamp to bind, it wins over the budget — but
-  // the result stays bounded, because `sceneBounds` guarantees ≥ 2 m on each axis
-  // and ≤ `MAX_SCENE_SPAN` overall: the worst case is ~10,004 projected cells,
-  // still under `MAX_GRID_CELLS`. Termination and memory are never at risk.
+  // But this preference is CAPPED BY THE BUDGET, and that is load-bearing: the
+  // clamp is derived from box SHAPE alone, so left unconditional it silently
+  // outranks `MAX_GRID_WORK` by an unbounded factor. Measured on a 400 × 2 m
+  // corridor (both axes individually import-legal) at the import ceiling's
+  // per-cell cost, the shape-only clamp walks 204 cells × 1,285,000 = 2.6 × 10⁸
+  // work — 1.75× over the ceiling; on the load path, where cost has no limit at
+  // all, the same branch is unbounded. So: keep the last row only while it fits
+  // the budget, and otherwise take the budget-correct step even though the sweep
+  // may then return nothing. A 20 km × 2 m scene carrying 5 000 objects has no
+  // meaningful listening spot anyway, and a frozen tab is the worse answer.
   //
-  // The clamp must never sink below the advancing floor, or termination would be
-  // traded away for a cosmetic extra row.
-  const shortAxis = Math.min(spanX, spanY);
-  const thin = Math.max(floor, 2 * shortAxis);
-  if (!Number.isFinite(minStep) || minStep <= 0) return thin;
-  return Math.max(floor, Math.min(minStep, thin));
+  // The clamp must never sink below the advancing floor either, or termination
+  // would be traded away for a cosmetic extra row.
+  const thin = Math.max(floor, 2 * Math.min(spanX, spanY));
+  if (thin < coarsened && gridCells(bounds, thin) <= budget) return thin;
+  return Math.max(floor, coarsened);
 }
