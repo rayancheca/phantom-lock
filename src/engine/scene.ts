@@ -822,15 +822,19 @@ export function sanitizeLayout(raw: unknown): Layout | null {
 // 354-byte `r: 1e308` brick, 1e17 coordinates, 200 000 objects, span ≥ 600) and
 // they guarantee termination. They do NOT keep an accepted import fast.
 //
-// Worst-case CPU is no longer theirs to carry: `engine/grid.ts` (S18) bounds the
-// grid sweeps themselves, taking a payload at 64 speakers / span 360 m / 100
-// objects from a measured 264.6 s per simulation pass to 4.9 s, and cost is now
-// flat in span. One residual remains — a WALL-heavy payload (20 full-height
-// walls, 64 speakers, span 100 m) still costs 43.2 s, because the cap's cost
-// proxy deliberately does not model `bestReflectionDb`: a legitimate multi-room
-// house is itself wall-heavy, so a walls-aware model inflates the scenes that
-// must stay untouched more than it does the attack. See `docs/security.md`
-// §"Worst-case CPU" for the full table and the reasoning.
+// Worst-case CPU is no longer theirs to carry. `engine/grid.ts` (S18) bounds the
+// grid sweeps, taking a payload at 64 speakers / span 360 m / 100 objects from a
+// measured 264.6 s per simulation pass to 4.9 s and making cost flat in span;
+// `engine/reflection.ts` (S19) then bounded the reflection search, which the cap
+// structurally could not reach. Post-S19 the same object-bomb payload measures
+// 0.12 s, and the WALL-heavy shapes that were the residual measure 4.6 s at span
+// 100 (was 43.2 s) and 12.0 s at span 399 (was 129.7 s).
+//
+// The cap's cost proxy still deliberately does not model `bestReflectionDb`, and
+// that has not changed: a legitimate multi-room house is itself the wall-heaviest
+// thing the app produces, so a walls-aware model inflates the scenes that must
+// stay untouched more than it does the attack. S19 made the work cheaper instead
+// of capping it. See `docs/security.md` §"Worst-case CPU" for the full table.
 
 /** Largest span (m) an imported scene may occupy on either axis. */
 export const MAX_IMPORT_SPAN = 400;

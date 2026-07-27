@@ -12,7 +12,8 @@ effort — a small high-value item beats a large one.
 |---|---|---|---|
 | 1 | Auto-detect walls accuracy overhaul | **P0 — broken feature** | 1 session *(scheduled as S12)* |
 | 2 | ✅ **Grid-loop iteration cap** — **DONE S18** (safety half; slowness half → 2b) | ~~P0~~ done | — |
-| 2b | **Bound the reflection search** (`bestReflectionDb`) — the everyday-slowness half | **P1 — high** | ½–1 session |
+| 2b | ✅ **Bound the reflection search** (`bestReflectionDb`) — **DONE S19** (50-room 13.7 s → 0.50 s) | ~~P1~~ done | — |
+| 2d | Close the last wall-heavy residual (12.0 s → <10 s): `bestPairSpot`'s 32 null sweeps | P2 | ½ session |
 | 2c | Bound `traceScene` + `arrange.openSlots` | P2 | ½ session |
 | 3 | **Guided tutorial mode** | **P1 — high** | 1–2 sessions |
 | 3b | ✅ **Door width + swing angle** (owner-requested) — **DONE S17** (G2f corridors deferred) | ~~P1~~ done | — |
@@ -55,19 +56,64 @@ populations are not separable by any cheap static cost model.
 
 → Rescheduled as **§2b** below with its own acceptance.
 
-## 2b. Bound the reflection search — **P1**
+## 2b. Bound the reflection search — ✅ **DONE (S19)**
 
-The one thing that would fix both the everyday 50-room slowness AND the last security residual (a
-wall-heavy import-legal payload still costs **132.2 s**). `pairspot.ts` `bestReflectionDb` re-derives
-every candidate wall bounce per cell, per speaker, allocating a fresh `surfaces.filter` array per wall
-(`pairspot.ts:92`) — a GC firehose at scale. Options worth measuring: a per-call spatial index over
-walls; hoisting the `legSurfaces` filter out of the wall loop; an early-out on walls whose mirror
-cannot reach the cell; memoising per (speaker, wall) rather than per (speaker, wall, cell).
+Landed as `src/engine/reflection.ts` plus two caller-level skips. `bestReflectionDb`
+was 94–100 % of a simulation pass on every wall-heavy scene, and it loaded that cost
+through **opposite factors** in the two shapes that mattered — the 50-room chain ran
+45 901 calls at 315 µs each, the wall-heavy attack 16.0 M calls at 7.7 µs — which is
+precisely why S18's cap could not touch either: the chain's grids are never capped at
+all. Three independent wins, all bit-identical:
 
-**Acceptance:** a 50-room chain drops below ~2 s per pass · the wall-heavy 20-wall/64-speaker/span-399
-payload drops below ~10 s · `bestListeningSpot`/`bestPairSpot`/`computeAudio` stay byte-identical on
-the enumerated protected set in `src/engine/__tests__/fixtures/legit-scenes.ts` (reuse the S18 golden
-harness) · ratchet respected.
+1. **Per-call.** Everything independent of the grid cell is hoisted out of it: per-wall
+   edge vector, unit direction, `20·log10(keep)` and the open-door spans (turning an
+   O(objects) scan into an interval list), per-(speaker, wall) mirror images. The
+   `surfaces.filter(...)` array plus two `directPath` objects per wall per cell became
+   one allocation-free `blocked`-only scan — legal because `blocked` is a pure
+   existential, so any visit order and any witness give the same boolean.
+2. **Primitive.** `geometry.ts` gained `raySegmentT`/`rayCircleT`/`surfaceT`: the same
+   `t` without building `point`/`normal` (and without the `Math.hypot` inside `v.norm`).
+   `directOcclusion` uses them, which alone took the object-bomb payload 4.9 s → 0.12 s.
+3. **Caller.** `bestListeningSpot` skips a cell whose pure geometry scores zero for
+   every pair (when nothing is unpaired), before paying for any occlusion;
+   `bestPairSpot` short-circuits the second `reachDb` *computation*, not just its test.
+
+| payload | before | after | |
+|---|---|---|---|
+| 50-room chain | 13.7 s | **0.50 s** | 27× |
+| 100-room chain | 102.8 s | **1.8 s** | 58× |
+| 10-room chain | 179.8 ms | **39.5 ms** | 4.6× |
+| bundled demo | 64.4 ms | **49.9 ms** | 1.3× |
+| wall-heavy span 399 | 129.7 s | **12.0 s** | 10.8× |
+
+**Acceptance:** 50-room < ~2 s ✅ (0.50 s) · byte-identical on the protected set ✅
+(153/153 new golden + 30/30 S18 golden, with failing negative controls) · ratchet ✅
+(760 → 807) · wall-heavy < ~10 s ❌ (12.0 s) → §2d.
+
+Note the §2 argument this did NOT overturn: a walls-aware cost proxy is still
+forbidden, because a legitimate multi-room house remains the wall-heaviest thing the
+app produces. S19 made the work cheaper rather than capping it.
+
+## 2d. Close the last wall-heavy residual — **P2**
+
+The wall-heavy import-legal payload (20 walls / 64 speakers / 32 pairs / span 399) sits
+at **12.0 s**, against the ~10 s §2b aimed at. Measured split: `computeAudio` **8.5 s**,
+`bestListeningSpot` **3.4 s**, `traceScene` 0.13 s. The `computeAudio` term is
+`bestPairSpot` running once per apex-blocked pair — 32 sweeps of ~154 000 cells — and it
+returns `null` for **every** pair, so all 8.5 s produces nothing. The S19 cell-skip does
+not transfer: `bestListeningSpot`'s gate is pure geometry, `bestPairSpot`'s is
+*reachability*, which cannot be decided without the occlusion work it is trying to avoid.
+
+`reflectionDb` is near its floor at 1.0 µs/call (20 wall iterations, two unavoidable
+divisions each — the obvious single-reciprocal fix is exactly the reassociation
+bit-identity forbids). So this needs a different idea, not more of the same one.
+Candidates worth measuring: hoisting `bestPairSpot`'s sweep so the 32 pairs share one
+pass over the grid instead of 32; deciding `apexBlocked` more cheaply upstream in
+`stereo.ts` so fewer pairs reach `bestPairSpot` at all; or a cheap conservative
+reachability bound per (speaker, cell) reused across pairs.
+
+**Acceptance:** the wall-heavy payload drops below ~10 s · every output stays
+byte-identical against `reflection-golden.json` and `legit-golden.json` · ratchet respected.
 
 ## 2c. Bound `arrange.openSlots` (and `traceScene`) — **P1, promoted on measurement**
 

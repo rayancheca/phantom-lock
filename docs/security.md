@@ -221,45 +221,72 @@ Measured, one full simulation pass (`traceScene` + `computeAudio` +
 
 Cost is now essentially **flat in span**, which was the unbounded direction.
 
+**Superseded (S19).** The paragraphs that stood here described `bestReflectionDb`
+as an unbounded residual the grid cap could not reach, quoted **132.2 s** for a
+wall-heavy payload, and projected "tens of minutes" at 4 000 walls. S19 bounded
+that search directly (`engine/reflection.ts`), so the numbers below replace them.
+The *reasoning* is preserved verbatim in [`ideas.md`](ideas.md) §2 because it is
+still correct and still load-bearing: a walls-aware cost proxy remains forbidden,
+since a legitimate multi-room house is the wall-heaviest thing the app produces
+(a legit 50-room chain scored **20× higher** than the attack under such a model).
+S19 did not add one — it made the work cheaper instead.
+
+### The reflection search — bounded (S19)
+
+`bestReflectionDb` was 94–100 % of a simulation pass on every wall-heavy scene, and
+it loaded that cost through two *opposite* factors, which is why one cap could
+never have fixed both: the 50-room chain ran **45 901 calls × 315 µs**, the
+wall-heavy attack **16.0 M calls × 7.7 µs**. S19 attacks the per-call work
+(hoisting everything independent of the grid cell, an allocation-free
+`blocked`-only occlusion scan) *and* the call count (skipping cells and `reachDb`
+evaluations whose results are provably discarded).
+
+Measured, one full pass — `traceScene` + `computeAudio` + `bestListeningSpot` —
+node 25, same machine, `docs/sessions/S19/bench/{before,after}.txt`:
+
+| payload | S18 | S19 | |
+|---|---|---|---|
+| bundled Maple Court demo | 64.4 ms | **49.9 ms** | 1.3× |
+| 10-room chain, 4 speakers | 179.8 ms | **39.5 ms** | 4.6× |
+| **50-room chain, 4 speakers** | **13.7 s** | **0.50 s** | **27×** |
+| 100-room chain, 4 speakers | 102.8 s | **1.8 s** | 58× |
+| span 399, 100 objects, 64 speakers | 4.9 s | **0.12 s** | 41× |
+| walled span 100, 20 walls, 64 speakers | 42.3 s | **4.6 s** | 9.3× |
+| **walled span 399, 20 walls, 64 speakers** | **129.7 s** | **12.0 s** | **10.8×** |
+
+Every payload above is inside `importRejection`. The 50-room and 100-room chains
+are the *legitimate* shapes — layouts the "Add a room…" dialog builds one click at
+a time — and they were the everyday-slowness half S18 explicitly could not deliver.
+
+**Bit-identity, not approximation.** None of this changes a single output. It is
+pinned by a golden captured from the pre-S19 engine (git `c95a57b`): 153 entries
+and 8 814 direct `bestReflectionDb` samples over 17 branch-coverage scenes, plus
+S18's own 30/30 legit-scene golden. Negative controls confirm the harness fails
+when arithmetic moves — a nested `Math.hypot` rewritten as `sqrt(x*x+y*y)` breaks
+14 entries, `v.norm` → `v.scale(q, 1/len)` breaks 1, and dropping the cell skip's
+`solos.length === 0` guard breaks 8.
+
 **The residual, stated honestly — do not upgrade this claim without measuring.**
-A *wall-heavy* payload is still slow, and the gap **grows without bound in wall
-count**. The cost proxy does not model `bestReflectionDb`, the
-blocked-line-of-sight fallback, which is O(walls × (objects + surfaces)) and fires
-whenever a direct path is blocked. Measured at span 399 with 64 speakers, probing
-`bestReflectionDb` directly (every field inside `importRejection`):
+The wall-heavy attack is still the worst import-legal payload at **12.0 s**, above
+the ~10 s this work aimed at. Where that 12.0 s sits, measured: `computeAudio`
+**8.5 s**, `bestListeningSpot` **3.4 s**, `traceScene` 0.13 s. The `computeAudio`
+term is `bestPairSpot` running once per apex-blocked pair — 32 sweeps of ~154 000
+cells — and it returns `null` for every pair, i.e. it is again work that produces
+nothing. Unlike `bestListeningSpot`, though, its cell gate is *reachability*, which
+cannot be decided without doing the occlusion work, so the S19 cell-skip trick has
+no analogue there. `reflectionDb` itself now measures **1.0 µs/call** against 7.7 µs
+before, and is close to its floor: 20 wall iterations carrying two unavoidable
+divisions each, where the obvious fix (one reciprocal, two multiplies) is exactly
+the reassociation bit-identity forbids. Closing the last 20 % needs a different
+idea, not more of this one — rescheduled as [`ideas.md`](ideas.md) §2d.
 
-| walls | proxy cost | cell budget | real cost/call | proxy under-estimates by |
-|---|---|---|---|---|
-| 20 | 60 | 160 000 | 0.030 ms | ~740× |
-| 200 | 600 | 160 000 | 0.336 ms | ~1 700× |
-| 1 000 | 3 000 | 50 000 | 3.52 ms | ~3 500× |
-| 4 000 | 12 000 | 12 500 | 46.6 ms | ~11 600× |
-
-`cellBudget` shrinks only linearly (through the surfaces term) while the real cost
-grows closer to quadratically, so the cap engages (92× fewer cells at 4 000 walls)
-without bounding the *result*: an end-to-end 20-wall / 32-pair payload measures
-**132.2 s**, and a 4 000-wall one projects to **tens of minutes**. Treat the 132 s
-figure as the tested case, not the ceiling.
-
-It is deliberately not modelled, and an additive `walls` term could not fix it
-anyway — the real cost is *multiplicative*, so no additive term closes an 11 600×
-gap, and a properly multiplicative one fires on real data: **a legitimate
-multi-room house is the wall-heaviest thing the app produces** (a 50-room chain
-carries 200 walls). Measured, a legit 50-room chain at the 64-speaker import
-ceiling scores 9.9 × 10⁹ under a walls-aware model against the attack's
-4.98 × 10⁸ — **20× higher**. The two populations are not separable by any static
-per-cell proxy; only bounding the reflection search itself closes this. Scheduled
-as [`ideas.md`](ideas.md) §2b.
-
-**Where the time actually goes now** (measured at the ceiling — 5 000 objects,
-64 speakers, span ≈ 399): `bestListeningSpot` **3.5–4.1 s**, `traceScene`
-**0.6–0.9 s**, `computeAudio` 62–83 ms. So the capped sweep itself still dominates;
-`traceScene` does not. (`traceScene` *is* the dominant term on ordinary scenes —
-44.9 ms of the bundled demo's 65.7 ms — and it is genuinely unbounded on the load
-path, scaling linearly in both object count and speaker count, neither of which
-`sanitizeScene` limits. But it is structurally immune to a span-derived cap:
-`MAX_RANGE = 60` clips every ray, so its cost does not depend on span at all,
-measured flat at 4.0–10.5 ms across spans 10 → 399 at fixed load.)
+**Where the time actually goes now.** On ordinary scenes `traceScene` is once again
+the dominant term (44.1 ms of the bundled demo's 49.9 ms) and the demo barely moved,
+because it has almost no reflection cost to remove. `traceScene` is genuinely
+unbounded on the load path, scaling linearly in object and speaker count, neither of
+which `sanitizeScene` limits — but it is structurally immune to a span-derived cap
+(`MAX_RANGE = 60` clips every ray, so its cost does not depend on span at all,
+measured flat at 4.0–10.5 ms across spans 10 → 399 at fixed load).
 
 `rooms.ts` `regionOf` and `optimize.ts` were measured and are **fine** (sub-10 ms
 at 1 200 walls / 300 rooms; `placeAcrossHouse` ~125 ms projected at
