@@ -1,0 +1,1338 @@
+{
+  "bundled Maple Court demo | tv=false | coarse=false": {
+    "best": {
+      "x": 2.01,
+      "y": 4.293333333333333
+    },
+    "bestScore": 0.2729060151188345,
+    "zone": [
+      {
+        "p": {
+          "x": 2.01,
+          "y": 4.293333333333333
+        },
+        "s": 0.2729060151188345
+      },
+      {
+        "p": {
+          "x": 2.01,
+          "y": 6.526666666666665
+        },
+        "s": 0.2592069413393422
+      }
+    ]
+  },
+  "bundled Maple Court demo | tv=false | coarse=true": {
+    "best": {
+      "x": 2.4499999999999997,
+      "y": 6.700000000000001
+    },
+    "bestScore": 0.14974401482607033,
+    "zone": [
+      {
+        "p": {
+          "x": 2.4499999999999997,
+          "y": 6.700000000000001
+        },
+        "s": 0.14974401482607033
+      }
+    ]
+  },
+  "bundled Maple Court demo | audio | tv=false": [
+    {
+      "aId": "s0",
+      "bId": "s1",
+      "aLabel": "S0",
+      "bLabel": "S1",
+      "dA": 1.7423593200026215,
+      "dB": 1.640049999237828,
+      "base": 1.454,
+      "pathDiff": 0.1023093207647936,
+      "itdMs": 0.29827790310435454,
+      "ildDb": -0.5256126888919939,
+      "angleDeg": 51.19251130777248,
+      "eqError": 0.17257173049342742,
+      "isEquilateral": false,
+      "combNotchHz": 1676.2891075611178,
+      "tv": null,
+      "losBlocked": false,
+      "modelMismatch": false,
+      "locked": false,
+      "quality": 0.03460143219720355,
+      "apexBlocked": false,
+      "sweet": {
+        "x": 2.181,
+        "y": 4.150799062897425
+      },
+      "sweetRelocated": false,
+      "apex": {
+        "x": 2.181,
+        "y": 4.150799062897425
+      },
+      "degenerate": false
+    },
+    {
+      "aId": "s2",
+      "bId": "s3",
+      "aLabel": "S2",
+      "bLabel": "S3",
+      "dA": 2.563580308864928,
+      "dB": 3.8317562552959963,
+      "base": 1.4539999999999997,
+      "pathDiff": 1.2681759464310685,
+      "itdMs": 3.6973059662713363,
+      "ildDb": 3.4910189598534984,
+      "angleDeg": 12.973426484668236,
+      "eqError": 0.908285734114043,
+      "isEquilateral": false,
+      "combNotchHz": 135.23360104931768,
+      "tv": null,
+      "losBlocked": true,
+      "modelMismatch": false,
+      "locked": false,
+      "quality": 0,
+      "apexBlocked": true,
+      "sweet": {
+        "x": 5.089,
+        "y": 4.150799062897426
+      },
+      "sweetRelocated": false,
+      "apex": {
+        "x": 5.089,
+        "y": 4.150799062897426
+      },
+      "degenerate": false
+    }
+  ],
+  "bundled Maple Court demo | tv=true | coarse=false": {
+    "best": {
+      "x": 2.01,
+      "y": 4.293333333333333
+    },
+    "bestScore": 0.12940293550218068,
+    "zone": [
+      {
+        "p": {
+          "x": 2.01,
+          "y": 4.293333333333333
+        },
+        "s": 0.12940293550218068
+      },
+      {
+        "p": {
+          "x": 2.01,
+          "y": 6.526666666666665
+        },
+        "s": 0.12290729135173807
+      }
+    ]
+  },
+  "bundled Maple Court demo | tv=true | coarse=true": {
+    "best": {
+      "x": 2.4499999999999997,
+      "y": 6.700000000000001
+    },
+    "bestScore": 0.07100362036336168,
+    "zone": [
+      {
+        "p": {
+          "x": 2.4499999999999997,
+          "y": 6.700000000000001
+        },
+        "s": 0.07100362036336168
+      }
+    ]
+  },
+  "bundled Maple Court demo | audio | tv=true": [
+    {
+      "aId": "s0",
+      "bId": "s1",
+      "aLabel": "S0",
+      "bLabel": "S1",
+      "dA": 1.7423593200026215,
+      "dB": 1.640049999237828,
+      "base": 1.454,
+      "pathDiff": 0.1023093207647936,
+      "itdMs": 0.29827790310435454,
+      "ildDb": -0.5256126888919939,
+      "angleDeg": 51.19251130777248,
+      "eqError": 0.17257173049342742,
+      "isEquilateral": false,
+      "combNotchHz": 1676.2891075611178,
+      "tv": {
+        "offAxis": 0.881,
+        "aligned": false
+      },
+      "losBlocked": false,
+      "modelMismatch": false,
+      "locked": false,
+      "quality": 0.027323597625058395,
+      "apexBlocked": false,
+      "sweet": {
+        "x": 2.181,
+        "y": 4.150799062897425
+      },
+      "sweetRelocated": false,
+      "apex": {
+        "x": 2.181,
+        "y": 4.150799062897425
+      },
+      "degenerate": false
+    },
+    {
+      "aId": "s2",
+      "bId": "s3",
+      "aLabel": "S2",
+      "bLabel": "S3",
+      "dA": 2.563580308864928,
+      "dB": 3.8317562552959963,
+      "base": 1.4539999999999997,
+      "pathDiff": 1.2681759464310685,
+      "itdMs": 3.6973059662713363,
+      "ildDb": 3.4910189598534984,
+      "angleDeg": 12.973426484668236,
+      "eqError": 0.908285734114043,
+      "isEquilateral": false,
+      "combNotchHz": 135.23360104931768,
+      "tv": {
+        "offAxis": 3.7890000000000006,
+        "aligned": false
+      },
+      "losBlocked": true,
+      "modelMismatch": false,
+      "locked": false,
+      "quality": 0,
+      "apexBlocked": true,
+      "sweet": {
+        "x": 5.089,
+        "y": 4.150799062897426
+      },
+      "sweetRelocated": false,
+      "apex": {
+        "x": 5.089,
+        "y": 4.150799062897426
+      },
+      "degenerate": false
+    }
+  ],
+  "maximum-size UI room | tv=false | coarse=false": {
+    "best": {
+      "x": 7.3500000000000005,
+      "y": 16.449999999999992
+    },
+    "bestScore": 0.13568012865205806,
+    "zone": [
+      {
+        "p": {
+          "x": 7.3500000000000005,
+          "y": 16.449999999999992
+        },
+        "s": 0.13568012865205806
+      },
+      {
+        "p": {
+          "x": 7.3500000000000005,
+          "y": 8.75
+        },
+        "s": 0.1253792701587897
+      },
+      {
+        "p": {
+          "x": 17.84999999999999,
+          "y": 16.449999999999992
+        },
+        "s": 0.11771382960931993
+      },
+      {
+        "p": {
+          "x": 17.14999999999999,
+          "y": 16.449999999999992
+        },
+        "s": 0.11771382960931845
+      }
+    ]
+  },
+  "maximum-size UI room | tv=false | coarse=true": {
+    "best": {
+      "x": 7.3500000000000005,
+      "y": 16.449999999999992
+    },
+    "bestScore": 0.13568012865205806,
+    "zone": [
+      {
+        "p": {
+          "x": 7.3500000000000005,
+          "y": 16.449999999999992
+        },
+        "s": 0.13568012865205806
+      },
+      {
+        "p": {
+          "x": 7.3500000000000005,
+          "y": 8.75
+        },
+        "s": 0.1253792701587897
+      },
+      {
+        "p": {
+          "x": 17.84999999999999,
+          "y": 16.449999999999992
+        },
+        "s": 0.11771382960931993
+      },
+      {
+        "p": {
+          "x": 17.14999999999999,
+          "y": 16.449999999999992
+        },
+        "s": 0.11771382960931845
+      }
+    ]
+  },
+  "maximum-size UI room | audio | tv=false": [
+    {
+      "aId": "s0",
+      "bId": "s1",
+      "aLabel": "S0",
+      "bLabel": "S1",
+      "dA": 7.502666192761078,
+      "dB": 2.507987240796891,
+      "base": 5,
+      "pathDiff": 4.994678951964187,
+      "itdMs": 14.56174621563903,
+      "ildDb": -9.51780603214933,
+      "angleDeg": 0,
+      "eqError": 1,
+      "isEquilateral": false,
+      "combNotchHz": null,
+      "tv": null,
+      "losBlocked": false,
+      "modelMismatch": false,
+      "locked": false,
+      "quality": 0,
+      "apexBlocked": false,
+      "sweet": {
+        "x": 7.5,
+        "y": 16.83012701892219
+      },
+      "sweetRelocated": false,
+      "apex": {
+        "x": 7.5,
+        "y": 16.83012701892219
+      },
+      "degenerate": false
+    },
+    {
+      "aId": "s2",
+      "bId": "s3",
+      "aLabel": "S2",
+      "bLabel": "S3",
+      "dA": 2.507987240796891,
+      "dB": 7.502666192761078,
+      "base": 5,
+      "pathDiff": 4.994678951964187,
+      "itdMs": 14.56174621563903,
+      "ildDb": 9.51780603214933,
+      "angleDeg": 0,
+      "eqError": 1,
+      "isEquilateral": false,
+      "combNotchHz": null,
+      "tv": null,
+      "losBlocked": false,
+      "modelMismatch": false,
+      "locked": false,
+      "quality": 0,
+      "apexBlocked": false,
+      "sweet": {
+        "x": 17.5,
+        "y": 16.83012701892219
+      },
+      "sweetRelocated": false,
+      "apex": {
+        "x": 17.5,
+        "y": 16.83012701892219
+      },
+      "degenerate": false
+    }
+  ],
+  "maximum-size UI room | tv=true | coarse=false": {
+    "best": {
+      "x": 7.3500000000000005,
+      "y": 16.449999999999992
+    },
+    "bestScore": 0.13568012865205806,
+    "zone": [
+      {
+        "p": {
+          "x": 7.3500000000000005,
+          "y": 16.449999999999992
+        },
+        "s": 0.13568012865205806
+      },
+      {
+        "p": {
+          "x": 7.3500000000000005,
+          "y": 8.75
+        },
+        "s": 0.1253792701587897
+      },
+      {
+        "p": {
+          "x": 17.84999999999999,
+          "y": 16.449999999999992
+        },
+        "s": 0.11771382960931993
+      },
+      {
+        "p": {
+          "x": 17.14999999999999,
+          "y": 16.449999999999992
+        },
+        "s": 0.11771382960931845
+      }
+    ]
+  },
+  "maximum-size UI room | tv=true | coarse=true": {
+    "best": {
+      "x": 7.3500000000000005,
+      "y": 16.449999999999992
+    },
+    "bestScore": 0.13568012865205806,
+    "zone": [
+      {
+        "p": {
+          "x": 7.3500000000000005,
+          "y": 16.449999999999992
+        },
+        "s": 0.13568012865205806
+      },
+      {
+        "p": {
+          "x": 7.3500000000000005,
+          "y": 8.75
+        },
+        "s": 0.1253792701587897
+      },
+      {
+        "p": {
+          "x": 17.84999999999999,
+          "y": 16.449999999999992
+        },
+        "s": 0.11771382960931993
+      },
+      {
+        "p": {
+          "x": 17.14999999999999,
+          "y": 16.449999999999992
+        },
+        "s": 0.11771382960931845
+      }
+    ]
+  },
+  "maximum-size UI room | audio | tv=true": [
+    {
+      "aId": "s0",
+      "bId": "s1",
+      "aLabel": "S0",
+      "bLabel": "S1",
+      "dA": 7.502666192761078,
+      "dB": 2.507987240796891,
+      "base": 5,
+      "pathDiff": 4.994678951964187,
+      "itdMs": 14.56174621563903,
+      "ildDb": -9.51780603214933,
+      "angleDeg": 0,
+      "eqError": 1,
+      "isEquilateral": false,
+      "combNotchHz": null,
+      "tv": null,
+      "losBlocked": false,
+      "modelMismatch": false,
+      "locked": false,
+      "quality": 0,
+      "apexBlocked": false,
+      "sweet": {
+        "x": 7.5,
+        "y": 16.83012701892219
+      },
+      "sweetRelocated": false,
+      "apex": {
+        "x": 7.5,
+        "y": 16.83012701892219
+      },
+      "degenerate": false
+    },
+    {
+      "aId": "s2",
+      "bId": "s3",
+      "aLabel": "S2",
+      "bLabel": "S3",
+      "dA": 2.507987240796891,
+      "dB": 7.502666192761078,
+      "base": 5,
+      "pathDiff": 4.994678951964187,
+      "itdMs": 14.56174621563903,
+      "ildDb": 9.51780603214933,
+      "angleDeg": 0,
+      "eqError": 1,
+      "isEquilateral": false,
+      "combNotchHz": null,
+      "tv": null,
+      "losBlocked": false,
+      "modelMismatch": false,
+      "locked": false,
+      "quality": 0,
+      "apexBlocked": false,
+      "sweet": {
+        "x": 17.5,
+        "y": 16.83012701892219
+      },
+      "sweetRelocated": false,
+      "apex": {
+        "x": 17.5,
+        "y": 16.83012701892219
+      },
+      "degenerate": false
+    }
+  ],
+  "10-room chain | tv=false | coarse=false": {
+    "best": null,
+    "bestScore": 0,
+    "zone": []
+  },
+  "10-room chain | tv=false | coarse=true": {
+    "best": null,
+    "bestScore": 0,
+    "zone": []
+  },
+  "10-room chain | audio | tv=false": [
+    {
+      "aId": "s0",
+      "bId": "s1",
+      "aLabel": "S0",
+      "bLabel": "S1",
+      "dA": 9.002221947941518,
+      "dB": 21.00095235935742,
+      "base": 12,
+      "pathDiff": 11.998730411415902,
+      "itdMs": 34.98172131608135,
+      "ildDb": 7.357785471189885,
+      "angleDeg": 0,
+      "eqError": 0.8571428571428571,
+      "isEquilateral": false,
+      "combNotchHz": null,
+      "tv": null,
+      "losBlocked": true,
+      "modelMismatch": false,
+      "locked": false,
+      "quality": 0,
+      "apexBlocked": true,
+      "sweet": {
+        "x": 13.124999999999991,
+        "y": 2.975
+      },
+      "sweetRelocated": true,
+      "apex": {
+        "x": 18,
+        "y": 12.892304845413264
+      },
+      "degenerate": false
+    },
+    {
+      "aId": "s2",
+      "bId": "s3",
+      "aLabel": "S2",
+      "bLabel": "S3",
+      "dA": 33.00060605504087,
+      "dB": 45.00044444224967,
+      "base": 12,
+      "pathDiff": 11.999838387208804,
+      "itdMs": 34.984951566206426,
+      "ildDb": 2.693897746124925,
+      "angleDeg": 0,
+      "eqError": 1.1,
+      "isEquilateral": false,
+      "combNotchHz": null,
+      "tv": null,
+      "losBlocked": true,
+      "modelMismatch": false,
+      "locked": false,
+      "quality": 0,
+      "apexBlocked": true,
+      "sweet": {
+        "x": 37.97500000000007,
+        "y": 3.325
+      },
+      "sweetRelocated": true,
+      "apex": {
+        "x": 42,
+        "y": 12.892304845413264
+      },
+      "degenerate": false
+    }
+  ],
+  "10-room chain | tv=true | coarse=false": {
+    "best": null,
+    "bestScore": 0,
+    "zone": []
+  },
+  "10-room chain | tv=true | coarse=true": {
+    "best": null,
+    "bestScore": 0,
+    "zone": []
+  },
+  "10-room chain | audio | tv=true": [
+    {
+      "aId": "s0",
+      "bId": "s1",
+      "aLabel": "S0",
+      "bLabel": "S1",
+      "dA": 9.002221947941518,
+      "dB": 21.00095235935742,
+      "base": 12,
+      "pathDiff": 11.998730411415902,
+      "itdMs": 34.98172131608135,
+      "ildDb": 7.357785471189885,
+      "angleDeg": 0,
+      "eqError": 0.8571428571428571,
+      "isEquilateral": false,
+      "combNotchHz": null,
+      "tv": null,
+      "losBlocked": true,
+      "modelMismatch": false,
+      "locked": false,
+      "quality": 0,
+      "apexBlocked": true,
+      "sweet": {
+        "x": 13.124999999999991,
+        "y": 2.975
+      },
+      "sweetRelocated": true,
+      "apex": {
+        "x": 18,
+        "y": 12.892304845413264
+      },
+      "degenerate": false
+    },
+    {
+      "aId": "s2",
+      "bId": "s3",
+      "aLabel": "S2",
+      "bLabel": "S3",
+      "dA": 33.00060605504087,
+      "dB": 45.00044444224967,
+      "base": 12,
+      "pathDiff": 11.999838387208804,
+      "itdMs": 34.984951566206426,
+      "ildDb": 2.693897746124925,
+      "angleDeg": 0,
+      "eqError": 1.1,
+      "isEquilateral": false,
+      "combNotchHz": null,
+      "tv": null,
+      "losBlocked": true,
+      "modelMismatch": false,
+      "locked": false,
+      "quality": 0,
+      "apexBlocked": true,
+      "sweet": {
+        "x": 37.97500000000007,
+        "y": 3.325
+      },
+      "sweetRelocated": true,
+      "apex": {
+        "x": 42,
+        "y": 12.892304845413264
+      },
+      "degenerate": false
+    }
+  ],
+  "50-room chain | tv=false | coarse=false": {
+    "best": null,
+    "bestScore": 0,
+    "zone": []
+  },
+  "50-room chain | tv=false | coarse=true": {
+    "best": null,
+    "bestScore": 0,
+    "zone": []
+  },
+  "50-room chain | audio | tv=false": [
+    {
+      "aId": "s0",
+      "bId": "s1",
+      "aLabel": "S0",
+      "bLabel": "S1",
+      "dA": 57.00035087611304,
+      "dB": 117.00017094004608,
+      "base": 60,
+      "pathDiff": 59.999820063933036,
+      "itdMs": 174.9265891076765,
+      "ildDb": 6.246179344023908,
+      "angleDeg": 0,
+      "eqError": 0.7692307692307693,
+      "isEquilateral": false,
+      "combNotchHz": null,
+      "tv": null,
+      "losBlocked": true,
+      "modelMismatch": false,
+      "locked": false,
+      "quality": 0,
+      "apexBlocked": true,
+      "sweet": {
+        "x": 90,
+        "y": 54.46152422706631
+      },
+      "sweetRelocated": false,
+      "apex": {
+        "x": 90,
+        "y": 54.46152422706631
+      },
+      "degenerate": false
+    },
+    {
+      "aId": "s2",
+      "bId": "s3",
+      "aLabel": "S2",
+      "bLabel": "S3",
+      "dA": 177.00011299431424,
+      "dB": 237.00008438817062,
+      "base": 60,
+      "pathDiff": 59.999971393856384,
+      "itdMs": 174.9270303027883,
+      "ildDb": 2.5354991407865555,
+      "angleDeg": 0,
+      "eqError": 1.120253164556962,
+      "isEquilateral": false,
+      "combNotchHz": null,
+      "tv": null,
+      "losBlocked": true,
+      "modelMismatch": false,
+      "locked": false,
+      "quality": 0,
+      "apexBlocked": true,
+      "sweet": {
+        "x": 210,
+        "y": 54.46152422706631
+      },
+      "sweetRelocated": false,
+      "apex": {
+        "x": 210,
+        "y": 54.46152422706631
+      },
+      "degenerate": false
+    }
+  ],
+  "50-room chain | tv=true | coarse=false": {
+    "best": null,
+    "bestScore": 0,
+    "zone": []
+  },
+  "50-room chain | tv=true | coarse=true": {
+    "best": null,
+    "bestScore": 0,
+    "zone": []
+  },
+  "50-room chain | audio | tv=true": [
+    {
+      "aId": "s0",
+      "bId": "s1",
+      "aLabel": "S0",
+      "bLabel": "S1",
+      "dA": 57.00035087611304,
+      "dB": 117.00017094004608,
+      "base": 60,
+      "pathDiff": 59.999820063933036,
+      "itdMs": 174.9265891076765,
+      "ildDb": 6.246179344023908,
+      "angleDeg": 0,
+      "eqError": 0.7692307692307693,
+      "isEquilateral": false,
+      "combNotchHz": null,
+      "tv": null,
+      "losBlocked": true,
+      "modelMismatch": false,
+      "locked": false,
+      "quality": 0,
+      "apexBlocked": true,
+      "sweet": {
+        "x": 90,
+        "y": 54.46152422706631
+      },
+      "sweetRelocated": false,
+      "apex": {
+        "x": 90,
+        "y": 54.46152422706631
+      },
+      "degenerate": false
+    },
+    {
+      "aId": "s2",
+      "bId": "s3",
+      "aLabel": "S2",
+      "bLabel": "S3",
+      "dA": 177.00011299431424,
+      "dB": 237.00008438817062,
+      "base": 60,
+      "pathDiff": 59.999971393856384,
+      "itdMs": 174.9270303027883,
+      "ildDb": 2.5354991407865555,
+      "angleDeg": 0,
+      "eqError": 1.120253164556962,
+      "isEquilateral": false,
+      "combNotchHz": null,
+      "tv": null,
+      "losBlocked": true,
+      "modelMismatch": false,
+      "locked": false,
+      "quality": 0,
+      "apexBlocked": true,
+      "sweet": {
+        "x": 210,
+        "y": 54.46152422706631
+      },
+      "sweetRelocated": false,
+      "apex": {
+        "x": 210,
+        "y": 54.46152422706631
+      },
+      "degenerate": false
+    }
+  ],
+  "50-room chain, 16 speakers | tv=false | coarse=false": {
+    "best": null,
+    "bestScore": 0,
+    "zone": []
+  },
+  "50-room chain, 16 speakers | tv=false | coarse=true": {
+    "best": null,
+    "bestScore": 0,
+    "zone": []
+  },
+  "50-room chain, 16 speakers | audio | tv=false": [
+    {
+      "aId": "s0",
+      "bId": "s1",
+      "aLabel": "S0",
+      "bLabel": "S1",
+      "dA": 14.648424221735622,
+      "dB": 32.2947369489531,
+      "base": 17.647058823529413,
+      "pathDiff": 17.646312727217477,
+      "itdMs": 51.44697588110052,
+      "ildDb": 6.86681685362181,
+      "angleDeg": 0,
+      "eqError": 0.819672131147541,
+      "isEquilateral": false,
+      "combNotchHz": null,
+      "tv": null,
+      "losBlocked": true,
+      "modelMismatch": false,
+      "locked": false,
+      "quality": 0,
+      "apexBlocked": true,
+      "sweet": {
+        "x": 26.47058823529412,
+        "y": 17.782801243254802
+      },
+      "sweetRelocated": false,
+      "apex": {
+        "x": 26.47058823529412,
+        "y": 17.782801243254802
+      },
+      "degenerate": false
+    },
+    {
+      "aId": "s2",
+      "bId": "s3",
+      "aLabel": "S2",
+      "bLabel": "S3",
+      "dA": 49.9415769401251,
+      "dB": 67.5885312029564,
+      "base": 17.64705882352942,
+      "pathDiff": 17.6469542628313,
+      "itdMs": 51.448846247321576,
+      "ildDb": 2.6282151462511436,
+      "angleDeg": 0,
+      "eqError": 1.1083550913838118,
+      "isEquilateral": false,
+      "combNotchHz": null,
+      "tv": null,
+      "losBlocked": true,
+      "modelMismatch": false,
+      "locked": false,
+      "quality": 0,
+      "apexBlocked": true,
+      "sweet": {
+        "x": 61.76470588235294,
+        "y": 17.782801243254806
+      },
+      "sweetRelocated": false,
+      "apex": {
+        "x": 61.76470588235294,
+        "y": 17.782801243254806
+      },
+      "degenerate": false
+    },
+    {
+      "aId": "s4",
+      "bId": "s5",
+      "aLabel": "S4",
+      "bLabel": "S5",
+      "dA": 85.23552876190655,
+      "dB": 102.882547337791,
+      "base": 17.647058823529406,
+      "pathDiff": 17.647018575884445,
+      "itdMs": 51.44903374893424,
+      "ildDb": 1.6344209808029717,
+      "angleDeg": 0,
+      "eqError": 1.2427101200686108,
+      "isEquilateral": false,
+      "combNotchHz": null,
+      "tv": null,
+      "losBlocked": true,
+      "modelMismatch": false,
+      "locked": false,
+      "quality": 0,
+      "apexBlocked": true,
+      "sweet": {
+        "x": 97.05882352941177,
+        "y": 17.782801243254795
+      },
+      "sweetRelocated": false,
+      "apex": {
+        "x": 97.05882352941177,
+        "y": 17.782801243254795
+      },
+      "degenerate": false
+    },
+    {
+      "aId": "s6",
+      "bId": "s7",
+      "aLabel": "S6",
+      "bLabel": "S7",
+      "dA": 120.52957769919392,
+      "dB": 138.17661533060308,
+      "base": 17.64705882352942,
+      "pathDiff": 17.647037631409162,
+      "itdMs": 51.44908930439989,
+      "ildDb": 1.1868183081762211,
+      "angleDeg": 0,
+      "eqError": 1.3084291187739463,
+      "isEquilateral": false,
+      "combNotchHz": null,
+      "tv": null,
+      "losBlocked": true,
+      "modelMismatch": false,
+      "locked": false,
+      "quality": 0,
+      "apexBlocked": true,
+      "sweet": {
+        "x": 132.3529411764706,
+        "y": 17.782801243254806
+      },
+      "sweetRelocated": false,
+      "apex": {
+        "x": 132.3529411764706,
+        "y": 17.782801243254806
+      },
+      "degenerate": false
+    },
+    {
+      "aId": "s8",
+      "bId": "s9",
+      "aLabel": "S8",
+      "bLabel": "S9",
+      "dA": 155.82365776203272,
+      "dB": 173.47070352857557,
+      "base": 17.64705882352942,
+      "pathDiff": 17.647045766542846,
+      "itdMs": 51.449113021990804,
+      "ildDb": 0.9318549034917822,
+      "angleDeg": 0,
+      "eqError": 1.3474059003051884,
+      "isEquilateral": false,
+      "combNotchHz": null,
+      "tv": null,
+      "losBlocked": true,
+      "modelMismatch": false,
+      "locked": false,
+      "quality": 0,
+      "apexBlocked": true,
+      "sweet": {
+        "x": 167.6470588235294,
+        "y": 17.782801243254806
+      },
+      "sweetRelocated": false,
+      "apex": {
+        "x": 167.6470588235294,
+        "y": 17.782801243254806
+      },
+      "degenerate": false
+    },
+    {
+      "aId": "s10",
+      "bId": "s11",
+      "aLabel": "S10",
+      "bLabel": "S11",
+      "dA": 191.11775170637875,
+      "dB": 208.7648016839652,
+      "base": 17.64705882352939,
+      "pathDiff": 17.647049977586448,
+      "itdMs": 51.44912529908585,
+      "ildDb": 0.7671249899777663,
+      "angleDeg": 0,
+      "eqError": 1.3732037193575657,
+      "isEquilateral": false,
+      "combNotchHz": null,
+      "tv": null,
+      "losBlocked": true,
+      "modelMismatch": false,
+      "locked": false,
+      "quality": 0,
+      "apexBlocked": true,
+      "sweet": {
+        "x": 202.94117647058823,
+        "y": 17.78280124325478
+      },
+      "sweetRelocated": false,
+      "apex": {
+        "x": 202.94117647058823,
+        "y": 17.78280124325478
+      },
+      "degenerate": false
+    },
+    {
+      "aId": "s12",
+      "bId": "s13",
+      "aLabel": "S12",
+      "bLabel": "S13",
+      "dA": 226.41185304049748,
+      "dB": 244.05890547685522,
+      "base": 17.64705882352942,
+      "pathDiff": 17.64705243635774,
+      "itdMs": 51.44913246751528,
+      "ildDb": 0.6519100023399531,
+      "angleDeg": 0,
+      "eqError": 1.3915401301518437,
+      "isEquilateral": false,
+      "combNotchHz": null,
+      "tv": null,
+      "losBlocked": true,
+      "modelMismatch": false,
+      "locked": false,
+      "quality": 0,
+      "apexBlocked": true,
+      "sweet": {
+        "x": 238.23529411764707,
+        "y": 17.782801243254806
+      },
+      "sweetRelocated": false,
+      "apex": {
+        "x": 238.23529411764707,
+        "y": 17.782801243254806
+      },
+      "degenerate": false
+    },
+    {
+      "aId": "s14",
+      "bId": "s15",
+      "aLabel": "S14",
+      "bLabel": "S15",
+      "dA": 261.7059587745978,
+      "dB": 279.3530127704812,
+      "base": 17.64705882352945,
+      "pathDiff": 17.647053995883425,
+      "itdMs": 51.44913701423739,
+      "ildDb": 0.566794966346869,
+      "angleDeg": 0,
+      "eqError": 1.4052432090966518,
+      "isEquilateral": false,
+      "combNotchHz": null,
+      "tv": null,
+      "losBlocked": true,
+      "modelMismatch": false,
+      "locked": false,
+      "quality": 0,
+      "apexBlocked": true,
+      "sweet": {
+        "x": 273.52941176470586,
+        "y": 17.78280124325483
+      },
+      "sweetRelocated": false,
+      "apex": {
+        "x": 273.52941176470586,
+        "y": 17.78280124325483
+      },
+      "degenerate": false
+    }
+  ],
+  "50-room chain, 16 speakers | tv=true | coarse=false": {
+    "best": null,
+    "bestScore": 0,
+    "zone": []
+  },
+  "50-room chain, 16 speakers | tv=true | coarse=true": {
+    "best": null,
+    "bestScore": 0,
+    "zone": []
+  },
+  "50-room chain, 16 speakers | audio | tv=true": [
+    {
+      "aId": "s0",
+      "bId": "s1",
+      "aLabel": "S0",
+      "bLabel": "S1",
+      "dA": 14.648424221735622,
+      "dB": 32.2947369489531,
+      "base": 17.647058823529413,
+      "pathDiff": 17.646312727217477,
+      "itdMs": 51.44697588110052,
+      "ildDb": 6.86681685362181,
+      "angleDeg": 0,
+      "eqError": 0.819672131147541,
+      "isEquilateral": false,
+      "combNotchHz": null,
+      "tv": null,
+      "losBlocked": true,
+      "modelMismatch": false,
+      "locked": false,
+      "quality": 0,
+      "apexBlocked": true,
+      "sweet": {
+        "x": 26.47058823529412,
+        "y": 17.782801243254802
+      },
+      "sweetRelocated": false,
+      "apex": {
+        "x": 26.47058823529412,
+        "y": 17.782801243254802
+      },
+      "degenerate": false
+    },
+    {
+      "aId": "s2",
+      "bId": "s3",
+      "aLabel": "S2",
+      "bLabel": "S3",
+      "dA": 49.9415769401251,
+      "dB": 67.5885312029564,
+      "base": 17.64705882352942,
+      "pathDiff": 17.6469542628313,
+      "itdMs": 51.448846247321576,
+      "ildDb": 2.6282151462511436,
+      "angleDeg": 0,
+      "eqError": 1.1083550913838118,
+      "isEquilateral": false,
+      "combNotchHz": null,
+      "tv": null,
+      "losBlocked": true,
+      "modelMismatch": false,
+      "locked": false,
+      "quality": 0,
+      "apexBlocked": true,
+      "sweet": {
+        "x": 61.76470588235294,
+        "y": 17.782801243254806
+      },
+      "sweetRelocated": false,
+      "apex": {
+        "x": 61.76470588235294,
+        "y": 17.782801243254806
+      },
+      "degenerate": false
+    },
+    {
+      "aId": "s4",
+      "bId": "s5",
+      "aLabel": "S4",
+      "bLabel": "S5",
+      "dA": 85.23552876190655,
+      "dB": 102.882547337791,
+      "base": 17.647058823529406,
+      "pathDiff": 17.647018575884445,
+      "itdMs": 51.44903374893424,
+      "ildDb": 1.6344209808029717,
+      "angleDeg": 0,
+      "eqError": 1.2427101200686108,
+      "isEquilateral": false,
+      "combNotchHz": null,
+      "tv": null,
+      "losBlocked": true,
+      "modelMismatch": false,
+      "locked": false,
+      "quality": 0,
+      "apexBlocked": true,
+      "sweet": {
+        "x": 97.05882352941177,
+        "y": 17.782801243254795
+      },
+      "sweetRelocated": false,
+      "apex": {
+        "x": 97.05882352941177,
+        "y": 17.782801243254795
+      },
+      "degenerate": false
+    },
+    {
+      "aId": "s6",
+      "bId": "s7",
+      "aLabel": "S6",
+      "bLabel": "S7",
+      "dA": 120.52957769919392,
+      "dB": 138.17661533060308,
+      "base": 17.64705882352942,
+      "pathDiff": 17.647037631409162,
+      "itdMs": 51.44908930439989,
+      "ildDb": 1.1868183081762211,
+      "angleDeg": 0,
+      "eqError": 1.3084291187739463,
+      "isEquilateral": false,
+      "combNotchHz": null,
+      "tv": null,
+      "losBlocked": true,
+      "modelMismatch": false,
+      "locked": false,
+      "quality": 0,
+      "apexBlocked": true,
+      "sweet": {
+        "x": 132.3529411764706,
+        "y": 17.782801243254806
+      },
+      "sweetRelocated": false,
+      "apex": {
+        "x": 132.3529411764706,
+        "y": 17.782801243254806
+      },
+      "degenerate": false
+    },
+    {
+      "aId": "s8",
+      "bId": "s9",
+      "aLabel": "S8",
+      "bLabel": "S9",
+      "dA": 155.82365776203272,
+      "dB": 173.47070352857557,
+      "base": 17.64705882352942,
+      "pathDiff": 17.647045766542846,
+      "itdMs": 51.449113021990804,
+      "ildDb": 0.9318549034917822,
+      "angleDeg": 0,
+      "eqError": 1.3474059003051884,
+      "isEquilateral": false,
+      "combNotchHz": null,
+      "tv": null,
+      "losBlocked": true,
+      "modelMismatch": false,
+      "locked": false,
+      "quality": 0,
+      "apexBlocked": true,
+      "sweet": {
+        "x": 167.6470588235294,
+        "y": 17.782801243254806
+      },
+      "sweetRelocated": false,
+      "apex": {
+        "x": 167.6470588235294,
+        "y": 17.782801243254806
+      },
+      "degenerate": false
+    },
+    {
+      "aId": "s10",
+      "bId": "s11",
+      "aLabel": "S10",
+      "bLabel": "S11",
+      "dA": 191.11775170637875,
+      "dB": 208.7648016839652,
+      "base": 17.64705882352939,
+      "pathDiff": 17.647049977586448,
+      "itdMs": 51.44912529908585,
+      "ildDb": 0.7671249899777663,
+      "angleDeg": 0,
+      "eqError": 1.3732037193575657,
+      "isEquilateral": false,
+      "combNotchHz": null,
+      "tv": null,
+      "losBlocked": true,
+      "modelMismatch": false,
+      "locked": false,
+      "quality": 0,
+      "apexBlocked": true,
+      "sweet": {
+        "x": 202.94117647058823,
+        "y": 17.78280124325478
+      },
+      "sweetRelocated": false,
+      "apex": {
+        "x": 202.94117647058823,
+        "y": 17.78280124325478
+      },
+      "degenerate": false
+    },
+    {
+      "aId": "s12",
+      "bId": "s13",
+      "aLabel": "S12",
+      "bLabel": "S13",
+      "dA": 226.41185304049748,
+      "dB": 244.05890547685522,
+      "base": 17.64705882352942,
+      "pathDiff": 17.64705243635774,
+      "itdMs": 51.44913246751528,
+      "ildDb": 0.6519100023399531,
+      "angleDeg": 0,
+      "eqError": 1.3915401301518437,
+      "isEquilateral": false,
+      "combNotchHz": null,
+      "tv": null,
+      "losBlocked": true,
+      "modelMismatch": false,
+      "locked": false,
+      "quality": 0,
+      "apexBlocked": true,
+      "sweet": {
+        "x": 238.23529411764707,
+        "y": 17.782801243254806
+      },
+      "sweetRelocated": false,
+      "apex": {
+        "x": 238.23529411764707,
+        "y": 17.782801243254806
+      },
+      "degenerate": false
+    },
+    {
+      "aId": "s14",
+      "bId": "s15",
+      "aLabel": "S14",
+      "bLabel": "S15",
+      "dA": 261.7059587745978,
+      "dB": 279.3530127704812,
+      "base": 17.64705882352945,
+      "pathDiff": 17.647053995883425,
+      "itdMs": 51.44913701423739,
+      "ildDb": 0.566794966346869,
+      "angleDeg": 0,
+      "eqError": 1.4052432090966518,
+      "isEquilateral": false,
+      "combNotchHz": null,
+      "tv": null,
+      "losBlocked": true,
+      "modelMismatch": false,
+      "locked": false,
+      "quality": 0,
+      "apexBlocked": true,
+      "sweet": {
+        "x": 273.52941176470586,
+        "y": 17.78280124325483
+      },
+      "sweetRelocated": false,
+      "apex": {
+        "x": 273.52941176470586,
+        "y": 17.78280124325483
+      },
+      "degenerate": false
+    }
+  ]
+}

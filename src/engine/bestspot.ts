@@ -4,6 +4,7 @@ import { collectSurfaces, directPath } from './raytrace';
 import { levelAtDb, SPEAKER_MODELS } from './speakers';
 import { bestReflectionDb } from './pairspot';
 import { findTv } from './stereo';
+import { cappedStep } from './grid';
 import { sceneBounds } from './scene';
 import * as v from './vec';
 
@@ -130,7 +131,18 @@ export function bestListeningSpot(scene: Scene, tvAnchor: boolean, coarse = fals
   const surfaces: Surface[] = collectSurfaces(scene.objects);
   const bounds = sceneBounds(scene);
   const span = Math.max(bounds.max.x - bounds.min.x, bounds.max.y - bounds.min.y);
-  const step = Math.max(0.25, Math.min(0.7, span / (coarse ? 13 : 24)));
+  const baseStep = Math.max(0.25, Math.min(0.7, span / (coarse ? 13 : 24)));
+  // Past span ≈ 16.8 m `baseStep` pins at 0.7 and stops adapting, so cells grow
+  // as span² with no ceiling — 264 s for one pass on an import-legal payload,
+  // measured. `cappedStep` bounds that work; it returns `baseStep` itself (the
+  // identical float) for every scene under budget, so real layouts are untouched.
+  // Per cell this loop pays `insideFurnitureOrWall` over every object, then one
+  // `directPath` per speaker over every surface.
+  const step = cappedStep(
+    bounds,
+    baseStep,
+    scene.objects.length + scene.speakers.length * Math.max(1, surfaces.length),
+  );
   const earZ = scene.listener.z;
   const tvRect = tvAnchor ? findTv(scene) : null;
   const tv = tvRect?.center ?? null;

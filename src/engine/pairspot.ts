@@ -2,6 +2,7 @@ import type { Scene, SceneObject, SpeakerObj, Surface, Vec2, WallObj } from './t
 import { distPointSegment, pointInRect, EPS } from './geometry';
 import { directPath } from './raytrace';
 import { levelAtDb, SPEAKER_MODELS } from './speakers';
+import { cappedStep } from './grid';
 import { sceneBounds } from './scene';
 import * as v from './vec';
 
@@ -137,9 +138,22 @@ export function bestPairSpot(
   if (base < 0.5) return null;
   const spec = SPEAKER_MODELS[a.model];
 
+  // `GRID_STEP` is fixed, so this sweep costs span²/0.1225 cells — 4× what
+  // `bestListeningSpot` walks over the same bounds, once per apex-blocked pair
+  // (up to 32 of them). At `MAX_SCENE_SPAN` that is 3.27 BILLION cells, i.e. an
+  // out-of-memory crash rather than a slow pass. `cappedStep` bounds it, and
+  // returns `GRID_STEP` unchanged for every scene under budget. Per cell this
+  // loop pays `insideFurnitureOrWall` over every object, then exactly two
+  // `reachDb` calls, each scanning every surface.
+  const step = cappedStep(
+    bounds,
+    GRID_STEP,
+    scene.objects.length + 2 * Math.max(1, surfaces.length),
+  );
+
   let best: PairSweet | null = null;
-  for (let x = bounds.min.x + GRID_STEP / 2; x <= bounds.max.x; x += GRID_STEP) {
-    for (let y = bounds.min.y + GRID_STEP / 2; y <= bounds.max.y; y += GRID_STEP) {
+  for (let x = bounds.min.x + step / 2; x <= bounds.max.x; x += step) {
+    for (let y = bounds.min.y + step / 2; y <= bounds.max.y; y += step) {
       const p = { x, y };
       if (insideFurnitureOrWall(scene, p)) continue;
 
