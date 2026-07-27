@@ -56,8 +56,8 @@ end with `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`. **Put the me
 `git commit -F`** — backticks in a `-m` string get shell-expanded (hit in S19).
 
 **FIRST ACTION:** `npm install`, then run the full gate (`npm run lint`, `npm test`, `npm run build`) and
-PASTE the literal tails. Baseline as of 2026-07-27 (post-S19): **lint 0 · 810 tests · 413.79 kB /
-133.52 kB gz**. TEST COUNT IS A RATCHET (…760→810) — it must never drop, and no test may be newly
+PASTE the literal tails. Baseline as of 2026-07-27 (post-S19): **lint 0 · 814 tests · 413.85 kB /
+133.54 kB gz**. TEST COUNT IS A RATCHET (…760→814) — it must never drop, and no test may be newly
 skipped/`.only`'d/weakened.
 
 ## 1. THE PROTOCOL (non-negotiable — restate it in the handoff you write)
@@ -74,7 +74,7 @@ skipped/`.only`'d/weakened.
    provably correct and had already passed 162 golden entries.
 5. **Implement fully.** Map every Acceptance bullet to "met (with evidence)" or "deferred to <block>".
 6. **Test everything with PROOF.** Keep the suite green, ADD failing-first tests for every new pure
-   behaviour, never let the count drop below 810. Run `npm run test:coverage`; paste the coverage line for
+   behaviour, never let the count drop below 814. Run `npm run test:coverage`; paste the coverage line for
    every file you touched (≥80 %, or state the exact reason). Vite routes by FILENAME: `*.test.ts` → node,
    `*.test.tsx` → jsdom.
 7. **Migrations get an OLD-SHAPE test.** Seed a pre-migration store/record and assert it upgrades correctly
@@ -168,8 +168,8 @@ the S18 grid cap, or S19's bit-identity (`reflection-golden.json` / `legit-golde
 - Compare handles N ≥ 2 columns, across layouts AND across projects, read-only, with a documented and
   measured performance policy.
 - The app ships seeded with several genuinely different layouts on genuine first run only.
-- New pure logic is failing-first tested; ratchet rises above 810.
-- Gate green: lint 0 · ≥810 tests · build clean, all three tails pasted.
+- New pure logic is failing-first tested; ratchet rises above 814.
+- Gate green: lint 0 · ≥814 tests · build clean, all three tails pasted.
 - Live: screenshots in BOTH themes, the ≤960 px stacked layout, and an N-up compare with N ≥ 3, saved to
   `docs/sessions/S20/`. No saved artifact = the live check did not happen.
 

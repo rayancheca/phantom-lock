@@ -1,8 +1,8 @@
-import type { RectObj, Scene, SpeakerObj, Surface, Vec2, WallObj } from './types';
+import type { RectObj, Scene, SpeakerObj, Surface, Vec2 } from './types';
 import { distPointSegment, pointInRect } from './geometry';
 import { collectSurfaces, directPath } from './raytrace';
 import { levelAtDb, SPEAKER_MODELS } from './speakers';
-import { prepareReflections, reflectionDb } from './reflection';
+import { prepareSceneReflections, reflectionDb } from './reflection';
 import { findTv } from './stereo';
 import { cappedStep } from './grid';
 import { sceneBounds } from './scene';
@@ -152,8 +152,7 @@ export function bestListeningSpot(scene: Scene, tvAnchor: boolean, coarse = fals
   // and rebuilt this array every time.
   const tvOthers = tvRect ? surfaces.filter((s) => s.objectId !== tvRect.id) : surfaces;
 
-  const walls = scene.objects.filter((o): o is WallObj => o.kind === 'wall');
-  const refl = prepareReflections(surfaces, walls, scene.objects);
+  const refl = prepareSceneReflections(scene, surfaces);
   const byId = new Map(scene.speakers.map((s) => [s.id, s]));
   const pairs = scene.pairs
     .map(([a, b]) => [byId.get(a), byId.get(b)] as const)
@@ -193,9 +192,12 @@ export function bestListeningSpot(scene: Scene, tvAnchor: boolean, coarse = fals
    * near 0.02 to make that observable. Exactness is not an optimization here;
    * it is what removes the need for that argument entirely.
    *
-   * The one gap worth naming: a NaN `atten` (reachable only if the reflection
-   * search returns NaN) makes `pairScore` NaN rather than `+0`, so the original
-   * pushes `{p, NaN}` into `samples` where the skip does not. That is still
+   * The one gap worth naming: a NaN `atten` makes `pairScore` NaN rather than
+   * `+0`, so the original
+   * pushes `{p, NaN}` into `samples` where the skip does not. It comes from the
+   * DIRECT branch (`d.attenuation`, via a NaN absorption reaching `grazeFactor`),
+   * never from the reflection branch — `reflDb > -200` is false for NaN, so that
+   * path yields `t = 0`. That is still
    * output-identical — `NaN > bestScore` is false so the best is untouched, and
    * the zone filter `s.s >= bestScore * 0.82` drops the NaN entry before the
    * sort — but the identity is via the filter, not via the `+0` algebra above.

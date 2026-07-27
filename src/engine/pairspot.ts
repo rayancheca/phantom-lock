@@ -3,7 +3,7 @@ import { distPointSegment, pointInRect } from './geometry';
 import { directPath } from './raytrace';
 import { levelAtDb, SPEAKER_MODELS } from './speakers';
 import { cappedStep } from './grid';
-import { prepareReflections, reflectionDb, type ReflectionContext } from './reflection';
+import { prepareReflections, prepareSceneReflections, reflectionDb, type ReflectionContext } from './reflection';
 import { sceneBounds } from './scene';
 import * as v from './vec';
 
@@ -88,7 +88,6 @@ export function bestPairSpot(
   earZ: number,
   tvCenter: Vec2 | null,
 ): PairSweet | null {
-  const walls = scene.objects.filter((o): o is WallObj => o.kind === 'wall');
   const bounds = sceneBounds(scene);
   const base = v.dist(a.pos, b.pos);
   if (base < 0.5) return null;
@@ -108,7 +107,7 @@ export function bestPairSpot(
   );
   // Everything the reflection search can know before it sees a cell, computed
   // once for the whole sweep rather than per (cell, speaker, wall).
-  const refl = prepareReflections(surfaces, walls, scene.objects);
+  const refl = prepareSceneReflections(scene, surfaces);
 
   let best: PairSweet | null = null;
   for (let x = bounds.min.x + step / 2; x <= bounds.max.x; x += step) {

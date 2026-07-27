@@ -1,4 +1,4 @@
-import type { SceneObject, SpeakerObj, Surface, Vec2, WallObj } from './types';
+import type { Scene, SceneObject, SpeakerObj, Surface, Vec2, WallObj } from './types';
 import { distPointSegment, EPS, surfaceT } from './geometry';
 import { levelAtDb } from './speakers';
 import * as v from './vec';
@@ -63,9 +63,10 @@ interface PreparedWall {
    * in one synchronous pass, peaking at ~1.5 GB. The pre-change code scanned
    * doors inline and allocated nothing, so this would have been a new OOM on an
    * input the security boundary accepts by design. Filling on demand restores
-   * the original's laziness (only walls that survive the t/u and height guards
-   * ever pay) while keeping the per-cell win (each wall computes its spans at
-   * most once per sweep).
+   * the original's laziness PER CALL (only walls that survive the t/u and height
+   * guards ever pay) while keeping the per-cell win. It does NOT bound the total
+   * on its own — a sweep that touches every wall still fills every table — so
+   * `MAX_CACHED_OPENINGS` caps what is retained.
    */
   openings: number[] | null;
   /** Search-order hints for this wall's two occlusion legs (see `isBlocked`). */
@@ -125,7 +126,29 @@ export interface ReflectionContext {
   objects: SceneObject[];
   /** Lazily filled per speaker; a sweep reuses it across every cell. */
   mirrors: Map<SpeakerObj, MirroredWall[]>;
+  /**
+   * Remaining door-span entries this context may MEMOISE. See `openingsFor`.
+   * Unlike the S18 grid cap this bounds memory only — exhausting it changes no
+   * output whatsoever, just whether a value is recomputed.
+   */
+  openingBudget: number;
 }
+
+/**
+ * How many door-span numbers one context may cache before it stops memoising.
+ *
+ * The table is O(walls x doors-on-that-wall). Legitimately that is O(doors),
+ * because a door sits on one wall — and `importRejection` caps a scene at
+ * `MAX_IMPORT_OBJECTS` = 5 000 objects total, so a real layout cannot exceed
+ * ~10 000 entries however it is arranged. This sits 100x above that, capping the
+ * cache at ~8 MB, while a payload of 2 500 near-coincident walls sharing 2 500
+ * open doors — import-ACCEPTED — would otherwise reach 12.5 M entries.
+ *
+ * It is NOT a correctness cap and must never become one: past the budget the
+ * spans are still computed, just not kept. That is why it needs no calibration
+ * against `__tests__/fixtures/legit-scenes.ts`, unlike `grid.ts`'s constants.
+ */
+const MAX_CACHED_OPENINGS = 1_000_000;
 
 function boxOf(s: Surface): SurfaceBox {
   if (s.type === 'seg') {
@@ -168,6 +191,7 @@ export function prepareReflections(
     walls: prepared,
     objects,
     mirrors: new Map(),
+    openingBudget: MAX_CACHED_OPENINGS,
   };
 }
 
@@ -189,8 +213,39 @@ function openingsFor(ctx: ReflectionContext, pw: PreparedWall): number[] {
     const half = o.w / 2 / pw.wlen;
     out.push(tc - half, tc + half);
   }
-  pw.openings = out;
+  // Memoise only while the budget lasts. Deferring the work bounded the cost of
+  // a context that is never used, but NOT of one whose sweep touches every wall:
+  // measured, the pathological shape above still filled 1 249 of 2 500 walls for
+  // ~96 MB. Past the budget the value is recomputed per cell, which is exactly
+  // what the pre-S19 code did — slower on a payload built to be slow, and flat
+  // in memory. No output moves either way.
+  if (out.length <= ctx.openingBudget) {
+    ctx.openingBudget -= out.length;
+    pw.openings = out;
+  }
   return out;
+}
+
+/**
+ * The context for a whole-scene sweep, deriving BOTH the wall list and the
+ * object list from the same scene.
+ *
+ * Prefer this over `prepareReflections` at every sweep call site. The
+ * three-argument form lets a caller pass `walls` and `objects` that disagree,
+ * and the most damaging version of that mistake is silent: hand it an empty
+ * `objects` and the open-door check finds no openings, so bounces are credited
+ * off doorways again — the exact defect S3 fixed — while every downstream score
+ * on the current corpus stays put (measured: 35 of 9 180 reflection values move,
+ * 0 of 102 end-to-end observables). A test cannot police an argument that is
+ * free to be wrong; deriving both from one scene means the mistake cannot be
+ * written.
+ */
+export function prepareSceneReflections(scene: Scene, surfaces: Surface[]): ReflectionContext {
+  return prepareReflections(
+    surfaces,
+    scene.objects.filter((o): o is WallObj => o.kind === 'wall'),
+    scene.objects,
+  );
 }
 
 function mirrorsFor(ctx: ReflectionContext, sp: SpeakerObj): MirroredWall[] {
@@ -257,6 +312,13 @@ function blocks(
  * a negative is NOT: the fallback re-scans every surface with no box test at
  * all, which is literally the original loop. Both answers are therefore exact,
  * and no conservatism argument is needed anywhere.
+ *
+ * Honest note on that rescan: it is DEFENSIVE, not load-bearing on any input
+ * anyone has managed to build. Instrumented over 2.6 M leg tests (10.5 M box
+ * skips, 7.1 M height skips) an adversarial reviewer never once caught the fast
+ * pass returning a false negative, including 1e-9-jitter collinear wall bundles
+ * at 1e9 coordinates. Keep it anyway: it costs nothing on the measured paths and
+ * it is the whole reason neither skip above needs an ulp-level proof.
  */
 function isBlocked(
   ctx: ReflectionContext,

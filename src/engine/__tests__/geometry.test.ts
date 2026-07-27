@@ -115,7 +115,9 @@ describe('raySegmentT / rayCircleT return exactly raySegment / rayCircle .t', ()
   function seeded(seed: number): () => number {
     let s = seed >>> 0;
     return () => {
-      s = (s * 1103515245 + 12345) & 0x7fffffff;
+      // Math.imul, not `*`: `s * 1103515245` exceeds 2^53 and the low bits are
+      // rounded away before the mask, collapsing this to a ~10 000-state cycle.
+      s = (Math.imul(s, 1103515245) + 12345) & 0x7fffffff;
       return s / 0x7fffffff;
     };
   }
@@ -225,6 +227,38 @@ describe('raySegmentT / rayCircleT return exactly raySegment / rayCircle .t', ()
       expect(raySegment(o, d, a, b)).toBeNull();
       expect(raySegmentT(o, d, a, b)).toBe(-1);
     }
+  });
+
+  it('keeps rayCircleT NaN-transparent too, not just raySegmentT', () => {
+    // The segment twin has a NaN test; the circle one did not, and a mutation
+    // that turns `disc < 0` into `!(disc >= 0)` — mapping NaN to the -1 miss
+    // sentinel — survived the entire suite. Both callers happen to treat NaN and
+    // -1 alike today, so this pins the CONTRACT rather than a live bug.
+    const o = { x: 0, y: 0 };
+    const d = { x: NaN, y: NaN };
+    const full = rayCircle(o, d, { x: 5, y: 0 }, 1);
+    const t = rayCircleT(o, d, { x: 5, y: 0 }, 1);
+    expect(full).not.toBeNull();
+    expect(Number.isNaN(full!.t)).toBe(true);
+    expect(Number.isNaN(t)).toBe(true);
+  });
+
+  it('accepts a hit just above the 1e-12 near-parallel denominator guard', () => {
+    // 40 000 random rays produced ZERO denominators in [1e-12, 1e-9): a random
+    // ray is never that close to parallel with a segment. So loosening the guard
+    // 1000x passed everything. This aims at the band directly.
+    const o = { x: 0, y: 0 };
+    const d = { x: 1, y: 0 };
+    // denom = cross(d, b - a) = 1 * 1e-10 - 0 = 1e-10, just above the 1e-12 guard.
+    const a = { x: 5, y: 0 };
+    const b = { x: 6, y: 1e-10 };
+    const full = raySegment(o, d, a, b);
+    expect(full, 'a denominator of 1e-10 must still be a hit').not.toBeNull();
+    expect(Object.is(raySegmentT(o, d, a, b), full!.t)).toBe(true);
+    // …and just BELOW the guard is a miss for both.
+    const bBelow = { x: 6, y: 1e-13 };
+    expect(raySegment(o, d, a, bBelow)).toBeNull();
+    expect(raySegmentT(o, d, a, bBelow)).toBe(-1);
   });
 
   it('propagates NaN as a hit rather than a miss, exactly as the full form does', () => {

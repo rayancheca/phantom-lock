@@ -6,7 +6,7 @@ import { bestPairSpot, bestReflectionDb } from '../pairspot';
 import { bestListeningSpot } from '../bestspot';
 import { computeAudio } from '../stereo';
 import { DEFAULT_SETTINGS } from '../scene';
-import { prepareReflections, reflectionDb } from '../reflection';
+import { prepareReflections, prepareSceneReflections, reflectionDb } from '../reflection';
 import { levelAtDb } from '../speakers';
 import * as v from '../vec';
 import { PROBE_EAR_Z, probePoints, reflectionProbeScenes } from './fixtures/reflection-probes';
@@ -191,7 +191,9 @@ describe('brute-force oracle over randomized scenes', () => {
   function seeded(seed: number): () => number {
     let s = seed >>> 0;
     return () => {
-      s = (s * 1103515245 + 12345) & 0x7fffffff;
+      // Math.imul, not `*`: `s * 1103515245` exceeds 2^53 and the low bits are
+      // rounded away before the mask, collapsing this to a ~10 000-state cycle.
+      s = (Math.imul(s, 1103515245) + 12345) & 0x7fffffff;
       return s / 0x7fffffff;
     };
   }
@@ -463,6 +465,109 @@ describe('prepareReflections leaves its inputs — and the grid cap — alone', 
     // Some wall has now filled its table — otherwise the lazy path was never
     // exercised and the assertions above prove nothing about it.
     expect(dCtx.walls.some((w) => w.openings !== null)).toBe(true);
+  });
+
+  it('treats the open-door span as CLOSED at both endpoints, and keeps a tiny denominator', () => {
+    // Two aimed cases the corpus could not reach on its own.
+    //
+    // (1) The `throughOpening` test is `u >= lo && u <= hi` — inclusive. No
+    //     fixture ever put `u` exactly on a span endpoint, so tightening both to
+    //     strict `>`/`<` survived the whole suite. Compare against the oracle at
+    //     a `u` engineered to land exactly on `tc - half`.
+    // (2) `reflectionDb`'s own `|denom| < 1e-9` guard: the probe corpus's
+    //     smallest denominator is 1.9e-3, so loosening it 1000x also survived.
+    const wall: WallObj = {
+      id: 'w',
+      kind: 'wall',
+      a: { x: 0, y: 0 },
+      b: { x: 8, y: 0 },
+      absorption: 0.2,
+      label: 'w',
+      height: 2.6,
+    };
+    const door: SceneObject = {
+      id: 'd',
+      kind: 'rect',
+      center: { x: 4, y: 0 },
+      w: 2,
+      h: 0.1,
+      rotation: 0,
+      absorption: 0.2,
+      label: 'd',
+      role: 'door',
+      height: 2.1,
+      doorOpen: true,
+    };
+    const objects = [wall, door];
+    const surfaces = collectSurfaces(objects);
+    const ctx = prepareReflections(surfaces, [wall], objects);
+    const sp: SpeakerObj = {
+      id: 's',
+      pos: { x: 2, y: 2 },
+      z: 1,
+      label: 's',
+      model: 'homepod',
+      trimDb: 0,
+    };
+    // The mirror of sp is (2,-2); a listener at (x, 2) crosses the wall at
+    // u = (2 + x) / 2 / 8 * ... — sweep finely across the door's span endpoints
+    // so some sample lands on or adjacent to lo = (4 - 1)/8 and hi = (4 + 1)/8.
+    for (let i = 0; i <= 400; i++) {
+      const p = { x: i * 0.02, y: 2 };
+      expect(
+        Object.is(
+          reflectionDb(ctx, sp, p, 1.2),
+          referenceReflectionDb(surfaces, [wall], objects, sp, p, 1.2),
+        ),
+      ).toBe(true);
+    }
+
+    // (2) A speaker and ear both a hair off the wall plane make `denom` tiny but
+    // still above 1e-9 — the band that decides whether a bounce exists at all.
+    // The bounce must land on SOLID wall, not in the doorway, or both the real
+    // and the loosened guard return -Infinity and the case proves nothing:
+    // here u = 0.1875 (x = 1.5 m), well clear of the door's [3, 5] m span.
+    const grazing: SpeakerObj = { ...sp, pos: { x: 1, y: 5e-8 } };
+    const grazeP = { x: 2, y: 5e-8 };
+    const near = reflectionDb(ctx, grazing, grazeP, 1.2);
+    expect(Number.isFinite(near), 'the grazing bounce must actually exist').toBe(true);
+    expect(
+      Object.is(near, referenceReflectionDb(surfaces, [wall], objects, grazing, grazeP, 1.2)),
+    ).toBe(true);
+  });
+
+  it('derives both the wall list and the objects from ONE scene at the sweep call sites', () => {
+    // `prepareReflections` takes `walls` and `objects` separately, and the
+    // damaging way to get that wrong is silent: pass an empty `objects` and the
+    // open-door check finds no openings, so bounces are credited off doorways
+    // again — the defect S3 fixed. Measured, that moves 35 of 9 180 reflection
+    // values and ZERO end-to-end scores, so no downstream test can police it.
+    // `prepareSceneReflections` removes the argument, and this pins that the two
+    // derivations agree.
+    for (const { scene } of reflectionProbeScenes()) {
+      const surfaces = collectSurfaces(scene.objects);
+      const viaScene = prepareSceneReflections(scene, surfaces);
+      const viaArgs = prepareReflections(surfaces, wallsOf(scene), scene.objects);
+      expect(viaScene.walls.map((w) => w.wall.id)).toEqual(viaArgs.walls.map((w) => w.wall.id));
+      expect(viaScene.objects).toBe(scene.objects);
+    }
+    // And the difference an empty `objects` would make is real, not theoretical:
+    // on a scene with an OPEN door the two contexts must disagree somewhere.
+    const doorScene = reflectionProbeScenes().find((x) =>
+      x.name.startsWith('partition with an OPEN door'),
+    )!.scene;
+    const dSurfaces = collectSurfaces(doorScene.objects);
+    const good = prepareSceneReflections(doorScene, dSurfaces);
+    const blind = prepareReflections(dSurfaces, wallsOf(doorScene), []);
+    let differences = 0;
+    for (const sp of doorScene.speakers) {
+      for (const p of probePoints(doorScene)) {
+        if (!Object.is(reflectionDb(good, sp, p, 1.2), reflectionDb(blind, sp, p, 1.2))) {
+          differences++;
+        }
+      }
+    }
+    expect(differences).toBeGreaterThan(0);
   });
 
   it('drops zero-length walls from the prepared list, exactly as the original skipped them', () => {

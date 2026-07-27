@@ -346,7 +346,9 @@ function pseudoRandomScene(): Scene {
   // A plain LCG — reproducible everywhere, and its outputs are full-mantissa.
   let seed = 0x2f6e2b1;
   const next = (): number => {
-    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    // Math.imul, not `*`: the plain product exceeds 2^53 and the low bits are
+    // rounded away before the mask, collapsing this to a ~10 000-state cycle.
+    seed = (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff;
     return seed / 0x7fffffff;
   };
   const objects: SceneObject[] = [];

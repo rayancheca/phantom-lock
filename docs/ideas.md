@@ -88,7 +88,7 @@ all. Three independent wins, all bit-identical:
 
 **Acceptance:** 50-room < ~2 s ✅ (0.50–0.58 s) · byte-identical on the protected set ✅
 (162/162 new golden + 30/30 S18 golden, with failing negative controls) · ratchet ✅
-(760 → 810) · wall-heavy < ~10 s ❌ (12–14 s) → §2d.
+(760 → 814) · wall-heavy < ~10 s ❌ (12–14 s) → §2d.
 
 Note the §2 argument this did NOT overturn: a walls-aware cost proxy is still
 forbidden, because a legitimate multi-room house remains the wall-heaviest thing the

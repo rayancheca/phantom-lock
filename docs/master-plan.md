@@ -1637,7 +1637,7 @@ acceptance as `docs/ideas.md` **§2d**.
   every performance number was re-measured on the post-`reflection.ts` tree (it caught the design agent
   quoting 117× where the real figure was 5.9×, *and* under-selling the same change on the payload it had
   declared unreachable). *Self-review* Workflow ×4 dimensions × adversarial verify — see below.
-- **Test count:** 760 → **810** (+50). No test skipped, `.only`'d or weakened. Ratchet intact.
+- **Test count:** 760 → **814** (+54). No test skipped, `.only`'d or weakened. Ratchet intact.
 - **Coverage** (`npm run test:coverage`, files touched): `reflection.ts` 100 % stmts / 98.78 % branch ·
   `geometry.ts` 100 / 98.11 · `raytrace.ts` 100 / 95.50 · `bestspot.ts` 100 / 96.39 · `pairspot.ts`
   99.03 / 97.56. All ≥ 80 %.
@@ -1658,8 +1658,8 @@ acceptance as `docs/ideas.md` **§2d**.
   verdict ("Phantom center locked"); both themes render (`stage` / `stage stage-plan`); a disposable
   50-room chain seeded via localStorage into a cleared IndexedDB loads, renders its 300 m corridor and
   shows a live "No lock yet" readout, with arrow-nudge edits round-tripping in 1–9 ms.
-- **Gate:** `npm run lint` clean · `npm test` **810 passed (41 files)** · `npm run build` **413.79 kB /
-  133.52 kB gz** JS + 43.18 kB / 8.24 kB gz CSS + 1.31 kB HTML.
+- **Gate:** `npm run lint` clean · `npm test` **814 passed (41 files)** · `npm run build` **413.85 kB /
+  133.54 kB gz** JS + 43.18 kB / 8.24 kB gz CSS + 1.31 kB HTML.
 - **Acceptance, bullet by bullet.**
   1. 50-room chain < ~2 s — **MET**, 13.7 s → **0.50–0.58 s** (24–27×).
   2. Wall-heavy span-399 < ~10 s — **MISSED**, 129.7 s → **12.0–13.9 s** (9–11×). Measured cause and the
@@ -1667,7 +1667,7 @@ acceptance as `docs/ideas.md` **§2d**.
   3. Byte-identical on the protected set *and* the adversarial payloads, against a pre-change golden,
      with a negative control proving the harness can fail — **MET** (162/162 + 30/30; five controls fail
      it, four do not and are named).
-  4. New pure helpers failing-first tested; ratchet rises above 760 — **MET** (810).
+  4. New pure helpers failing-first tested; ratchet rises above 760 — **MET** (814).
   5. Spatial-index correctness tested independently — **MET in the form that shipped.** No index was
      shipped: an adversarial analysis showed an AABB test over segments is not *provably* conservative
      (the near-parallel band, which `addRoomShell`'s flush collinear walls reach), so the boxes are used
