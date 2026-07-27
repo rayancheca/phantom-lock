@@ -1,8 +1,9 @@
 import type { Scene, SceneObject, SpeakerObj, Surface, Vec2, WallObj } from './types';
-import { distPointSegment, pointInRect, EPS } from './geometry';
+import { distPointSegment, pointInRect } from './geometry';
 import { directPath } from './raytrace';
 import { levelAtDb, SPEAKER_MODELS } from './speakers';
 import { cappedStep } from './grid';
+import { prepareReflections, reflectionDb, type ReflectionContext } from './reflection';
 import { sceneBounds } from './scene';
 import * as v from './vec';
 
@@ -38,6 +39,12 @@ function insideFurnitureOrWall(scene: Scene, p: Vec2): boolean {
  * an open doorway), then charge the full folded path length plus the wall's
  * absorption. `objects` supplies the openings; closed doors and windows are
  * solid reflectors and stay in play.
+ *
+ * The maths lives in `reflection.ts`, which hoists everything independent of
+ * `p` out of the per-cell path. This entry point builds that prepared context
+ * per call, so it is the RIGHT function for a one-off query and the WRONG one
+ * inside a sweep — a grid loop must call `prepareReflections` once and then
+ * `reflectionDb` per cell, as `bestPairSpot` and `bestListeningSpot` do.
  */
 export function bestReflectionDb(
   surfaces: Surface[],
@@ -47,65 +54,14 @@ export function bestReflectionDb(
   p: Vec2,
   earZ: number,
 ): number {
-  let best = -Infinity;
-  for (const w of walls) {
-    const wlen = v.dist(w.a, w.b);
-    if (wlen < EPS) continue; // a zero-length wall reflects nothing
-    const dir = v.norm(v.sub(w.b, w.a));
-    const rel = v.sub(sp.pos, w.a);
-    const along = v.dot(rel, dir);
-    const proj = v.add(w.a, v.scale(dir, along));
-    const image = v.add(proj, v.sub(proj, sp.pos));
-    // Where does image→p cross the wall segment?
-    const r = v.sub(p, image);
-    const q = v.sub(w.b, w.a);
-    const denom = r.x * q.y - r.y * q.x;
-    if (Math.abs(denom) < 1e-9) continue;
-    const t = ((w.a.x - image.x) * q.y - (w.a.y - image.y) * q.x) / denom;
-    const u = ((w.a.x - image.x) * r.y - (w.a.y - image.y) * r.x) / denom;
-    if (t <= 0.02 || t >= 0.98 || u < 0 || u > 1) continue;
-    // Folded 3D path: speaker → wall → ear. Height at the bounce must stay
-    // under the wall top or the "reflection" would fly over it.
-    const flat = v.len(r); // image→p equals the folded path length in plan
-    const total = Math.hypot(flat, sp.z - earZ);
-    const bounceZ = sp.z + (earZ - sp.z) * t;
-    if (bounceZ > w.height) continue;
-    // Refuse a bounce that lands in a genuine acoustic HOLE — an OPEN door,
-    // which carves the wall away and reflects nothing (both legs would sail
-    // straight through the doorway). Closed doors and windows are SOLID: they
-    // fill the gap with their own surface, so leg occlusion below + the wall's
-    // material approximation handle them (precise rect-mirroring is backlog).
-    let throughOpening = false;
-    for (const o of objects) {
-      if (o.kind !== 'rect' || o.role !== 'door' || o.doorOpen === false) continue;
-      if (distPointSegment(o.center, w.a, w.b) > 0.12) continue; // door not on this wall
-      const tc = v.dot(v.sub(o.center, w.a), dir) / wlen;
-      const half = o.w / 2 / wlen;
-      if (u >= tc - half && u <= tc + half) {
-        throughOpening = true;
-        break;
-      }
-    }
-    if (throughOpening) continue;
-    // Both legs of the bounce must themselves be clear — otherwise a wall
-    // between speaker and mirror wall would "reflect" straight through it.
-    const bounce = v.add(w.a, v.scale(q, u));
-    const legSurfaces = surfaces.filter((s) => s.objectId !== w.id);
-    if (directPath(legSurfaces, sp.pos, sp.z, bounce, bounceZ).blocked) continue;
-    if (directPath(legSurfaces, bounce, bounceZ, p, earZ).blocked) continue;
-    const keep = Math.max(0.02, 1 - w.absorption);
-    const db = levelAtDb(sp, Math.max(0.3, total)) + 20 * Math.log10(keep);
-    if (db > best) best = db;
-  }
-  return best;
+  return reflectionDb(prepareReflections(surfaces, walls, objects), sp, p, earZ);
 }
 
 /** Level (dB) at p for one speaker: direct path if it exists, else the best
  *  wall bounce with an imaging penalty. -Infinity when nothing arrives. */
 function reachDb(
   surfaces: Surface[],
-  walls: WallObj[],
-  objects: SceneObject[],
+  refl: ReflectionContext,
   sp: SpeakerObj,
   p: Vec2,
   earZ: number,
@@ -115,7 +71,7 @@ function reachDb(
     const graze = 20 * Math.log10(Math.max(0.05, d.attenuation));
     return { db: levelAtDb(sp, Math.max(0.3, d.distance3d)) + graze, reflected: false };
   }
-  return { db: bestReflectionDb(surfaces, walls, objects, sp, p, earZ) - REFLECTION_PENALTY_DB, reflected: true };
+  return { db: reflectionDb(refl, sp, p, earZ) - REFLECTION_PENALTY_DB, reflected: true };
 }
 
 /**
@@ -150,6 +106,9 @@ export function bestPairSpot(
     GRID_STEP,
     scene.objects.length + 2 * Math.max(1, surfaces.length),
   );
+  // Everything the reflection search can know before it sees a cell, computed
+  // once for the whole sweep rather than per (cell, speaker, wall).
+  const refl = prepareReflections(surfaces, walls, scene.objects);
 
   let best: PairSweet | null = null;
   for (let x = bounds.min.x + step / 2; x <= bounds.max.x; x += step) {
@@ -157,8 +116,8 @@ export function bestPairSpot(
       const p = { x, y };
       if (insideFurnitureOrWall(scene, p)) continue;
 
-      const ra = reachDb(surfaces, walls, scene.objects, a, p, earZ);
-      const rb = reachDb(surfaces, walls, scene.objects, b, p, earZ);
+      const ra = reachDb(surfaces, refl, a, p, earZ);
+      const rb = reachDb(surfaces, refl, b, p, earZ);
       if (ra.db < UNREACHABLE_DB || rb.db < UNREACHABLE_DB) continue;
 
       const dA = Math.hypot(v.dist(a.pos, p), a.z - earZ);

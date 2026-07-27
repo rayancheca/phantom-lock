@@ -2,7 +2,7 @@ import type { RectObj, Scene, SpeakerObj, Surface, Vec2, WallObj } from './types
 import { distPointSegment, pointInRect } from './geometry';
 import { collectSurfaces, directPath } from './raytrace';
 import { levelAtDb, SPEAKER_MODELS } from './speakers';
-import { bestReflectionDb } from './pairspot';
+import { prepareReflections, reflectionDb } from './reflection';
 import { findTv } from './stereo';
 import { cappedStep } from './grid';
 import { sceneBounds } from './scene';
@@ -15,11 +15,13 @@ const CAPABILITY: Record<string, number> = { homepod: 1, 'homepod-mini': 0.65 };
 /**
  * How good p is as a TV seat: needs line of sight to the screen, a viewing
  * angle inside the panel's useful cone, and a sane viewing distance.
+ *
+ * `others` is the surface list with the TV's own surfaces removed — the sight
+ * ray starts inside its rect. It depends only on the scene, so the caller builds
+ * it once for the sweep instead of allocating a filtered copy per cell.
  */
-function tvViewQuality(surfaces: Surface[], tv: RectObj, p: Vec2, earZ: number): number {
+function tvViewQuality(others: Surface[], tv: RectObj, p: Vec2, earZ: number): number {
   const screenZ = Math.max(0.5, tv.height * 0.8);
-  // Exclude the TV's own surfaces — the sight ray starts inside its rect.
-  const others = surfaces.filter((s) => s.objectId !== tv.id);
   if (directPath(others, tv.center, screenZ, p, earZ).blocked) return 0.1;
   const d = v.dist(tv.center, p);
   const dist = d < 1.2 ? Math.max(0.3, d / 1.2) : d > 4.5 ? Math.max(0.3, 1 - (d - 4.5) / 3) : 1;
@@ -146,8 +148,12 @@ export function bestListeningSpot(scene: Scene, tvAnchor: boolean, coarse = fals
   const earZ = scene.listener.z;
   const tvRect = tvAnchor ? findTv(scene) : null;
   const tv = tvRect?.center ?? null;
+  // Hoisted out of `tvViewQuality`, which is otherwise called once per live cell
+  // and rebuilt this array every time.
+  const tvOthers = tvRect ? surfaces.filter((s) => s.objectId !== tvRect.id) : surfaces;
 
   const walls = scene.objects.filter((o): o is WallObj => o.kind === 'wall');
+  const refl = prepareReflections(surfaces, walls, scene.objects);
   const byId = new Map(scene.speakers.map((s) => [s.id, s]));
   const pairs = scene.pairs
     .map(([a, b]) => [byId.get(a), byId.get(b)] as const)
@@ -180,7 +186,7 @@ export function bestListeningSpot(scene: Scene, tvAnchor: boolean, coarse = fals
         // image-smeared) transmission instead of writing the cell off.
         const straight = Math.hypot(v.dist(sp.pos, p), sp.z - earZ);
         const cleanDb = levelAtDb(sp, Math.max(0.3, straight));
-        const reflDb = bestReflectionDb(surfaces, walls, scene.objects, sp, p, earZ);
+        const reflDb = reflectionDb(refl, sp, p, earZ);
         const t =
           reflDb > -200 ? Math.min(1, Math.pow(10, (reflDb - cleanDb) / 20)) * 0.6 : 0;
         atten.set(sp.id, t);
@@ -217,7 +223,7 @@ export function bestListeningSpot(scene: Scene, tvAnchor: boolean, coarse = fals
       // the screen, inside its viewing cone, at a sane distance. Music mode
       // skips this entirely, so the two modes genuinely disagree.
       if (tvRect) {
-        score *= 0.25 + 0.75 * tvViewQuality(surfaces, tvRect, p, earZ);
+        score *= 0.25 + 0.75 * tvViewQuality(tvOthers, tvRect, p, earZ);
       }
 
       if (score <= 0.02) continue;

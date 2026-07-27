@@ -9,7 +9,15 @@ import type {
   TraceResult,
   Vec2,
 } from './types';
-import { closestPointOnSegment, distPointSegment, EPS, rayCircle, raySegment, rectCorners } from './geometry';
+import {
+  closestPointOnSegment,
+  distPointSegment,
+  EPS,
+  rayCircle,
+  raySegment,
+  rectCorners,
+  surfaceT,
+} from './geometry';
 import { gainOf } from './speakers';
 import * as v from './vec';
 
@@ -260,11 +268,23 @@ function directOcclusion(
   const d = v.dist(from, to);
   if (d < EPS) return { blocked: false, attenuation: 1 };
   const dir = v.scale(v.sub(to, from), 1 / d);
+  // NOTE: no height prefilter here, deliberately. Dropping surfaces below both
+  // endpoints looks free — and `reflection.ts` does exactly that — but it rests
+  // on `zAt >= min(zFrom, zTo)`, which holds in exact arithmetic and only to
+  // within an ulp in floating point. `reflection.ts` can afford that because
+  // there the filter merely orders a search whose negative answer is settled by
+  // an unfiltered rescan. Here a wrongly-skipped surface would silently drop a
+  // factor out of the `attenuation` product, which is on screen in the Echogram.
+  // An ulp-wide risk is still a risk when the contract is bit-identity.
   let attenuation = 1;
   for (const s of surfaces) {
-    const hit = s.type === 'seg' ? raySegment(from, dir, s.a, s.b) : rayCircle(from, dir, s.c, s.r);
-    if (!hit || hit.t >= d - 0.02) continue;
-    const zAt = zFrom + (zTo - zFrom) * (hit.t / d);
+    // Only `t` is read below, so use the allocation-free form: it returns the
+    // identical double without the two Vec2 literals and the `Math.hypot` that
+    // `raySegment`'s normal costs. `-1` is the miss sentinel (`raySegment`
+    // returning null); a NaN `t` still flows through unchanged.
+    const t = surfaceT(s, from, dir);
+    if (t < 0 || t >= d - 0.02) continue;
+    const zAt = zFrom + (zTo - zFrom) * (t / d);
     if (s.height >= zAt) return { blocked: true, attenuation: 0 };
     if (s.height + GRAZE_BAND > zAt) attenuation *= grazeFactor(s, zAt);
   }

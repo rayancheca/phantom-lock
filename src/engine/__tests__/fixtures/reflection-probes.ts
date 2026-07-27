@@ -209,6 +209,49 @@ export function reflectionProbeScenes(): Array<{ name: string; scene: Scene }> {
       ),
     },
     {
+      // NON-AXIS-ALIGNED, irrational-length walls. This entry exists because a
+      // negative control proved the rest of the corpus could not see one: with
+      // every wall axis-aligned, `v.norm(q)` and `v.scale(q, 1/wlen)` agree
+      // BITWISE (one component is 0 and the other is ±wlen, so both give ±1), so
+      // swapping them — the exact mistake a "let's share the wall-direction
+      // helper" refactor makes, and a 45 %-divergent one in general — passed
+      // every assertion. Skew angles and lengths that are not representable
+      // restore the distinction.
+      name: 'skewed room (irrational wall lengths, no axis alignment)',
+      scene: scene(
+        [
+          wall('d1', { x: 0.37, y: 0.11 }, { x: 7.13, y: 2.91 }),
+          wall('d2', { x: 7.13, y: 2.91 }, { x: 4.03, y: 8.77 }),
+          wall('d3', { x: 4.03, y: 8.77 }, { x: -1.29, y: 5.41 }),
+          wall('d4', { x: -1.29, y: 5.41 }, { x: 0.37, y: 0.11 }),
+          wall('d5', { x: 1.7, y: 3.3 }, { x: 5.1, y: 5.9 }, { height: 1.7 }),
+          rect('door', { x: 3.4, y: 4.6 }, 0.83, 0.13, { role: 'door', doorOpen: true, height: 2.1, rotation: 0.653 }),
+        ],
+        [speaker('a', { x: 1.31, y: 1.87 }), speaker('b', { x: 5.29, y: 6.73 }, 1.37)],
+        { x: 3.1, y: 4.2 },
+      ),
+    },
+    {
+      // Flush, exactly-collinear walls — what `addRoomShell` actually builds —
+      // pushed out to a coordinate magnitude where `raySegment`'s near-parallel
+      // band becomes ill-conditioned. This is the geometry that makes a bounding
+      // box an unsafe FILTER (as opposed to a safe search order).
+      name: 'flush collinear walls at 1e4 coordinates',
+      scene: scene(
+        [
+          wall('c1', { x: 10000, y: 10000 }, { x: 10006, y: 10000 }),
+          wall('c2', { x: 10006, y: 10000 }, { x: 10012, y: 10000 }),
+          wall('c3', { x: 10012, y: 10000 }, { x: 10018, y: 10000 }),
+          wall('c4', { x: 10000, y: 10005 }, { x: 10018, y: 10005 }),
+          wall('c5', { x: 10000, y: 10000 }, { x: 10000, y: 10005 }),
+          wall('c6', { x: 10018, y: 10000 }, { x: 10018, y: 10005 }),
+          wall('c7', { x: 10009, y: 10000 }, { x: 10009, y: 10005 }, { height: 2.2 }),
+        ],
+        [speaker('a', { x: 10003, y: 10002.5 }), speaker('b', { x: 10015, y: 10002.5 })],
+        { x: 10009, y: 10002.5 },
+      ),
+    },
+    {
       // Many parallel walls with speakers straddling them: the wall-heavy shape
       // that costs 132 s end to end, shrunk to a size a test can afford.
       name: 'wall-heavy corridor (12 walls, 8 speakers)',
@@ -228,7 +271,71 @@ export function reflectionProbeScenes(): Array<{ name: string; scene: Scene }> {
         return { ...s, pairs };
       })(),
     },
+    { name: 'seeded pseudo-random clutter', scene: pseudoRandomScene() },
   ];
+}
+
+/**
+ * A seeded scene of walls, doors and furniture at coordinates that are not
+ * representable as short decimals, so no two "equivalent" float expressions get
+ * to agree by accident.
+ *
+ * Hand-built fixtures kept passing negative controls that reorder arithmetic
+ * (`proj + (proj - s)` vs `2*proj - s`, `w/2/l` vs `w/(2*l)`) because tidy
+ * coordinates make both forms round the same way. Seeded, never `Math.random`:
+ * a probe corpus that changes between runs cannot back a golden.
+ */
+function pseudoRandomScene(): Scene {
+  // A plain LCG — reproducible everywhere, and its outputs are full-mantissa.
+  let seed = 0x2f6e2b1;
+  const next = (): number => {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    return seed / 0x7fffffff;
+  };
+  const objects: SceneObject[] = [];
+  for (let i = 0; i < 14; i++) {
+    const ax = next() * 18 - 3;
+    const ay = next() * 14 - 2;
+    const ang = next() * Math.PI * 2;
+    const len = 1.4 + next() * 7.3;
+    objects.push(
+      wall(`w${i}`, { x: ax, y: ay }, { x: ax + Math.cos(ang) * len, y: ay + Math.sin(ang) * len }, {
+        height: 0.6 + next() * 2.7,
+        absorption: next(),
+      }),
+    );
+  }
+  // Doors sitting ON some of those walls, at fractions that land mid-span.
+  for (let i = 0; i < 5; i++) {
+    const host = objects[i * 2];
+    if (host.kind !== 'wall') continue;
+    const f = 0.23 + next() * 0.5;
+    objects.push(
+      rect(`d${i}`, { x: host.a.x + (host.b.x - host.a.x) * f, y: host.a.y + (host.b.y - host.a.y) * f },
+        0.61 + next() * 0.7, 0.11, {
+          role: i % 2 === 0 ? 'door' : 'window',
+          doorOpen: i % 2 === 0 ? i % 4 === 0 : undefined,
+          height: 1.3 + next(),
+          rotation: next() * Math.PI,
+        }),
+    );
+  }
+  for (let i = 0; i < 4; i++) {
+    objects.push(rect(`f${i}`, { x: next() * 15, y: next() * 12 }, 0.4 + next() * 1.9, 0.4 + next() * 1.3, {
+      height: 0.3 + next() * 2.2,
+      rotation: next() * Math.PI,
+    }));
+    objects.push(circle(`c${i}`, { x: next() * 15, y: next() * 12 }, 0.2 + next() * 0.9, 0.4 + next() * 2));
+  }
+  const speakers: SpeakerObj[] = [];
+  for (let i = 0; i < 4; i++) {
+    speakers.push(
+      speaker(`s${i}`, { x: next() * 15, y: next() * 12 }, 0.3 + next() * 2.1,
+        i % 2 === 0 ? 'homepod' : 'homepod-mini'),
+    );
+  }
+  const s = scene(objects, speakers, { x: 7.31, y: 5.87 });
+  return { ...s, pairs: [[speakers[0].id, speakers[2].id]] };
 }
 
 /**

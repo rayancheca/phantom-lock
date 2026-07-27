@@ -49,6 +49,53 @@ export function rayCircle(o: Vec2, d: Vec2, c: Vec2, r: number): RayHit | null {
   return { t, point, normal };
 }
 
+/**
+ * `raySegment`'s `t`, without building the hit — `-1` when there is no crossing.
+ *
+ * An occlusion test only ever reads `t`; `point` and `normal` are pure outputs
+ * that cannot influence it. Skipping them removes two Vec2 allocations AND the
+ * `Math.hypot` inside `v.norm` from every surface test in the engine's hottest
+ * loops, and returns the identical double — every line below is transcribed from
+ * `raySegment` above, in the same order, with the same constants.
+ *
+ * `-1` is an unambiguous miss sentinel because every accepted `t` is `>= EPS`.
+ * A NaN `t` is deliberately NOT treated as a miss: `raySegment` returns it as a
+ * hit (all four rejection comparisons are false for NaN), and callers must see
+ * the same NaN they see today.
+ */
+export function raySegmentT(o: Vec2, d: Vec2, a: Vec2, b: Vec2): number {
+  const sx = b.x - a.x;
+  const sy = b.y - a.y;
+  const denom = d.x * sy - d.y * sx;
+  if (Math.abs(denom) < 1e-12) return -1;
+  const aox = a.x - o.x;
+  const aoy = a.y - o.y;
+  const t = (aox * sy - aoy * sx) / denom;
+  const u = (aox * d.y - aoy * d.x) / denom;
+  if (t < EPS || u < -1e-9 || u > 1 + 1e-9) return -1;
+  return t;
+}
+
+/** `rayCircle`'s `t`, without building the hit. Same reasoning as `raySegmentT`. */
+export function rayCircleT(o: Vec2, d: Vec2, c: Vec2, r: number): number {
+  const ocx = o.x - c.x;
+  const ocy = o.y - c.y;
+  const b = ocx * d.x + ocy * d.y;
+  const cc = ocx * ocx + ocy * ocy - r * r;
+  const disc = b * b - cc;
+  if (disc < 0) return -1;
+  const sq = Math.sqrt(disc);
+  let t = -b - sq;
+  if (t < EPS) t = -b + sq;
+  if (t < EPS) return -1;
+  return t;
+}
+
+/** The `t` of whichever primitive this surface is, via the allocation-free path. */
+export function surfaceT(s: Surface, o: Vec2, d: Vec2): number {
+  return s.type === 'seg' ? raySegmentT(o, d, s.a, s.b) : rayCircleT(o, d, s.c, s.r);
+}
+
 export function nearestHit(surfaces: Surface[], o: Vec2, d: Vec2): SurfaceHit | null {
   let best: SurfaceHit | null = null;
   for (const s of surfaces) {
