@@ -34,6 +34,12 @@ import { buildUnderlay } from '../panels/underlay-import';
 import { deriveVerdict } from '../panels/verdict';
 import { renderPlanToBlob, planImageFilename } from '../canvas/export-image';
 import type { Scenario } from '../compare/ScenarioCompare';
+import {
+  addProject,
+  moveLayoutToProject,
+  removeProject,
+  renameProject,
+} from '../../engine/projects';
 import type { ToastData } from '../ui/Toast';
 import { initialMode, modeTheme, subStepForTool, type AppMode, type DesignSubStep, type ModeEntry } from './mode';
 import type { Deleted, DialogState } from './app-types';
@@ -101,7 +107,9 @@ function AppInner({ initialStore, persistMode, showFirstRun, droppedCount }: App
   const [toast, setToast] = useState<ToastData | null>(null);
   const [wallProposal, setWallProposal] = useState<SceneObject[] | null>(null);
   const [galleryOpen, setGalleryOpen] = useState(false);
-  const [compare, setCompare] = useState<{ left: Scenario; right: Scenario } | null>(null);
+  const [compare, setCompare] = useState<Scenario[] | null>(null);
+  /** The folder a pending "New room…" dialog should file its result into. */
+  const [pendingProjectId, setPendingProjectId] = useState<string | null>(null);
   /** A one-shot spoken explanation for a keyboard command that could not act
    *  (e.g. `d` with furniture selected). Cleared by the next command. */
   const [notice, setNotice] = useState<string | null>(null);
@@ -325,30 +333,123 @@ function AppInner({ initialStore, persistMode, showFirstRun, droppedCount }: App
     setScene((s) => removeListener(s, id));
   };
 
-  /** Open the 2-up compare, seeded with the two most useful scenarios: two seats
-   *  of this layout if it has them, else this layout vs another. */
+  /** Open the N-up compare, seeded with the two most useful scenarios: two seats
+   *  of this layout if it has them, else this layout vs a sibling design (one from
+   *  the same project first — those are the variants you actually want side by
+   *  side). The user adds further columns from inside. */
   const openCompare = () => {
     const seats = sceneListeners(scene);
     const here = active.id;
-    let left: Scenario;
-    let right: Scenario;
+    let initial: Scenario[];
     if (seats.length >= 2) {
-      left = { layoutId: here, seatId: seats[0].id };
-      right = { layoutId: here, seatId: seats[1].id };
+      initial = [
+        { layoutId: here, seatId: seats[0].id },
+        { layoutId: here, seatId: seats[1].id },
+      ];
     } else if (store.layouts.length >= 2) {
-      const other = store.layouts.find((l) => l.id !== here) ?? active;
-      left = { layoutId: here, seatId: activeListener(scene).id };
-      right = { layoutId: other.id, seatId: sceneListeners(other.scene)[0].id };
+      const sibling =
+        store.layouts.find((l) => l.id !== here && l.projectId === active.projectId) ??
+        store.layouts.find((l) => l.id !== here) ??
+        active;
+      initial = [
+        { layoutId: here, seatId: activeListener(scene).id },
+        { layoutId: sibling.id, seatId: sceneListeners(sibling.scene)[0].id },
+      ];
     } else {
       const seat = activeListener(scene).id;
-      left = { layoutId: here, seatId: seat };
-      right = { layoutId: here, seatId: seat };
+      initial = [
+        { layoutId: here, seatId: seat },
+        { layoutId: here, seatId: seat },
+      ];
     }
+    // A toast's Undo button renders ABOVE the compare layer (z-80 vs z-60) and
+    // mutates the store — which would recompute columns and could fire THE LOCK
+    // ignition for a lock the user did not just achieve. Compare is read-only, so
+    // the toast goes away when it opens.
+    dismissToast();
     closeFloatingPanels();
     setGalleryOpen(false);
-    setCompare({ left, right });
+    setCompare(initial);
   };
+  /** Compare needs two comparable things. Two projects do not add comparability on
+   *  their own — a project with no layouts has nothing to show — but two layouts
+   *  in different projects are already covered by the layout count. */
   const canCompare = sceneListeners(scene).length >= 2 || store.layouts.length >= 2;
+
+  // --- folders (projects) ----------------------------------------------------
+  //
+  // Deleting a folder is a pure REGROUPING: `removeProject` re-homes its designs
+  // to the adjacent folder and deletes none of them. A cascade delete would put N
+  // designs behind ONE auto-dismissing toast, which is not a recovery affordance
+  // the owner's "never delete my layouts" rule can live with.
+
+  const newProject = (name: string) => {
+    setStore((st) => addProject(st, name));
+    setDialog(null);
+  };
+
+  const renameProjectTo = (id: string, name: string) => {
+    setStore((st) => renameProject(st, id, name));
+    setDialog(null);
+  };
+
+  const moveLayout = (layoutId: string, projectId: string) => {
+    const target = store.projects.find((p) => p.id === projectId);
+    const layout = store.layouts.find((l) => l.id === layoutId);
+    const from = store.projects.find((p) => p.id === layout?.projectId);
+    setStore((st) => moveLayoutToProject(st, layoutId, projectId));
+    if (target && layout) {
+      showToast(`Moved “${layout.name}” to “${target.name}”`, {
+        tone: 'ok',
+        action: from
+          ? { label: 'Undo', run: () => setStore((st) => moveLayoutToProject(st, layoutId, from.id)) }
+          : undefined,
+      });
+    }
+  };
+
+  const undoDeleteProject = () => {
+    const d = lastDeletedRef.current;
+    if (!d || d.type !== 'project') return;
+    lastDeletedRef.current = null;
+    setStore((st) => {
+      if (st.projects.some((p) => p.id === d.project.id)) return st;
+      const projects = [...st.projects];
+      projects.splice(Math.min(d.index, projects.length), 0, d.project);
+      const moved = new Set(d.movedLayoutIds);
+      return {
+        ...st,
+        projects,
+        // Only the layouts THIS delete moved go back, and only if they are still
+        // where it put them — a design the user has since filed somewhere else on
+        // purpose must not be dragged back.
+        layouts: st.layouts.map((l) =>
+          moved.has(l.id) ? { ...l, projectId: d.project.id, updatedAt: Date.now() } : l,
+        ),
+      };
+    });
+  };
+
+  const deleteProject = (id: string) => {
+    const index = store.projects.findIndex((p) => p.id === id);
+    const project = store.projects[index];
+    if (!project || store.projects.length <= 1) return;
+    const moved = store.layouts.filter((l) => l.projectId === id);
+    lastDeletedRef.current = {
+      type: 'project',
+      project,
+      index,
+      movedLayoutIds: moved.map((l) => l.id),
+    };
+    setStore((st) => removeProject(st, id));
+    const target = store.projects[Math.max(0, index - 1)] ?? store.projects[1];
+    showToast(
+      moved.length === 0
+        ? `Deleted “${project.name}”`
+        : `Deleted “${project.name}” — ${moved.length} design${moved.length === 1 ? '' : 's'} moved to “${target?.name ?? 'the first folder'}”`,
+      { action: { label: 'Undo', run: undoDeleteProject } },
+    );
+  };
 
   /** Break a wall in two at a point (or its midpoint) and select the first half.
    *  The id is computed synchronously so selection happens in this same handler. */
@@ -994,7 +1095,10 @@ function AppInner({ initialStore, persistMode, showFirstRun, droppedCount }: App
         toast={toast}
         canCompare={canCompare}
         onCloseDialog={() => setDialog(null)}
-        onAddRoomLayout={addRoomLayout}
+        onAddRoomLayout={(w, d) => {
+          addRoomLayout(w, d, pendingProjectId ?? undefined);
+          setPendingProjectId(null);
+        }}
         onAddRoom={(w, d, name) => addRoom(w, d, name)}
         onCommitRoomZone={commitRoomZone}
         onRenameLayout={renameLayout}
@@ -1003,13 +1107,16 @@ function AppInner({ initialStore, persistMode, showFirstRun, droppedCount }: App
           switchLayout(id);
           setGalleryOpen(false);
         }}
-        onNewRoom={() => setDialog({ kind: 'room-size', purpose: 'layout' })}
-        onNewBlank={() => {
-          addLayout('blank');
+        onNewRoom={(projectId) => {
+          setPendingProjectId(projectId);
+          setDialog({ kind: 'room-size', purpose: 'layout' });
+        }}
+        onNewBlank={(projectId) => {
+          addLayout('blank', projectId);
           setGalleryOpen(false);
         }}
-        onNewApartment={() => {
-          addLayout('apartment');
+        onNewApartment={(projectId) => {
+          addLayout('apartment', projectId);
           setGalleryOpen(false);
         }}
         onImport={() => fileRef.current?.click()}
@@ -1019,6 +1126,12 @@ function AppInner({ initialStore, persistMode, showFirstRun, droppedCount }: App
         onExportAll={exportAll}
         onCompare={openCompare}
         onDelete={deleteLayout}
+        onNewProject={() => setDialog({ kind: 'project-name' })}
+        onNewProject2={newProject}
+        onRenameProject2={renameProjectTo}
+        onRenameProject={(id) => setDialog({ kind: 'project-name', projectId: id })}
+        onDeleteProject={deleteProject}
+        onMoveLayout={moveLayout}
         onCloseGallery={() => setGalleryOpen(false)}
         onCloseCompare={() => setCompare(null)}
         onDismissToast={dismissToast}

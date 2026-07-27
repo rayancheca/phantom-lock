@@ -33,8 +33,10 @@ interface Args {
 export interface LayoutActions {
   afterLayoutSwitch: (nextScene: Scene) => void;
   switchLayout: (id: string) => void;
-  addLayout: (kind: 'blank' | 'apartment') => void;
-  addRoomLayout: (w: number, d: number) => void;
+  /** `projectId` targets a specific folder (the gallery's per-folder actions);
+   *  omitted, the design lands in the folder the user is currently in. */
+  addLayout: (kind: 'blank' | 'apartment', projectId?: string) => void;
+  addRoomLayout: (w: number, d: number, projectId?: string) => void;
   renameLayout: (id: string, name: string) => void;
   deleteLayout: (id: string) => void;
   importLayout: (file: File) => void;
@@ -66,8 +68,8 @@ export function useLayoutActions(a: Args): LayoutActions {
    *  one — `makeLayout`'s `projectId` default exists for fixtures, not for here. */
   const currentProjectId = (): string => activeProject(a.store).id;
 
-  const addLayout = (kind: 'blank' | 'apartment') => {
-    const pid = currentProjectId();
+  const addLayout = (kind: 'blank' | 'apartment', projectId?: string) => {
+    const pid = projectId ?? currentProjectId();
     const layout =
       kind === 'blank'
         ? makeLayout('New layout', blankScene(), undefined, pid)
@@ -76,8 +78,13 @@ export function useLayoutActions(a: Args): LayoutActions {
     afterLayoutSwitch(layout.scene);
   };
 
-  const addRoomLayout = (w: number, d: number) => {
-    const layout = makeLayout(`Room ${w}×${d}`, rectRoomScene(w, d), undefined, currentProjectId());
+  const addRoomLayout = (w: number, d: number, projectId?: string) => {
+    const layout = makeLayout(
+      `Room ${w}×${d}`,
+      rectRoomScene(w, d),
+      undefined,
+      projectId ?? currentProjectId(),
+    );
     a.setStore((st) => ({ ...st, layouts: [...st.layouts, layout], activeId: layout.id }));
     a.setDialog(null);
     a.setGalleryOpen(false);
@@ -120,6 +127,10 @@ export function useLayoutActions(a: Args): LayoutActions {
       a.applyMode(initialMode(deleted.layout.scene), deleted.layout.scene);
       return;
     }
+
+    // A deleted FOLDER is restored by App (it owns the projects state and the
+    // re-home bookkeeping); this hook only handles scene-scoped snapshots.
+    if (deleted.type === 'project') return;
 
     // Scene-scoped snapshots go back to the layout they were deleted from,
     // which may no longer be the active one — or may no longer exist.

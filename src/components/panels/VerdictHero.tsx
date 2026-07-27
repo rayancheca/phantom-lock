@@ -51,7 +51,13 @@ export default function VerdictHero({ view, seatName, variant }: VerdictHeroProp
       : 'Link two HomePods as a stereo pair to read the phantom center.';
 
   return (
-    <section className={`verdict-hero verdict-hero--${variant} verdict-hero--${view.state}`} aria-label="Stereo verdict">
+    <section
+      className={`verdict-hero verdict-hero--${variant} verdict-hero--${view.state}`}
+      // Named (and therefore a `region` landmark) only in the sidebar, where there
+      // is exactly one. In compare there is one per column, and N identically named
+      // landmarks is worse than none — each column names itself instead.
+      aria-label={variant === 'compare' ? undefined : 'Stereo verdict'}
+    >
       <p className="verdict-hero__seat">At: {seatName}</p>
       <h2 className="verdict-hero__headline">
         <span key={token} className={`verdict-hero__headline-text${igniting ? ' is-igniting' : ''}`}>

@@ -9,7 +9,8 @@ interface AppDialogsProps {
   dialog: DialogState;
   store: LayoutStore;
   galleryOpen: boolean;
-  compare: { left: Scenario; right: Scenario } | null;
+  /** The scenarios to open compare with (>= 2), or null when it is closed. */
+  compare: Scenario[] | null;
   toast: ToastData | null;
   canCompare: boolean;
   onCloseDialog: () => void;
@@ -19,9 +20,10 @@ interface AppDialogsProps {
   onRenameLayout: (id: string, name: string) => void;
   onApplyCalibration: (measured: number, real: number) => void;
   onOpenLayout: (id: string) => void;
-  onNewRoom: () => void;
-  onNewBlank: () => void;
-  onNewApartment: () => void;
+  /** Each takes the folder the new design should land in. */
+  onNewRoom: (projectId: string) => void;
+  onNewBlank: (projectId: string) => void;
+  onNewApartment: (projectId: string) => void;
   onImport: () => void;
   onRequestRename: (id: string) => void;
   onDuplicate: (id: string) => void;
@@ -29,6 +31,13 @@ interface AppDialogsProps {
   onExportAll: () => void;
   onCompare: () => void;
   onDelete: (id: string) => void;
+  onNewProject: () => void;
+  onRenameProject: (id: string) => void;
+  /** The dialog's submit handlers (the two above only OPEN the dialog). */
+  onNewProject2: (name: string) => void;
+  onRenameProject2: (id: string, name: string) => void;
+  onDeleteProject: (id: string) => void;
+  onMoveLayout: (layoutId: string, projectId: string) => void;
   onCloseGallery: () => void;
   onCloseCompare: () => void;
   onDismissToast: () => void;
@@ -73,9 +82,26 @@ export default function AppDialogs(p: AppDialogsProps) {
           onClose={p.onCloseDialog}
         />
       )}
+      {dialog?.kind === 'project-name' && (
+        <RenameDialog
+          title={dialog.projectId ? 'Rename folder' : 'New folder'}
+          fieldLabel="Folder name"
+          submitLabel={dialog.projectId ? 'Rename' : 'Create folder'}
+          placeholder="Living room"
+          name={
+            dialog.projectId
+              ? (p.store.projects.find((x) => x.id === dialog.projectId)?.name ?? '')
+              : ''
+          }
+          onSubmit={(name) =>
+            dialog.projectId ? p.onRenameProject2(dialog.projectId, name) : p.onNewProject2(name)
+          }
+          onClose={p.onCloseDialog}
+        />
+      )}
       {p.galleryOpen && (
         <LayoutGallery
-          layouts={p.store.layouts}
+          store={p.store}
           activeId={p.store.activeId}
           onOpen={p.onOpenLayout}
           onNewRoom={p.onNewRoom}
@@ -88,16 +114,15 @@ export default function AppDialogs(p: AppDialogsProps) {
           onExportAll={p.onExportAll}
           onCompare={p.canCompare ? p.onCompare : undefined}
           onDelete={p.onDelete}
+          onNewProject={p.onNewProject}
+          onRenameProject={p.onRenameProject}
+          onDeleteProject={p.onDeleteProject}
+          onMoveLayout={p.onMoveLayout}
           onClose={p.onCloseGallery}
         />
       )}
       {p.compare && (
-        <ScenarioCompare
-          layouts={p.store.layouts}
-          initialLeft={p.compare.left}
-          initialRight={p.compare.right}
-          onClose={p.onCloseCompare}
-        />
+        <ScenarioCompare store={p.store} initial={p.compare} onClose={p.onCloseCompare} />
       )}
       {dialog?.kind === 'calibrate' && (
         <CalibrateDialog

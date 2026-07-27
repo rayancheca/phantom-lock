@@ -14,6 +14,13 @@ interface Props {
   onSuggest: () => void;
   /** Read-only contexts (e.g. scenario compare) hide the actionable Suggest button. */
   hideSuggest?: boolean;
+  /**
+   * The `region` landmark name. `null` drops the name — and with it the landmark,
+   * since a `<section>` is only a `region` when it has an accessible name. The
+   * N-up compare passes null: eight columns would otherwise mint eight identically
+   * named landmarks, and each compare column already names ITSELF.
+   */
+  landmarkLabel?: string | null;
 }
 
 type Tone = 'ok' | 'warn' | 'bad' | 'plain';
@@ -250,10 +257,18 @@ function PairSection({
   );
 }
 
-export default function MetricsPanel({ audio, trace, speakerCount, tvAnchor, onSuggest, hideSuggest }: Props) {
+export default function MetricsPanel({
+  audio,
+  trace,
+  speakerCount,
+  tvAnchor,
+  onSuggest,
+  hideSuggest,
+  landmarkLabel = 'Audio metrics',
+}: Props) {
   if (speakerCount === 0) {
     return (
-      <section className="card" aria-label="Audio metrics">
+      <section className="card" aria-label={landmarkLabel ?? undefined}>
         <h2>Audio</h2>
         <p className="card-sub">
           {hideSuggest
@@ -271,7 +286,7 @@ export default function MetricsPanel({ audio, trace, speakerCount, tvAnchor, onS
   }
 
   return (
-    <section className="card" aria-label="Audio metrics">
+    <section className="card" aria-label={landmarkLabel ?? undefined}>
       <h2>
         Audio
         <span className="card-tag">{tvAnchor ? 'TV mode' : 'Music mode'}</span>
