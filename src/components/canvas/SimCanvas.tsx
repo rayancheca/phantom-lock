@@ -182,6 +182,9 @@ export default function SimCanvas({
     setChain(c);
   }, []);
   const dragRef = useRef<Drag | null>(null);
+  /** The rotation the move-rc branch last WROTE, so an external `q`/`e` mid-drag
+   *  can be told apart from the branch's own output and re-base `rot0`. */
+  const lastRotRef = useRef<number | null>(null);
   const pointersRef = useRef<Map<number, Vec2>>(new Map());
   const pinchRef = useRef<Pinch | null>(null);
   const spaceRef = useRef(false);
@@ -502,6 +505,9 @@ export default function SimCanvas({
 
   const startDrag = (drag: Drag) => {
     dragRef.current = drag;
+    // Per GESTURE, not per mount: a stale value from the previous drag would read
+    // as an external rotate on this one's first frame.
+    lastRotRef.current = null;
     onDragging(true);
     setGrabbing(MOVE_KINDS.has(drag.kind));
   };
@@ -986,6 +992,19 @@ export default function SimCanvas({
 
     if (drag.kind === 'move-rc') {
       const d = v.sub(p, drag.start);
+
+      // RE-BASE on an external rotation. `q`/`e` are not gated on drag state
+      // (`keyboard.ts` needs only an object selection, which pointerdown has just
+      // set), so a rotate can land mid-gesture. Every frame snaps from `rot0`, so
+      // without this the next pointermove would silently revert that rotate — a
+      // regression against the pre-S23 branch, which wrote only `center`. Comparing
+      // against what THIS branch last wrote keeps the drag a pure function of
+      // (rot0, pointer) — an external edit re-bases it, its own output never does.
+      const live = cur.objects.find((o) => o.id === drag.id);
+      if (live && live.kind === 'rect' && !Object.is(live.rotation, lastRotRef.current)) {
+        drag.rot0 = live.rotation;
+      }
+
       // Furniture seats flush against the nearest wall at its own angle; openings
       // keep their straddle magnet; circles are position-only. All of it lives in
       // the pure, node-tested `moveObjectTo` — this branch only supplies the
@@ -994,6 +1013,8 @@ export default function SimCanvas({
         snapOn: settings.snap,
         seat: native.shiftKey ? null : DRAG_SEAT,
       });
+      const wrote = next.objects.find((o) => o.id === drag.id);
+      lastRotRef.current = wrote && wrote.kind === 'rect' ? wrote.rotation : null;
       onScene(next);
       return;
     }
