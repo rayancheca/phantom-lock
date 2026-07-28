@@ -55,6 +55,8 @@ import CanvasStage from './CanvasStage';
 import Sidebar from './Sidebar';
 import AppDialogs from './AppDialogs';
 import FirstRunExplainer from './FirstRunExplainer';
+import TutorialRunner from '../tutorial/TutorialRunner';
+import { useTutorial } from './hooks/useTutorial';
 import './app.css';
 
 /** Standalone localStorage flag for the one-time welcome (never the persistence
@@ -576,21 +578,44 @@ function AppInner({ initialStore, persistMode, showFirstRun, droppedCount, proje
   };
 
   // --- layout management (create / switch / rename / delete / import) ---------
-  const { switchLayout, addLayout, addRoomLayout, renameLayout, deleteLayout, importLayout } =
-    useLayoutActions({
-      store,
-      setStore,
-      applyToLayout,
-      reap,
-      setSelection,
-      closeFloatingPanels,
-      setResetViewToken,
-      applyMode,
-      setDialog,
-      setGalleryOpen,
-      showToast,
-      lastDeletedRef,
-    });
+  const {
+    afterLayoutSwitch,
+    switchLayout,
+    addLayout,
+    addRoomLayout,
+    renameLayout,
+    deleteLayout,
+    importLayout,
+  } = useLayoutActions({
+    store,
+    setStore,
+    applyToLayout,
+    reap,
+    setSelection,
+    closeFloatingPanels,
+    setResetViewToken,
+    applyMode,
+    setDialog,
+    setGalleryOpen,
+    showToast,
+    lastDeletedRef,
+  });
+
+  // The guided tour. Its ACTIONS run through the same setters every other
+  // feature uses — the runner never edits a scene itself — so the tutorial
+  // cannot drift into being a second, untrue implementation of the app.
+  const tutorial = useTutorial({
+    store,
+    setStore,
+    setScene,
+    afterLayoutSwitch,
+    switchLayout,
+    applyMode,
+    addSeat,
+    openCompare,
+    closeCompare: () => setCompare(null),
+    setGalleryOpen,
+  });
 
   // --- optimizer -----------------------------------------------------------------
 
@@ -696,6 +721,12 @@ function AppInner({ initialStore, persistMode, showFirstRun, droppedCount, proje
   // and SimCanvas's key gate. Includes the full-screen gallery + compare AND the
   // "Detected layout" confirmation (wallProposal) — all sit OVER the still-mounted
   // canvas, so their open state can't leak scene/tool/rotate keys through.
+  // The tutorial's CHAPTER MENU is here because it is a real modal Dialog that
+  // blocks. The tutorial's step CARD deliberately is NOT: it is a non-modal
+  // coach-mark, and adding it would kill every scene and tool key, drop the
+  // canvas out of the tab order, and silence the announcer — i.e. switch off the
+  // very features the step is teaching, and make each `try` step impossible on a
+  // keyboard. See the header comment in `tutorial/CoachMark.tsx`.
   const overlayOpen =
     dialog !== null ||
     optimizeOpen ||
@@ -703,7 +734,8 @@ function AppInner({ initialStore, persistMode, showFirstRun, droppedCount, proje
     compare !== null ||
     galleryOpen ||
     wallProposal !== null ||
-    showIntro;
+    showIntro ||
+    tutorial.menuOpen;
 
   const runKeyCommand = (cmd: KeyCommand) => {
     // Any new command supersedes a previous "that didn't work" explanation.
@@ -900,6 +932,7 @@ function AppInner({ initialStore, persistMode, showFirstRun, droppedCount, proje
         canRedo={canRedo}
         onUndo={undoScene}
         onRedo={redoScene}
+        onOpenTour={tutorial.openMenu}
       />
 
       <main className="workspace">
@@ -1083,7 +1116,35 @@ function AppInner({ initialStore, persistMode, showFirstRun, droppedCount, proje
         onDismissToast={dismissToast}
       />
 
-      {showIntro && <FirstRunExplainer onDismiss={dismissIntro} />}
+      {showIntro && (
+        <FirstRunExplainer
+          onDismiss={dismissIntro}
+          onTakeTour={() => {
+            dismissIntro();
+            tutorial.openMenu();
+          }}
+        />
+      )}
+
+      <TutorialRunner
+        menuOpen={tutorial.menuOpen}
+        onCloseMenu={tutorial.closeMenu}
+        ctx={{
+          scene,
+          appMode,
+          designSubStep,
+          tool: mode,
+          // Read from the SAME audio the VerdictHero renders, so a `try` step
+          // gated on "it locked" can never disagree with what is on screen.
+          locked: audio.pairs.some((p) => p.locked),
+          seatCount: sceneListeners(scene).length,
+          galleryOpen,
+          compareOpen: compare !== null,
+        }}
+        onAction={tutorial.runAction}
+        onEnterMode={tutorial.enterMode}
+        onRunningChange={tutorial.setRunning}
+      />
 
       {/* Last child of the app root: always mounted (so it is never a freshly
           inserted region), outside every scroll container, and outside the

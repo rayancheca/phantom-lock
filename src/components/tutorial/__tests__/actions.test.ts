@@ -15,7 +15,7 @@ import { PRACTICE_LAYOUT_NAME, breakLock, pairFirstTwo, placeTwoPods, practiceSc
 import type { Scene } from '../../../engine/types';
 
 const lockedIn = (scene: Scene): boolean => {
-  const trace = traceScene(scene, DEFAULT_SETTINGS);
+  const trace = traceScene(scene, DEFAULT_SETTINGS.rayCount, DEFAULT_SETTINGS.maxBounces);
   return computeAudio(scene, trace, DEFAULT_SETTINGS.tvAnchor).pairs.some((p) => p.locked);
 };
 
@@ -62,7 +62,7 @@ describe('tutorial actions', () => {
 
   it('the lock is comfortable, not marginal — it must survive engine drift', () => {
     const paired = pairFirstTwo(placeTwoPods(practiceScene()).scene);
-    const trace = traceScene(paired, DEFAULT_SETTINGS);
+    const trace = traceScene(paired, DEFAULT_SETTINGS.rayCount, DEFAULT_SETTINGS.maxBounces);
     const pair = computeAudio(paired, trace, DEFAULT_SETTINGS.tvAnchor).pairs[0];
     expect(pair.locked).toBe(true);
     // Measured at 0.997 with a clean 60-degree triangle and no apex blockage.

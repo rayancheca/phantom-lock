@@ -1,0 +1,305 @@
+/**
+ * Guided tour — the coach-mark, its highlight ring, and the chapter menu (S21).
+ *
+ * Design-system notes:
+ *  - Elevation over borders: the card sits on --surface-3 with --shadow-3, the
+ *    same rung the app's other floating chrome uses.
+ *  - --accent is used for the highlight ring. That is legitimate here: the ring
+ *    is pure WAYFINDING chrome that never appears on the canvas, so it cannot be
+ *    confused with the L/R channel identity --accent carries in the readout. The
+ *    status colours (--ok/--warn/--bad) stay reserved for acoustic state, which
+ *    is why "Done" below uses --ok deliberately: it IS reporting a good outcome.
+ *  - Motion is opacity/transform only, and every animation is removed under
+ *    prefers-reduced-motion (the card still MOVES between steps — it just jumps
+ *    rather than sliding, which is the point of the setting).
+ */
+
+.tour-layer {
+  position: fixed;
+  inset: 0;
+  /* The ladder, for context: gallery 55 · compare 60 · term-pop 65 · dialog 70
+     · toast 80. The card MUST clear the gallery and compare, because two steps
+     ask the user to open exactly those and the card has to keep narrating over
+     them. It must stay UNDER dialog and toast, which are modal or transient and
+     always deserve the front. */
+  z-index: 62;
+  /* The layer itself must never eat clicks: the whole design depends on the app
+     staying operable underneath a non-modal coach-mark. Children opt back in. */
+  pointer-events: none;
+}
+
+/* --- the highlight ring --------------------------------------------------- */
+
+.tour-spot {
+  position: fixed;
+  border-radius: var(--radius);
+  border: 2px solid var(--accent);
+  /* A huge spread shadow dims everything OUTSIDE the ring without a second
+     element and without covering the target, so the highlighted control stays
+     fully clickable and fully legible. */
+  box-shadow:
+    0 0 0 9999px rgba(6, 8, 16, 0.58),
+    0 0 18px var(--accent-20);
+  pointer-events: none;
+  animation: tour-spot-in var(--dur-3) var(--ease-spring);
+  transition:
+    top var(--dur-3) var(--ease-spring),
+    left var(--dur-3) var(--ease-spring),
+    width var(--dur-3) var(--ease-spring),
+    height var(--dur-3) var(--ease-spring);
+}
+
+@keyframes tour-spot-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* --- the step card -------------------------------------------------------- */
+
+.tour-card {
+  position: fixed;
+  width: min(340px, calc(100vw - 24px));
+  background: var(--surface-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-3);
+  padding: var(--space-4);
+  pointer-events: auto;
+  animation: tour-card-in var(--dur-3) var(--ease-spring);
+}
+
+.tour-card:focus-visible,
+.tour-card:focus {
+  /* The card takes focus on every step change, so it needs a visible indicator
+     of its own — it is a real focus stop, not a passive container. */
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+@keyframes tour-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.tour-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.tour-eyebrow {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  /* --text-2, NOT --text-3: the design system reserves --text-3 for >=12px and
+     a test enforces it against a frozen list of pre-existing 11px sites. This
+     eyebrow is 11px, so it takes the brighter tier. */
+  color: var(--text-2);
+}
+
+.tour-x {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin: -2px -2px 0 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
+}
+
+.tour-x:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.tour-x:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.tour-title {
+  margin: var(--space-2) 0 var(--space-1);
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--text);
+}
+
+.tour-body {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: 1.55;
+  color: var(--text-2);
+}
+
+.tour-hint {
+  margin: var(--space-3) 0 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--accent-06);
+  border-left: 2px solid var(--accent);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--text-2);
+}
+
+.tour-done {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--ok-12);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  /* --ok is the acoustic-status green; here it reports a genuinely good
+     outcome, which is the role it is reserved for. */
+  color: var(--ok);
+}
+
+.tour-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+.tour-actions .btn {
+  min-height: 32px;
+}
+
+/* --- the chapter menu ----------------------------------------------------- */
+
+.tour-menu {
+  list-style: none;
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.tour-menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out);
+}
+
+.tour-menu-item:hover {
+  background: var(--surface-hover);
+  border-color: var(--border);
+}
+
+.tour-menu-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.tour-menu-num {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-2);
+}
+
+.tour-menu-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.tour-menu-text strong {
+  font-size: var(--text-base);
+  font-weight: 500;
+  color: var(--text);
+}
+
+.tour-menu-sub {
+  font-size: var(--text-sm);
+  line-height: 1.45;
+  color: var(--text-2);
+}
+
+.tour-menu-done {
+  flex: none;
+  margin-left: auto;
+  display: grid;
+  place-items: center;
+  color: var(--ok);
+}
+
+/* --- narrow screens ------------------------------------------------------- */
+
+@media (max-width: 960px) {
+  .tour-card {
+    /* Pin to the bottom, clear of the toolbar rail that un-floats down there.
+       `position: fixed` + `!important` beats the inline top/left the geometry
+       computes, which is meaningless once the card spans the viewport. */
+    top: auto !important;
+    left: 12px !important;
+    right: 12px;
+    bottom: 84px;
+    width: auto;
+  }
+}
+
+/* --- reduced motion ------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .tour-spot,
+  .tour-card {
+    animation: none;
+    transition: none;
+  }
+}
+
+/* --- forced colours ------------------------------------------------------- */
+
+@media (forced-colors: active) {
+  .tour-card {
+    border: 1px solid CanvasText;
+  }
+  .tour-spot {
+    /* The dimming shadow is dropped by forced-colors, so the ring itself has to
+       carry the whole "look here" signal. */
+    border-color: Highlight;
+    box-shadow: none;
+    outline: 2px solid Highlight;
+  }
+}

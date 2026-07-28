@@ -131,6 +131,8 @@ export default function ListenerCard({ scene, selection, onSwitch, onAdd, onRena
         <button
           type="button"
           className="btn"
+          /* Stable anchor for the guided tour's spotlight. */
+          data-tour="compare"
           onClick={onCompare}
           disabled={!canCompare}
           title={canCompare ? 'Compare two setups side by side' : 'Add a second listening spot, or duplicate this layout, to compare'}

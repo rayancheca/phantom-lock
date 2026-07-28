@@ -16,6 +16,8 @@ interface AppHeaderProps {
   canRedo: boolean;
   onUndo: () => void;
   onRedo: () => void;
+  /** Open the guided tour's chapter menu. */
+  onOpenTour: () => void;
 }
 
 /** The global top bar — only what is truly global: brand, the always-pinned
@@ -33,6 +35,7 @@ export default function AppHeader({
   canRedo,
   onUndo,
   onRedo,
+  onOpenTour,
 }: AppHeaderProps) {
   return (
     <header className="topbar">
@@ -81,6 +84,25 @@ export default function AppHeader({
       />
 
       <div className="topbar-actions">
+        {/* Global chrome by the same test as undo/redo: the tour is available in
+            every mode, and "at any time" is the owner's actual requirement — a
+            tour reachable only on first run is an onboarding flow, not a
+            tutorial. The visible text label is deliberate: an icon-only button
+            here would put the entry point behind a hover title, which the UX-4
+            rule forbids for anything load-bearing. */}
+        {/* aria-label names it unconditionally: the visible "Tour" text is
+            display:none below 720px, and the icon is decorative, so without this
+            the button would lose its accessible name exactly on the narrow
+            layouts where it is hardest to guess. */}
+        <button
+          type="button"
+          className="btn btn-tour"
+          aria-label="Take the tour"
+          onClick={onOpenTour}
+        >
+          <Icon name="compass" size={15} />
+          <span className="btn-tour-text">Tour</span>
+        </button>
         <button
           type="button"
           className="btn btn-icon"

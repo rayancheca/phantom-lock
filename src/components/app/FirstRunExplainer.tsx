@@ -3,6 +3,8 @@ import Dialog from '../ui/Dialog';
 interface Props {
   /** Dismiss + persist the "seen" flag so it never shows again. */
   onDismiss: () => void;
+  /** Dismiss, then open the guided tour's chapter menu. */
+  onTakeTour: () => void;
 }
 
 /**
@@ -15,7 +17,7 @@ interface Props {
  * for free) and is gated on a standalone localStorage flag (never the persistence
  * schema), so it appears exactly once.
  */
-export default function FirstRunExplainer({ onDismiss }: Props) {
+export default function FirstRunExplainer({ onDismiss, onTakeTour }: Props) {
   return (
     <Dialog title="Welcome to Phantom Lock" onClose={onDismiss}>
       <p className="dialog-sub">
@@ -32,9 +34,16 @@ export default function FirstRunExplainer({ onDismiss }: Props) {
         Two modes: <strong>DESIGN</strong> to draw walls and furniture, <strong>TUNE</strong> to
         place speakers and read the verdict. Tap any dotted term for a plain-English definition.
       </p>
+      {/* The tour is the PRIMARY action: a first-timer who takes it is walked all
+          the way to a lock, which is the one thing this app has to convey and the
+          one thing three paragraphs of prose cannot. "Start exploring" stays as
+          the equal-weight opt-out — the tour must never feel compulsory. */}
       <div className="dialog-actions">
-        <button type="button" className="btn btn-primary" onClick={onDismiss}>
+        <button type="button" className="btn" onClick={onDismiss}>
           Start exploring
+        </button>
+        <button type="button" className="btn btn-primary" onClick={onTakeTour}>
+          Take the tour
         </button>
       </div>
     </Dialog>

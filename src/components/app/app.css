@@ -91,6 +91,20 @@
   gap: var(--space-2);
 }
 
+/* The guided-tour entry. Carries a visible text label rather than being another
+   icon-only button, because "there is a tutorial here" must not live in a hover
+   title (the UX-4 rule). The label collapses on narrow screens where the header
+   has no room, but the accessible name survives via aria-label on the button. */
+.btn-tour {
+  gap: var(--space-2);
+}
+
+@media (max-width: 720px) {
+  .btn-tour-text {
+    display: none;
+  }
+}
+
 /* --- buttons ---------------------------------------------------------------- */
 
 .btn {

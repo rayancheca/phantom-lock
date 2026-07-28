@@ -103,6 +103,10 @@ export default function SpeakersCard({
         <button
           type="button"
           className="btn btn-primary btn-block"
+          /* The guided tour anchors its spotlight here — this button is the
+             click that ignites the verdict, so it needs a stable hook that a
+             CSS-structure selector would not survive. */
+          data-tour="pair"
           title={`Link ${unpaired[0].label} and ${unpaired[1].label} as a left + right stereo pair`}
           onClick={() => onSetPair(unpaired[0].id, unpaired[1].id)}
         >
