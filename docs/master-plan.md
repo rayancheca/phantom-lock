@@ -1735,13 +1735,14 @@ slow-column gate.
   skeptic → **flat is safer, after five specific holes are closed** (all closed); N-up skeptic →
   **the measurement is real but the conclusion drawn from it is not** (accepted — it is why the cap is
   labelled legibility and the gate exists).
-- Tests **814 → 941**. New: `projects.test.ts` 35 · `projects-migration.test.ts` 22 (old-shape IDB
-  records and an old-shape localStorage blob seeded BY HAND) · `compute-scenario.test.ts` 17 ·
-  `compare-summary.test.ts` 20 · `column-gate.test.ts` 14 · `compare.a11y.test.tsx` 10 ·
-  `gallery.a11y.test.tsx` 7 · `seed.test.ts` +6.
+- Tests **814 → 961**. New: `projects.test.ts` 39 · `projects-migration.test.ts` 18 (old-shape IDB
+  records and an old-shape localStorage blob seeded BY HAND, plus the export→import folder round-trip) ·
+  `compute-scenario.test.ts` 17 · `compare-summary.test.ts` 20 · `column-gate.test.ts` 14 ·
+  `compare.a11y.test.tsx` 10 · `gallery.a11y.test.tsx` 7 · `useProjectActions.test.tsx` 16 ·
+  `seed.test.ts` +6.
 - Coverage on everything created: `ids.ts` 100 · `seed.ts` 100 · `compute-scenario.ts` 100 ·
   `projects.ts` 98.6 · `compare-summary.ts` 97.7 · `scene.ts` 97.7 · `LayoutGallery.tsx` 94.4 ·
-  `ScenarioCompare.tsx` 92.4 · `db.ts` 88.8. The hooks it EDITS stay under 80 % — the pre-existing,
+  `ScenarioCompare.tsx` 91.2 · `column-gate.ts` 100 · `useProjectActions.ts` 98.6 · `db.ts` 89.0. The hooks it EDITS stay under 80 % — the pre-existing,
   documented S10 gap, not made worse.
 - Live: fresh headless-Chrome profile, `docs/sessions/S20/shots/` — first run seeds 6 designs across
   2 folders (read back out of IndexedDB, every layout carrying a `projectId`), both canvas themes, the
