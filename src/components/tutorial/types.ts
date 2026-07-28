@@ -61,11 +61,20 @@ export type TutorialAnchor =
  * action the runner has not wired.
  */
 export type TutorialActionName =
-  | 'seed-pair' // place two pods at the +/-30 degree reference positions
-  | 'clear-speakers' // remove every speaker (used to re-arm the pairing demo)
+  /** Create (or re-enter) the disposable practice layout. Never touches a user layout. */
+  | 'practice-room'
+  /** Place two UNPAIRED pods at the +/-30 degree reference positions. */
+  | 'place-two-pods'
+  /** Link those two as a stereo pair — the rescue for the pairing step. */
+  | 'pair-them'
+  /** Shove a speaker out of the (few-centimetre) lock basin so the readout drops. */
+  | 'break-lock'
+  | 'clear-speakers'
+  | 'add-seat'
   | 'open-gallery'
   | 'close-gallery'
-  | 'select-first-speaker';
+  | 'open-compare'
+  | 'close-compare';
 
 export type TutorialStepKind = 'show' | 'try';
 
@@ -95,6 +104,13 @@ export interface TutorialStep {
    * Without this a stuck user is stranded, which the design calls out.
    */
   rescue?: TutorialActionName;
+  /**
+   * What this step actually teaches, declared so the COVERAGE test can assert
+   * the tour still reaches every tool and mode the app ships. Adding a tool to
+   * `DIGIT_TOOL` without giving it a step then fails the suite — the same
+   * "fail when the scan finds nothing" discipline as the contrast and CSP tests.
+   */
+  covers?: { tools?: ToolMode[]; modes?: AppMode[] };
 }
 
 export interface TutorialChapter {
