@@ -190,10 +190,6 @@ export function useLayoutActions(a: Args): LayoutActions {
   };
 
   const importLayout = (file: File) => {
-    // Captured out of the store updater so the post-commit UI reset can use it
-    // without re-finding the layout (the updater is the only place that knows the
-    // folder it resolved to).
-    let importedScene: Scene | null = null;
     file
       .text()
       .then((text) => {
@@ -230,24 +226,32 @@ export function useLayoutActions(a: Args): LayoutActions {
         // collide with a real one. The exported `project` NAME is what round-trips:
         // it resolves to the matching folder if there is one, otherwise creates it,
         // and falls back to the folder the user is looking at.
+        //
+        // All of this is resolved BEFORE `setStore` and the updater is left pure —
+        // the S5 lesson. Minting an id or a folder inside the updater would run
+        // twice under StrictMode, and reading a value back out of it depends on
+        // React's eager-state optimization, which silently does not apply when the
+        // fiber already has a pending update (the reset below would then be skipped).
         const wantedFolder =
           typeof (parsed as { project?: unknown }).project === 'string'
-            ? ((parsed as { project: string }).project)
+            ? (parsed as { project: string }).project
             : '';
-        a.setStore((st) => {
-          const { store: withFolder, projectId } = findOrCreateProject(
-            st,
-            wantedFolder,
-            activeProject(st).id,
-          );
-          // A fresh id, without mutating the object we just built (immutability
-          // rule; the old code assigned `layout.id` in place).
-          const layout: Layout = { ...sanitized, id: createId('layout'), projectId };
-          importedScene = layout.scene;
-          return { ...withFolder, layouts: [...withFolder.layouts, layout], activeId: layout.id };
-        });
-        if (importedScene) afterLayoutSwitch(importedScene);
-        a.showToast(`Imported “${sanitized.name}”`, { tone: 'ok' });
+        const { store: withFolder, projectId } = findOrCreateProject(
+          a.store,
+          wantedFolder,
+          currentProjectId(),
+        );
+        const layout: Layout = { ...sanitized, id: createId('layout'), projectId };
+        a.setStore((st) => ({
+          ...st,
+          // Fold in any folder the resolution created, without clobbering a
+          // concurrent change to the rest of the store.
+          projects: withFolder.projects.length > st.projects.length ? withFolder.projects : st.projects,
+          layouts: [...st.layouts, layout],
+          activeId: layout.id,
+        }));
+        afterLayoutSwitch(layout.scene);
+        a.showToast(`Imported “${layout.name}”`, { tone: 'ok' });
       })
       .catch(() => a.showToast('Could not read that file.', { tone: 'bad' }));
   };

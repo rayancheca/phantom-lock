@@ -34,12 +34,7 @@ import { buildUnderlay } from '../panels/underlay-import';
 import { deriveVerdict } from '../panels/verdict';
 import { renderPlanToBlob, planImageFilename } from '../canvas/export-image';
 import type { Scenario } from '../compare/ScenarioCompare';
-import {
-  addProject,
-  moveLayoutToProject,
-  removeProject,
-  renameProject,
-} from '../../engine/projects';
+import { useProjectActions } from './hooks/useProjectActions';
 import type { ToastData } from '../ui/Toast';
 import { initialMode, modeTheme, subStepForTool, type AppMode, type DesignSubStep, type ModeEntry } from './mode';
 import type { Deleted, DialogState } from './app-types';
@@ -142,25 +137,23 @@ function AppInner({ initialStore, persistMode, showFirstRun, droppedCount, proje
   // correct (losing one beats losing all), but in silence it is indistinguishable
   // from the app having eaten their work — and "Export all" is the move they
   // should make next, while the rest is still intact.
+  // ONE effect, because `Toast` is single-slot: two of them would race and the
+  // second would silently swallow the first — and the first is the important one.
+  // A folder repair is also a DIFFERENT event from a lost layout (it destroys
+  // nothing), so it must never be phrased as one.
   useEffect(() => {
-    if (droppedCount > 0) {
-      showToast(
-        `${droppedCount} saved layout${droppedCount === 1 ? '' : 's'} could not be read and ${
-          droppedCount === 1 ? 'was' : 'were'
-        } skipped. Your other layouts are intact — consider Export all.`,
-        { tone: 'bad' },
-      );
-    }
-  }, [droppedCount, showToast]);
-
-  // Folder repairs are a DIFFERENT thing from a lost layout, and get their own,
-  // accurate, non-alarming message. Nothing was destroyed — the filing was fixed.
-  useEffect(() => {
-    if (projectNotices.length > 0) {
-      showToast(`Folders were repaired on load: ${projectNotices.join('; ')}.`, { tone: 'default' });
-    }
+    const lost =
+      droppedCount > 0
+        ? `${droppedCount} saved layout${droppedCount === 1 ? '' : 's'} could not be read and ${
+            droppedCount === 1 ? 'was' : 'were'
+          } skipped. Your other layouts are intact — consider Export all.`
+        : '';
+    const repaired =
+      projectNotices.length > 0 ? `Folders were repaired on load: ${projectNotices.join('; ')}.` : '';
+    if (!lost && !repaired) return;
+    showToast([lost, repaired].filter(Boolean).join(' '), { tone: lost ? 'bad' : 'default' });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectNotices.length, showToast]);
+  }, [droppedCount, projectNotices.length, showToast]);
 
   // --- hooks: store, history, persistence, simulation ------------------------
   const { active, applyToLayout, setSettings, duplicateLayout, exportLayout } = useLayoutStore(store, setStore);
@@ -388,88 +381,13 @@ function AppInner({ initialStore, persistMode, showFirstRun, droppedCount, proje
    *  in different projects are already covered by the layout count. */
   const canCompare = sceneListeners(scene).length >= 2 || store.layouts.length >= 2;
 
-  // --- folders (projects) ----------------------------------------------------
-  //
-  // Deleting a folder is a pure REGROUPING: `removeProject` re-homes its designs
-  // to the adjacent folder and deletes none of them. A cascade delete would put N
-  // designs behind ONE auto-dismissing toast, which is not a recovery affordance
-  // the owner's "never delete my layouts" rule can live with.
-
-  const newProject = (name: string) => {
-    setStore((st) => addProject(st, name));
-    setDialog(null);
-  };
-
-  const renameProjectTo = (id: string, name: string) => {
-    setStore((st) => renameProject(st, id, name));
-    setDialog(null);
-  };
-
-  const moveLayout = (layoutId: string, projectId: string) => {
-    const target = store.projects.find((p) => p.id === projectId);
-    const layout = store.layouts.find((l) => l.id === layoutId);
-    const from = store.projects.find((p) => p.id === layout?.projectId);
-    setStore((st) => moveLayoutToProject(st, layoutId, projectId));
-    if (target && layout) {
-      showToast(`Moved “${layout.name}” to “${target.name}”`, {
-        tone: 'ok',
-        action: from
-          ? { label: 'Undo', run: () => setStore((st) => moveLayoutToProject(st, layoutId, from.id)) }
-          : undefined,
-      });
-    }
-  };
-
-  const undoDeleteProject = () => {
-    const d = lastDeletedRef.current;
-    if (!d || d.type !== 'project') return;
-    lastDeletedRef.current = null;
-    setStore((st) => {
-      if (st.projects.some((p) => p.id === d.project.id)) return st;
-      const projects = [...st.projects];
-      projects.splice(Math.min(d.index, projects.length), 0, d.project);
-      const moved = new Set(d.movedLayoutIds);
-      // Only the layouts THIS delete moved go back, and only if they are STILL
-      // where it put them — a design the user has since filed somewhere else on
-      // purpose must not be dragged back. `landedIn` is where `removeProject` sent
-      // them, so anything that has moved on since fails the second test.
-      const landedIn = st.projects[Math.max(0, d.index - 1)]?.id;
-      return {
-        ...st,
-        projects,
-        layouts: st.layouts.map((l) =>
-          moved.has(l.id) && l.projectId === landedIn
-            ? { ...l, projectId: d.project.id, updatedAt: Date.now() }
-            : l,
-        ),
-      };
-    });
-  };
-
-  const deleteProject = (id: string) => {
-    const index = store.projects.findIndex((p) => p.id === id);
-    const project = store.projects[index];
-    if (!project || store.projects.length <= 1) return;
-    const moved = store.layouts.filter((l) => l.projectId === id);
-    lastDeletedRef.current = {
-      type: 'project',
-      project,
-      index,
-      movedLayoutIds: moved.map((l) => l.id),
-    };
-    setStore((st) => removeProject(st, id));
-    // Compute the destination the SAME way `removeProject` does — from the array
-    // with `id` already removed. Reading `store.projects[index - 1]` off the
-    // unfiltered array names the folder being deleted when it is the first one,
-    // so the toast read "moved to <the folder you just deleted>".
-    const target = store.projects.filter((p) => p.id !== id)[Math.max(0, index - 1)];
-    showToast(
-      moved.length === 0
-        ? `Deleted “${project.name}”`
-        : `Deleted “${project.name}” — ${moved.length} design${moved.length === 1 ? '' : 's'} moved to “${target?.name ?? 'the first folder'}”`,
-      { action: { label: 'Undo', run: undoDeleteProject } },
-    );
-  };
+  const { newProject, renameProjectTo, moveLayout, deleteProject } = useProjectActions({
+    store,
+    setStore,
+    setDialog,
+    showToast,
+    lastDeletedRef,
+  });
 
   /** Break a wall in two at a point (or its midpoint) and select the first half.
    *  The id is computed synchronously so selection happens in this same handler. */
@@ -1147,8 +1065,8 @@ function AppInner({ initialStore, persistMode, showFirstRun, droppedCount, proje
         onCompare={openCompare}
         onDelete={deleteLayout}
         onNewProject={() => setDialog({ kind: 'project-name' })}
-        onNewProject2={newProject}
-        onRenameProject2={renameProjectTo}
+        onSubmitNewProject={newProject}
+        onSubmitRenameProject={renameProjectTo}
         onRenameProject={(id) => setDialog({ kind: 'project-name', projectId: id })}
         onDeleteProject={deleteProject}
         onMoveLayout={moveLayout}

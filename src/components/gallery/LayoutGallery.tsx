@@ -142,16 +142,17 @@ function ProjectSection({ project, p }: { project: Project; p: GalleryProps }) {
             <MenuItem icon="rectangle" onSelect={() => p.onNewRoom(project.id)}>
               Add a room…
             </MenuItem>
-            <MenuSeparator />
-            <MenuItem
-              icon="trash"
-              danger
-              onSelect={() => {
-                if (!locked) p.onDeleteProject(project.id);
-              }}
-            >
-              {locked ? 'Delete folder (needs a second folder)' : 'Delete folder'}
-            </MenuItem>
+            {/* Not rendered at one folder rather than rendered-and-inert: a menu
+                item that closes the menu and does nothing is the affordance S14
+                specifically ruled out, and `MenuItem` has no disabled state. */}
+            {!locked && (
+              <>
+                <MenuSeparator />
+                <MenuItem icon="trash" danger onSelect={() => p.onDeleteProject(project.id)}>
+                  Delete folder
+                </MenuItem>
+              </>
+            )}
           </Menu>
         </div>
       </div>

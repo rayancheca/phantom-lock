@@ -35,7 +35,6 @@
  */
 import type { Layout, LayoutStore, Scene, Vec2 } from './types';
 import {
-  DEFAULT_LISTENER_Z,
   addListener,
   apartmentScene,
   blankScene,
@@ -59,8 +58,6 @@ import { assembleStore } from './projects';
 const SEED_SPEAKER_L: Vec2 = { x: 1.316, y: 3.72 };
 const SEED_SPEAKER_R: Vec2 = { x: 1.964, y: 2.958 };
 
-/** The couch seat that `apartmentScene()` ships with. */
-const COUCH_SEAT: Vec2 = { x: 2.3, y: 3.9 };
 /** On the bed, lying down. */
 const BED_SEAT: Vec2 = { x: 4.35, y: 4.9 };
 const BED_SEAT_Z = 0.8;
@@ -180,6 +177,3 @@ export function initialStoreForBoot(
 ): LayoutStore {
   return isPristineOrigin(storage) ? seededDefaultStore() : loadStore(storage, onProjectNotice);
 }
-
-/** Re-exported for the seed test's readability. */
-export { COUCH_SEAT, BED_SEAT, DEFAULT_LISTENER_Z };

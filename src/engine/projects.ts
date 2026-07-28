@@ -294,13 +294,22 @@ export function moveLayoutToProject(
 // Derived readers. `activeProject` is DERIVED rather than stored so it cannot
 // desync from the active layout.
 
-export function activeLayout(store: LayoutStore): Layout | undefined {
+function activeLayout(store: LayoutStore): Layout | undefined {
   return store.layouts.find((l) => l.id === store.activeId) ?? store.layouts[0];
 }
 
+/**
+ * Which folder owns this layout. ONE definition — the gallery, the compare picker
+ * and `activeProject` all need it, and three hand-rolled
+ * `projects.find(p => p.id === l.projectId) ?? projects[0]`s is exactly the shape
+ * that drifted into two divergent verdicts before UX-3 deleted one of them.
+ */
+export function projectOf(store: LayoutStore, layout: Layout | undefined): Project {
+  return store.projects.find((p) => p.id === layout?.projectId) ?? store.projects[0];
+}
+
 export function activeProject(store: LayoutStore): Project {
-  const l = activeLayout(store);
-  return store.projects.find((p) => p.id === l?.projectId) ?? store.projects[0];
+  return projectOf(store, activeLayout(store));
 }
 
 /** The layouts in one folder, in store order (which is the display order). */

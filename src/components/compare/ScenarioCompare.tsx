@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Layout, LayoutStore, Scene } from '../../engine/types';
 import { computeAudio, type AudioMetrics } from '../../engine/stereo';
 import { activeListener, createId, sceneListeners, setActiveListener } from '../../engine/scene';
-import { layoutsInProject } from '../../engine/projects';
+import { projectOf } from '../../engine/projects';
 import { drawMiniPlan } from '../canvas/thumb';
 import MetricsPanel from '../panels/MetricsPanel';
 import VerdictHero from '../panels/VerdictHero';
@@ -100,9 +100,17 @@ function ScenarioPicker({
   columnName: string;
 }) {
   const layout = store.layouts.find((l) => l.id === scenario.layoutId) ?? store.layouts[0];
-  const project = store.projects.find((p) => p.id === layout.projectId) ?? store.projects[0];
-  const inProject = layoutsInProject(store, project.id);
+  const project = projectOf(store, layout);
   const seats = sceneListeners(layout.scene);
+  // ONE grouping pass, not `2P + 1` full `layouts.filter` scans per column per
+  // render (the option list asked twice per option, and there can be 200 folders).
+  const byProject = new Map<string, Layout[]>();
+  for (const l of store.layouts) {
+    const list = byProject.get(l.projectId);
+    if (list) list.push(l);
+    else byProject.set(l.projectId, [l]);
+  }
+  const inProject = byProject.get(project.id) ?? [];
   return (
     <div className="compare-picker">
       <label className="field">
@@ -112,15 +120,15 @@ function ScenarioPicker({
           value={project.id}
           onChange={(e) => {
             const next = store.projects.find((p) => p.id === e.target.value) ?? project;
-            const first = layoutsInProject(store, next.id)[0];
+            const first = (byProject.get(next.id) ?? [])[0];
             if (!first) return; // an empty folder has nothing to show
             onChange({ layoutId: first.id, seatId: defaultSeat(first) });
           }}
         >
           {store.projects.map((p) => (
-            <option key={p.id} value={p.id} disabled={layoutsInProject(store, p.id).length === 0}>
+            <option key={p.id} value={p.id} disabled={!byProject.has(p.id)}>
               {p.name}
-              {layoutsInProject(store, p.id).length === 0 ? ' (empty)' : ''}
+              {byProject.has(p.id) ? '' : ' (empty)'}
             </option>
           ))}
         </select>
@@ -201,10 +209,15 @@ function Column({
 
   const label = data ? `${data.layout.name} · ${data.seatName}` : layout.name;
 
-  // A ref so the effect depends only on the DATA, not on a callback identity that
-  // changes every parent render (which would loop: report -> setState -> report).
+  // A ref so the reporting effect depends only on the DATA, not on a callback
+  // identity that changes every parent render (which would loop:
+  // report -> setState -> re-render -> report). Assigned in an effect rather than
+  // during render — a render-phase write is not guaranteed under concurrent
+  // rendering, and costs nothing to do properly.
   const report = useRef(onResult);
-  report.current = onResult;
+  useEffect(() => {
+    report.current = onResult;
+  });
   useEffect(() => {
     report.current(data ? { label, verdict: data.verdict, ms: data.ms } : null);
   }, [data, label]);

@@ -34,8 +34,8 @@ interface AppDialogsProps {
   onNewProject: () => void;
   onRenameProject: (id: string) => void;
   /** The dialog's submit handlers (the two above only OPEN the dialog). */
-  onNewProject2: (name: string) => void;
-  onRenameProject2: (id: string, name: string) => void;
+  onSubmitNewProject: (name: string) => void;
+  onSubmitRenameProject: (id: string, name: string) => void;
   onDeleteProject: (id: string) => void;
   onMoveLayout: (layoutId: string, projectId: string) => void;
   onCloseGallery: () => void;
@@ -94,7 +94,7 @@ export default function AppDialogs(p: AppDialogsProps) {
               : ''
           }
           onSubmit={(name) =>
-            dialog.projectId ? p.onRenameProject2(dialog.projectId, name) : p.onNewProject2(name)
+            dialog.projectId ? p.onSubmitRenameProject(dialog.projectId, name) : p.onSubmitNewProject(name)
           }
           onClose={p.onCloseDialog}
         />
