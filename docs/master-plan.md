@@ -1803,6 +1803,21 @@ apartment negative control so the reason the practice room exists cannot be quie
 - **"Resumable" was not met** — `progress.resume` was written and never read. The machine gained a
   `resume` event and the menu offers "Continue … — step N of M".
 
+**An owner-reported bug found while this session was running, and it was the worst thing here.** The
+on-canvas `Legend` sat at exactly `top:12px; left:12px` — the same coordinates as `.toolstrip` — with
+`z-index:6` against the strip's `auto`. `elementFromPoint` at the centre of "Select & move anything (1)"
+returned `.legend-toggle`, so the app's PRIMARY tool was not merely obscured but unclickable at every
+desktop width, and had been since S16. Moved to the bottom-left, anchored to the opposite edge from the
+tools so the collision is structurally impossible (the strip wraps, so any fixed-offset fix breaks
+again on a narrow desktop) — and where a legend belongs anyway, beside the scale bar and compass.
+Verified by hit-testing all six buttons in four states: all reachable.
+
+**A harness bug worth more than the fix.** The CDP client used a fixed debugging port, so a lingering
+Chrome from an earlier run was silently attached to instead of the freshly-spawned one — a "fresh
+origin" run that already had `intro-dismissed`, `tutorial:{seen:true}` and the practice room active.
+Every first-run and data-safety claim made from such a run would have been worthless. Now
+`--remote-debugging-port=0` + `DevToolsActivePort`, and the evidence below was re-gathered afterwards.
+
 **Two of the project's own guards fired on this diff and both were right:** the contrast test refused
 `--text-3` on an 11px eyebrow, and the CSP scanner matched a comment in which I had spelled out the very
 API I was promising not to use. Reworded and re-toned, not suppressed.
