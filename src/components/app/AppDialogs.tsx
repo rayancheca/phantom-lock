@@ -2,6 +2,8 @@ import type { LayoutStore } from '../../engine/types';
 import type { DialogState } from './app-types';
 import { CalibrateDialog, RenameDialog, RoomSizeDialog } from '../panels/LayoutDialogs';
 import LayoutGallery from '../gallery/LayoutGallery';
+import GenerateDialog from '../gallery/GenerateDialog';
+import type { GenerateDesignApi } from './hooks/useGenerateDesign';
 import ScenarioCompare, { type Scenario } from '../compare/ScenarioCompare';
 import Toast, { type ToastData } from '../ui/Toast';
 
@@ -24,6 +26,7 @@ interface AppDialogsProps {
   onNewRoom: (projectId: string) => void;
   onNewBlank: (projectId: string) => void;
   onNewApartment: (projectId: string) => void;
+  generator: GenerateDesignApi;
   onImport: () => void;
   onRequestRename: (id: string) => void;
   onDuplicate: (id: string) => void;
@@ -99,6 +102,19 @@ export default function AppDialogs(p: AppDialogsProps) {
           onClose={p.onCloseDialog}
         />
       )}
+      {/* Mounted OUTSIDE the gallery block so it survives the gallery closing
+          on create — the toast's Undo would otherwise have nothing to return
+          focus to. */}
+      {p.generator.state && (
+        <GenerateDialog
+          state={p.generator.state}
+          onArchetype={p.generator.setArchetype}
+          onSeed={p.generator.setSeed}
+          onReroll={p.generator.reroll}
+          onKeep={p.generator.keep}
+          onClose={p.generator.close}
+        />
+      )}
       {p.galleryOpen && (
         <LayoutGallery
           store={p.store}
@@ -107,6 +123,7 @@ export default function AppDialogs(p: AppDialogsProps) {
           onNewRoom={p.onNewRoom}
           onNewBlank={p.onNewBlank}
           onNewApartment={p.onNewApartment}
+          onGenerate={p.generator.open}
           onImport={p.onImport}
           onRename={p.onRequestRename}
           onDuplicate={p.onDuplicate}

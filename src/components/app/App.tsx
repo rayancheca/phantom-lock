@@ -13,6 +13,7 @@ import { matchTrims } from '../../engine/speakers';
 import { suggestPlacement, type PlacementOptions } from '../../engine/optimize';
 import { arrangeFurniture, suggestInventory, type ArrangeItem } from '../../engine/arrange';
 import { useWallDetection } from './hooks/useWallDetection';
+import { useGenerateDesign } from './hooks/useGenerateDesign';
 import {
   activeListener,
   addListener,
@@ -584,6 +585,16 @@ function AppInner({ initialStore, persistMode, showFirstRun, droppedCount, proje
     lastDeletedRef,
   });
 
+  /** The procedural design generator. It takes no store and returns a Scene, so
+   *  only its `keep` can write — preview and reroll are pure. */
+  const generator = useGenerateDesign({
+    store,
+    setStore,
+    afterLayoutSwitch,
+    showToast,
+    closeGallery: () => setGalleryOpen(false),
+  });
+
   // The guided tour. Its ACTIONS run through the same setters every other
   // feature uses — the runner never edits a scene itself — so the tutorial
   // cannot drift into being a second, untrue implementation of the app.
@@ -1079,6 +1090,7 @@ function AppInner({ initialStore, persistMode, showFirstRun, droppedCount, proje
           addLayout('apartment', projectId);
           setGalleryOpen(false);
         }}
+        generator={generator}
         onImport={() => fileRef.current?.click()}
         onRequestRename={(id) => setDialog({ kind: 'rename', layoutId: id })}
         onDuplicate={duplicateLayout}

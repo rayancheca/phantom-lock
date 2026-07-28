@@ -1,0 +1,56 @@
+/* The generator dialog. Inherits the shared Dialog surface, focus trap and
+   restore; everything here is the preview and the chip grid. */
+
+.generate-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: min(420px, 76vw);
+}
+
+.generate-shapes {
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.generate-shapes legend {
+  padding: 0 0 6px;
+  font-size: var(--text-sm);
+  color: var(--text-2);
+}
+
+/* Eight options wrap onto two rows rather than scrolling: a horizontal
+   scroller hides options a first-time user does not know to look for. */
+.generate-chips {
+  flex-wrap: wrap;
+}
+
+.generate-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.generate-thumb {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: 8px;
+  background: var(--surface-1);
+  display: block;
+}
+
+.generate-summary {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-2);
+  /* Two lines' worth, reserved: the summary changes on every reroll and a
+     shifting dialog height makes the buttons move under the cursor. */
+  min-height: 2.6em;
+}
+
+.generate-seed input {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}

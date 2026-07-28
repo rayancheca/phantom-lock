@@ -23,6 +23,7 @@ const props = (store: LayoutStore) => ({
   onNewRoom: noop,
   onNewBlank: noop,
   onNewApartment: noop,
+  onGenerate: noop,
   onImport: noop,
   onRename: noop,
   onDuplicate: noop,

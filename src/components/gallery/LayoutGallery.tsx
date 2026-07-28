@@ -19,6 +19,7 @@ interface GalleryProps {
   activeId: string;
   onOpen: (id: string) => void;
   onNewRoom: (projectId: string) => void;
+  onGenerate: (projectId: string) => void;
   onNewBlank: (projectId: string) => void;
   onNewApartment: (projectId: string) => void;
   onImport: () => void;
@@ -112,6 +113,15 @@ function ProjectSection({ project, p }: { project: Project; p: GalleryProps }) {
           <button
             type="button"
             className="btn btn-quiet"
+            onClick={() => p.onGenerate(project.id)}
+            title={`Generate a design in “${project.name}”`}
+          >
+            <Icon name="sparkles" size={12} />
+            Generate a design
+          </button>
+          <button
+            type="button"
+            className="btn btn-quiet"
             onClick={() => p.onNewBlank(project.id)}
             title={`Add a new design to “${project.name}”`}
           >
@@ -141,6 +151,9 @@ function ProjectSection({ project, p }: { project: Project; p: GalleryProps }) {
             </MenuItem>
             <MenuItem icon="rectangle" onSelect={() => p.onNewRoom(project.id)}>
               Add a room…
+            </MenuItem>
+            <MenuItem icon="sparkles" onSelect={() => p.onGenerate(project.id)}>
+              Generate a design…
             </MenuItem>
             {/* Not rendered at one folder rather than rendered-and-inert: a menu
                 item that closes the menu and does nothing is the affordance S14
