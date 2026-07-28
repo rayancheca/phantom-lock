@@ -42,7 +42,7 @@ export default function ChapterMenu({
       <p className="dialog-sub">
         {finishedAll
           ? 'You have been through all of these — pick any one to run through it again.'
-          : 'Start at the top for the short version, or jump straight to what you need. Everything happens in a practice design, so your own work is never touched.'}
+          : 'Start at the top for the short version, or jump straight to what you need. The hands-on chapters build in a practice design, so your own work is never touched.'}
       </p>
       {resume && (
         /* "Resumable" is an explicit requirement, and a bookmark you cannot

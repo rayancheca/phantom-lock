@@ -69,7 +69,23 @@
   box-shadow: var(--shadow-3);
   padding: var(--space-4);
   pointer-events: auto;
+  /* `position: fixed` content cannot scroll the page, and `cardPosition`'s clamp
+     collapses to the margin once the card exceeds the viewport — so without this
+     the title and the Next button are simply clipped off and unreachable at 400 %
+     zoom or on a short window (WCAG 1.4.10 / 1.4.4). */
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   animation: tour-card-in var(--dur-3) var(--ease-spring);
+}
+
+/* Names the control when the anchor selector matched nothing, so the step still
+   tells you where to look instead of pointing at empty space. */
+.tour-where {
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--text-2);
 }
 
 .tour-card:focus-visible,
@@ -281,6 +297,8 @@
     right: 12px;
     bottom: 84px;
     width: auto;
+    /* Clear of the bottom tool rail as well as the viewport edge. */
+    max-height: calc(100dvh - 96px);
   }
 }
 

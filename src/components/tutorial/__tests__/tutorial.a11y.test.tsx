@@ -35,6 +35,7 @@ const ctx = (over: Partial<TutorialCtx> = {}): TutorialCtx => ({
   seatCount: 1,
   galleryOpen: false,
   compareOpen: false,
+  practiceActive: true,
   ...over,
 });
 
@@ -164,10 +165,32 @@ describe('`try` steps', () => {
     const step = CHAPTERS.find((c) => c.id === 'layouts')!.steps[0];
     await startChapter('layouts');
     expect(screen.getByText(step.hint!)).toBeTruthy();
-    expect(screen.queryByText(/done —/i)).toBeNull();
+    expect(document.querySelector('.tour-done')).toBeNull();
     cleanup();
     await startChapter('layouts', { ctxValue: ctx({ galleryOpen: true }) });
-    expect(screen.getByText(/done —/i)).toBeTruthy();
+    expect(document.querySelector('.tour-done')).toBeTruthy();
+    expect(screen.queryByText(step.hint!)).toBeNull();
+  });
+
+  it('announces the satisfied transition in its OWN status region', () => {
+    // The app's LiveAnnouncer is suppressed while `overlayOpen`, which the
+    // gallery and compare predicates SET — so at the exact moment these steps
+    // succeed the shared announcer cannot speak, and the card must.
+    return startChapter('layouts', { ctxValue: ctx({ galleryOpen: true }) }).then(() => {
+      const status = document.querySelector('[role="status"]');
+      expect(status).toBeTruthy();
+      expect(status!.textContent).toMatch(/that worked/i);
+    });
+  });
+
+  it('the status region is mounted but EMPTY while the step is unsatisfied', () => {
+    // A live region inserted at the moment it gains text is announced
+    // unreliably; it has to already be in the tree.
+    return startChapter('layouts').then(() => {
+      const status = document.querySelector('[role="status"]');
+      expect(status).toBeTruthy();
+      expect(status!.textContent).toBe('');
+    });
   });
 
   it('offers "Show me" while unsatisfied, and it dispatches the rescue action', async () => {
@@ -276,6 +299,48 @@ describe('data safety', () => {
     const onAction = vi.fn();
     await startChapter('orientation', { onAction });
     expect(onAction).not.toHaveBeenCalledWith('practice-room');
+  });
+
+  it('re-enters the practice room when the user has switched away mid-tour', async () => {
+    // The coach-mark is non-modal by design, so the layout switcher stays live —
+    // and chapter 1 literally points at it. Containment therefore cannot be
+    // established once at chapter entry: without a re-check, Back-then-Next after
+    // a switch replays a scene-writing action into the user's own design.
+    const onAction = vi.fn();
+    const h = renderRunner({ menuOpen: true, onAction, ctxValue: ctx({ practiceActive: false }) });
+    await click(screen.getByRole('button', { name: /reach the lock/i }));
+    h.rerender(
+      <TutorialRunner
+        menuOpen={false}
+        onCloseMenu={h.onCloseMenu}
+        ctx={ctx({ practiceActive: false })}
+        onAction={onAction}
+        onEnterMode={h.onEnterMode}
+        storage={memStorage()}
+      />,
+    );
+    // While the practice room is NOT active, the only action ever dispatched is
+    // the one that re-enters it — never a scene write.
+    const names = onAction.mock.calls.map((c) => c[0]);
+    expect(names.every((n) => n === 'practice-room'), `dispatched: ${names.join(', ')}`).toBe(true);
+    expect(names).toContain('practice-room');
+  });
+
+  it('performs the step action once the practice room IS active', async () => {
+    const onAction = vi.fn();
+    const h = renderRunner({ menuOpen: true, onAction, ctxValue: ctx({ practiceActive: true }) });
+    await click(screen.getByRole('button', { name: /reach the lock/i }));
+    h.rerender(
+      <TutorialRunner
+        menuOpen={false}
+        onCloseMenu={h.onCloseMenu}
+        ctx={ctx({ practiceActive: true })}
+        onAction={onAction}
+        onEnterMode={h.onEnterMode}
+        storage={memStorage()}
+      />,
+    );
+    expect(onAction.mock.calls.map((c) => c[0])).toContain('practice-room');
   });
 
   it('every chapter marked needsPractice really does enter the practice room', async () => {

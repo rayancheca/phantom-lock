@@ -89,8 +89,27 @@ export default function CoachMark({
     // A missing node is EXPECTED, not exceptional: several anchors point at
     // controls that only exist in some states (the pair button appears only with
     // exactly two unpaired same-model speakers). The card then centres itself and
-    // the copy still names the control — which is why every dom anchor carries a
-    // `label`, asserted by the corpus test.
+    // renders `anchor.label` as "Look for …" — which is why every dom anchor
+    // carries a label, asserted by the corpus test.
+    // The sidebar is its own scroll container, so an anchor can be perfectly
+    // mounted and still be off-screen — `getBoundingClientRect` happily returns
+    // a non-zero rect for it, and the `position: fixed` ring would then be drawn
+    // outside the sidebar's clip, over unrelated chrome or off the viewport
+    // entirely. `[data-tour="pair"]` (the tour's climax) is low in the TUNE
+    // column and is exactly this case on a short window.
+    if (el) {
+      const r = el.getBoundingClientRect();
+      const offscreen = r.bottom < 0 || r.top > (window.innerHeight || 0);
+      if (offscreen) {
+        // Reduced motion must be branched HERE: `scroll-behavior` is a
+        // scroll-container property and the stylesheet's media query cannot
+        // reach an imperative smooth scroll.
+        const reduce =
+          typeof window.matchMedia === 'function' &&
+          window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        el.scrollIntoView({ block: 'center', behavior: reduce ? 'auto' : 'smooth' });
+      }
+    }
     const rect = el ? el.getBoundingClientRect() : null;
     const next =
       rect && (rect.width > 0 || rect.height > 0)
@@ -136,14 +155,26 @@ export default function CoachMark({
     };
   }, [measure]);
 
-  // Move focus to the card whenever the step changes. This is ALSO the screen
-  // reader strategy: focusing a labelled `role="dialog"` announces its name and
-  // content, so the tour needs no live region of its own — and therefore cannot
-  // fight the app's existing `LiveAnnouncer`, which stays active precisely
-  // because this overlay is non-modal.
+  // Move focus to the card whenever the step changes, so a keyboard user is
+  // carried along rather than left wherever they were.
   useEffect(() => {
     cardRef.current?.focus();
   }, [stepId]);
+
+  // Satisfying a step is not a step change, so the effect above never fires for
+  // it — and two things go wrong at exactly that moment. (a) The control the
+  // user just clicked can UNMOUNT (the pair button renders only while two
+  // speakers are unpaired), dropping focus to <body> with nothing to restore it.
+  // (b) The app's own LiveAnnouncer is suppressed while `overlayOpen`, which the
+  // gallery and compare predicates SET — so the one moment the tour most needs
+  // to say "that worked" is the one moment the shared announcer cannot.
+  const wasSatisfied = useRef(satisfied);
+  useEffect(() => {
+    const rose = satisfied && !wasSatisfied.current;
+    wasSatisfied.current = satisfied;
+    if (!rose) return;
+    if (!cardRef.current?.contains(document.activeElement)) cardRef.current?.focus();
+  }, [satisfied]);
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
@@ -155,7 +186,12 @@ export default function CoachMark({
     e.stopPropagation();
   };
 
-  const spot = target ? spotlightBox(target, SPOT_PAD) : null;
+  // Drop the ring once the step is satisfied. Two of the `try` steps succeed by
+  // OPENING an opaque full-screen overlay (gallery 0.92, compare 0.94) that this
+  // layer sits above at z-62 — the anchor stays mounted underneath, so the ring
+  // would keep rendering over a screen that no longer shows it, dimming
+  // everything through its 9999px spread for no reason.
+  const spot = target && !satisfied ? spotlightBox(target, SPOT_PAD) : null;
   const titleId = `tour-title-${stepId}`;
   const bodyId = `tour-body-${stepId}`;
 
@@ -194,6 +230,21 @@ export default function CoachMark({
         <p id={bodyId} className="tour-body">
           {body}
         </p>
+
+        {/* Owned by this card rather than the app's announcer, which is silenced
+            by `overlayOpen` exactly when two of these steps succeed. Permanently
+            mounted and empty while waiting: a region inserted at the moment it
+            gains text is unreliably announced. */}
+        <p className="sr-only" role="status" aria-live="polite">
+          {satisfied ? `That worked. Choose Next to continue${isLast ? ', or Finish' : ''}.` : ''}
+        </p>
+
+        {/* When the selector matches nothing the ring cannot point, so NAME the
+            control instead — several anchors target controls that exist only in
+            certain states. This is what `anchor.label` is for. */}
+        {!target && anchor.kind === 'dom' && anchor.label && (
+          <p className="tour-where">Look for {anchor.label}.</p>
+        )}
 
         {waiting && !satisfied && hint && <p className="tour-hint">{hint}</p>}
         {satisfied && (

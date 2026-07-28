@@ -57,6 +57,8 @@ import AppDialogs from './AppDialogs';
 import FirstRunExplainer from './FirstRunExplainer';
 import TutorialRunner from '../tutorial/TutorialRunner';
 import { useTutorial } from './hooks/useTutorial';
+import { PRACTICE_LAYOUT_NAME } from '../tutorial/actions';
+import { shouldOfferTour } from '../tutorial/progress';
 import './app.css';
 
 /** Standalone localStorage flag for the one-time welcome (never the persistence
@@ -1118,6 +1120,14 @@ function AppInner({ initialStore, persistMode, showFirstRun, droppedCount, proje
 
       {showIntro && (
         <FirstRunExplainer
+          /* Push the tour as the primary action only when it is genuinely
+             unseen. `showFirstRun` already encodes firstRun AND a pristine
+             origin (App.tsx's boot wrapper), so this adds the third condition:
+             our own standalone flag. */
+          offerTour={shouldOfferTour(
+            { firstRun: showFirstRun, pristineOrigin: true },
+            typeof localStorage === 'undefined' ? { getItem: () => null } : localStorage,
+          )}
           onDismiss={dismissIntro}
           onTakeTour={() => {
             dismissIntro();
@@ -1140,10 +1150,12 @@ function AppInner({ initialStore, persistMode, showFirstRun, droppedCount, proje
           seatCount: sceneListeners(scene).length,
           galleryOpen,
           compareOpen: compare !== null,
+          // Re-checked every render, not assumed from chapter entry: the
+          // coach-mark is non-modal, so the layout switcher stays live mid-tour.
+          practiceActive: active.name === PRACTICE_LAYOUT_NAME,
         }}
         onAction={tutorial.runAction}
         onEnterMode={tutorial.enterMode}
-        onRunningChange={tutorial.setRunning}
       />
 
       {/* Last child of the app root: always mounted (so it is never a freshly

@@ -36,7 +36,6 @@ export interface TutorialProgress {
 /** Read-only slice of Storage, so tests can inject a hostile stand-in. */
 type Readable = Pick<Storage, 'getItem'>;
 type Writable = Pick<Storage, 'setItem'>;
-type Removable = Pick<Storage, 'removeItem'>;
 
 const BLANK: TutorialProgress = { seen: false, done: [], resume: null };
 /** What we report when storage cannot be read at all — see the header. */
@@ -84,14 +83,6 @@ export function saveProgress(storage: Writable, progress: TutorialProgress): voi
     storage.setItem(TUTORIAL_KEY, JSON.stringify(progress));
   } catch {
     // Non-fatal: the tour simply will not resume next boot.
-  }
-}
-
-export function clearProgress(storage: Removable): void {
-  try {
-    storage.removeItem(TUTORIAL_KEY);
-  } catch {
-    // Non-fatal.
   }
 }
 

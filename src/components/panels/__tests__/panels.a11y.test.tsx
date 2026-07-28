@@ -194,7 +194,7 @@ describe('overlay surfaces have no axe violations', () => {
   });
 
   it('the first-run explainer', async () => {
-    const { container } = render(<FirstRunExplainer onDismiss={noop} onTakeTour={noop} />);
+    const { container } = render(<FirstRunExplainer onDismiss={noop} onTakeTour={noop} offerTour />);
     await expectNoAxeViolations(container);
   });
 });

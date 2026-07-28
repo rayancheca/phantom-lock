@@ -5,6 +5,9 @@ interface Props {
   onDismiss: () => void;
   /** Dismiss, then open the guided tour's chapter menu. */
   onTakeTour: () => void;
+  /** Lead with the tour. False once it has been seen, so a returning visitor is
+   *  not pushed back into it. */
+  offerTour: boolean;
 }
 
 /**
@@ -17,7 +20,7 @@ interface Props {
  * for free) and is gated on a standalone localStorage flag (never the persistence
  * schema), so it appears exactly once.
  */
-export default function FirstRunExplainer({ onDismiss, onTakeTour }: Props) {
+export default function FirstRunExplainer({ onDismiss, onTakeTour, offerTour }: Props) {
   return (
     <Dialog title="Welcome to Phantom Lock" onClose={onDismiss}>
       <p className="dialog-sub">
@@ -39,10 +42,18 @@ export default function FirstRunExplainer({ onDismiss, onTakeTour }: Props) {
           one thing three paragraphs of prose cannot. "Start exploring" stays as
           the equal-weight opt-out — the tour must never feel compulsory. */}
       <div className="dialog-actions">
-        <button type="button" className="btn" onClick={onDismiss}>
+        <button
+          type="button"
+          className={offerTour ? 'btn' : 'btn btn-primary'}
+          onClick={onDismiss}
+        >
           Start exploring
         </button>
-        <button type="button" className="btn btn-primary" onClick={onTakeTour}>
+        <button
+          type="button"
+          className={offerTour ? 'btn btn-primary' : 'btn'}
+          onClick={onTakeTour}
+        >
           Take the tour
         </button>
       </div>

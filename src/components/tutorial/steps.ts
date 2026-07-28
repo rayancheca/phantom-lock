@@ -311,6 +311,21 @@ export const CHAPTERS: TutorialChapter[] = [
         hint: 'Compare is at the bottom of the Listening spots panel.',
         rescue: 'open-compare',
       },
+      {
+        id: 'compare-close',
+        kind: 'show',
+        title: 'Two verdicts, one screen',
+        // This step exists so the chapter does not END underneath compare.
+        // `ScenarioCompare` is `aria-modal="true"`, and the coach-mark is its
+        // SIBLING — so while it is open the card (and the Finish button) are
+        // outside the accessibility tree entirely. Closing here also matches
+        // what chapter 7 already does with the gallery.
+        body:
+          'Each column reads independently, so you can weigh a couch seat against a bed seat, or two whole designs against each other. Closing it again returns you to the plan.',
+        anchor: { kind: 'dom', selector: SEL.seats, label: 'the listening spots panel' },
+        mode: 'tune',
+        act: 'close-compare',
+      },
     ],
   },
 

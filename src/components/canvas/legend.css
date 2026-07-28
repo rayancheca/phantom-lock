@@ -1,13 +1,35 @@
 /* On-canvas legend (UX-4 item I). Shares the .stage --overlay-* dark-glass recipe
    with the compass + wall chips, so it matches in both the sound and plan themes. */
 
+/*
+ * BOTTOM-left, not top-left.
+ *
+ * It used to be `top: 12px; left: 12px` — the exact coordinates of `.toolstrip`
+ * (panels.css) — with `z-index: 6` against the strip's `auto`. So the legend won
+ * the stack and sat on top of the FIRST tool button: `elementFromPoint` at the
+ * centre of "Select & move anything (1)" returned `.legend-toggle`, which means
+ * the primary Move tool was not merely hidden but unclickable by pointer at every
+ * desktop width. (Reported by the owner; confirmed by hit-testing, not by eye.)
+ *
+ * Anchoring to the OPPOSITE edge from the tools makes the collision structurally
+ * impossible rather than tuned away — the strip has `flex-wrap: wrap`, so any fix
+ * that assumed a fixed strip height would break again the moment it wrapped to
+ * two rows on a narrow desktop.
+ *
+ * Bottom-left is also where a legend belongs: it joins the canvas's drawn scale
+ * bar and the compass as reference furniture, instead of competing with the
+ * tools. The 46px offset clears the scale bar the renderer draws at the bottom
+ * of the plan.
+ */
 .legend {
   position: absolute;
-  top: 12px;
+  bottom: 46px;
   left: 12px;
   z-index: 6;
   display: flex;
-  flex-direction: column;
+  /* Reverse so the toggle stays pinned at the bottom and the panel opens UPWARD
+     into empty canvas, rather than growing down off the edge. */
+  flex-direction: column-reverse;
   align-items: flex-start;
   gap: 6px;
   max-width: min(240px, 55%);
@@ -128,7 +150,20 @@
   color: var(--ok);
 }
 
+/* Slides UP out of the toggle, matching the upward-opening panel. The ≤960px
+   block flips it back down, where the legend is top-anchored again. */
 @keyframes legend-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes legend-in-down {
   from {
     opacity: 0;
     transform: translateY(-4px);
@@ -145,11 +180,19 @@
   }
 }
 
-/* At ≤960px the bottom edge belongs to the un-floated tool rail; the legend is
-   top-left, clear of it. Keep it compact so it never crowds the shrunken canvas. */
+/* At ≤960px the two regimes swap: the tool strip un-floats to a rail along the
+   BOTTOM edge, which frees the top-left and takes the bottom-left. So the legend
+   goes back to the top corner here — the same reasoning as above, mirrored.
+   Keep it compact so it never crowds the shrunken canvas. */
 @media (max-width: 960px) {
   .legend {
+    top: 12px;
+    bottom: auto;
+    flex-direction: column;
     max-width: 46%;
+  }
+  .legend-body {
+    animation-name: legend-in-down;
   }
 }
 

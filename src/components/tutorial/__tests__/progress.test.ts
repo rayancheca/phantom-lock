@@ -16,7 +16,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   TUTORIAL_KEY,
-  clearProgress,
   loadProgress,
   markChapterDone,
   markSeen,
@@ -83,12 +82,6 @@ describe('tutorial progress', () => {
     expect(p.resume).toBeNull();
   });
 
-  it('clearProgress removes the key so "take it again" is a clean slate', () => {
-    const s = fakeStorage({ [TUTORIAL_KEY]: '{"seen":true,"done":["a"],"resume":null}' });
-    clearProgress(s);
-    expect(s.store.has(TUTORIAL_KEY)).toBe(false);
-    expect(loadProgress(s).seen).toBe(false);
-  });
 
   // --- hostile / corrupt stored values --------------------------------------
 

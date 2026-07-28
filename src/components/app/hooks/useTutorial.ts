@@ -7,7 +7,6 @@ import {
   PRACTICE_LAYOUT_NAME,
   armPairDemo,
   breakLock,
-  clearSpeakers,
   pairFirstTwo,
   practiceScene,
 } from '../../tutorial/actions';
@@ -30,9 +29,6 @@ export interface TutorialControls {
   menuOpen: boolean;
   openMenu: () => void;
   closeMenu: () => void;
-  /** True while a step card is on screen. */
-  running: boolean;
-  setRunning: (b: boolean) => void;
   runAction: (action: TutorialActionName) => void;
   enterMode: (mode: AppMode, subStep?: DesignSubStep) => void;
 }
@@ -57,7 +53,6 @@ export interface TutorialControls {
  */
 export function useTutorial(a: Args): TutorialControls {
   const [menuOpen, setMenuOpen] = useState(false);
-  const [running, setRunning] = useState(false);
 
   const openMenu = useCallback(() => setMenuOpen(true), []);
   const closeMenu = useCallback(() => setMenuOpen(false), []);
@@ -108,9 +103,6 @@ export function useTutorial(a: Args): TutorialControls {
         case 'break-lock':
           a.setScene((s) => breakLock(s));
           return;
-        case 'clear-speakers':
-          a.setScene((s) => clearSpeakers(s));
-          return;
         case 'add-seat':
           a.addSeat();
           return;
@@ -137,5 +129,5 @@ export function useTutorial(a: Args): TutorialControls {
     [a, enterPracticeRoom],
   );
 
-  return { menuOpen, openMenu, closeMenu, running, setRunning, runAction, enterMode };
+  return { menuOpen, openMenu, closeMenu, runAction, enterMode };
 }

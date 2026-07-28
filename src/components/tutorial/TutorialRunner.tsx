@@ -32,8 +32,6 @@ interface TutorialRunnerProps {
   /** App performs the real command — the runner never reimplements one. */
   onAction: (action: TutorialActionName) => void;
   onEnterMode: (mode: AppMode, subStep?: DesignSubStep) => void;
-  /** True while a step card is on screen, so App can hide colliding chrome. */
-  onRunningChange?: (running: boolean) => void;
   /** Injected for tests. */
   storage?: Pick<Storage, 'getItem' | 'setItem'>;
 }
@@ -69,7 +67,6 @@ export default function TutorialRunner({
   ctx,
   onAction,
   onEnterMode,
-  onRunningChange,
   storage,
 }: TutorialRunnerProps) {
   const store = storage ?? safeStorage();
@@ -78,12 +75,15 @@ export default function TutorialRunner({
 
   const step = currentStep(tour, CHAPTERS);
   const chapter = CHAPTERS.find((c) => c.id === tour.chapterId) ?? null;
+  // Read as a primitive so the containment effect can depend on it without
+  // depending on the whole `ctx` object, which is a fresh literal every render.
+  const practiceActive = ctx.practiceActive;
 
   // The App's callbacks churn on every scene edit (`applyMode` depends on
   // `scene`), so they are read through a ref and never appear in a dep array —
   // the established pattern here (`useKeyboardShortcuts.ts`).
-  const cbRef = useRef({ onAction, onEnterMode, onCloseMenu, onRunningChange });
-  cbRef.current = { onAction, onEnterMode, onCloseMenu, onRunningChange };
+  const cbRef = useRef({ onAction, onEnterMode, onCloseMenu });
+  cbRef.current = { onAction, onEnterMode, onCloseMenu };
 
   const persist = useCallback(
     (next: TutorialProgress) => {
@@ -104,18 +104,23 @@ export default function TutorialRunner({
   useEffect(() => {
     if (!step) return;
     if (actedRef.current === step.id) return; // StrictMode double-invoke safe
+    // Containment, re-checked on EVERY step of a scene-writing chapter rather
+    // than once on entry. `actedRef` is deliberately NOT set here, so once the
+    // switch lands and `practiceActive` flips true this effect runs again and
+    // the step's own action fires — into the practice room, on the next render,
+    // never in the same tick as the layout switch.
+    if (chapter?.needsPractice && !practiceActive) {
+      cbRef.current.onAction('practice-room');
+      return;
+    }
     actedRef.current = step.id;
     if (step.mode) cbRef.current.onEnterMode(step.mode, step.subStep);
     if (step.act) cbRef.current.onAction(step.act);
-  }, [step]);
+  }, [step, chapter, practiceActive]);
 
   // Leaving a step re-arms its action, so Back-then-Next replays it.
   useEffect(() => {
     if (!step) actedRef.current = null;
-  }, [step]);
-
-  useEffect(() => {
-    cbRef.current.onRunningChange?.(step != null);
   }, [step]);
 
   // --- resume bookkeeping ----------------------------------------------------

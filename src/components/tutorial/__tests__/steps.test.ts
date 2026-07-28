@@ -27,6 +27,7 @@ const ctx = (over: Partial<TutorialCtx> = {}): TutorialCtx => ({
   seatCount: 1,
   galleryOpen: false,
   compareOpen: false,
+  practiceActive: true,
   ...over,
 });
 

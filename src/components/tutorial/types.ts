@@ -33,6 +33,16 @@ export interface TutorialCtx {
   galleryOpen: boolean;
   /** The N-up scenario compare is open. */
   compareOpen: boolean;
+  /**
+   * The disposable practice layout is the ACTIVE one.
+   *
+   * Containment cannot be established once at chapter entry and assumed
+   * thereafter: the coach-mark is non-modal by design, so the layout switcher
+   * stays operable mid-tour — and chapter 1 literally points at it. Without
+   * re-checking, Back-then-Next after a switch replays a scene-writing action
+   * against the user's own design.
+   */
+  practiceActive: boolean;
 }
 
 /**
@@ -69,7 +79,6 @@ export type TutorialActionName =
   | 'pair-them'
   /** Shove a speaker out of the (few-centimetre) lock basin so the readout drops. */
   | 'break-lock'
-  | 'clear-speakers'
   | 'add-seat'
   | 'open-gallery'
   | 'close-gallery'

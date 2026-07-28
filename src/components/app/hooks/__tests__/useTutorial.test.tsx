@@ -198,14 +198,6 @@ describe('useTutorial — data safety', () => {
     expect(s.pairs).toHaveLength(1);
   });
 
-  it('clear-speakers empties the practice room only', () => {
-    const { state, run } = harness();
-    run('practice-room');
-    run('place-two-pods');
-    run('clear-speakers');
-    expect(activeScene(state.store).speakers).toHaveLength(0);
-    expect(state.store.layouts.find((l) => l.name === 'Couch — stereo pair')!.scene.speakers).toHaveLength(2);
-  });
 });
 
 describe('useTutorial — the remaining actions delegate rather than reimplement', () => {
