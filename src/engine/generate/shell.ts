@@ -23,6 +23,10 @@
  * Only D gets both semantics right — rooms stay distinct ZONES for the
  * optimizer while furniture reaches the whole home. B is the naive
  * construction, and it confines every piece of furniture to the seat's room.
+ *
+ * The four areas above were measured BEFORE the S24 unit fix. Door rotation
+ * feeds `collectBlockers`, so the absolute figures moved; the ORDERING and the
+ * conclusion did not, because what separates the four is the gap, not the angle.
  */
 
 import type { RectObj, RoomLabel, SceneObject, Vec2, WallObj } from '../types';
@@ -136,15 +140,26 @@ function len(a: Vec2, b: Vec2): number {
   return Math.hypot(b.x - a.x, b.y - a.y);
 }
 
-/** Angle of the edge, which a door or window rect must adopt to sit flush. */
-function edgeAngleDeg(a: Vec2, b: Vec2): number {
-  return (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
+/**
+ * Angle of the edge in RADIANS, which a door or window rect must adopt to sit flush.
+ *
+ * The name carries the unit deliberately. This returned DEGREES until S24 and fed
+ * `RectObj.rotation`, which is radians (`types.ts:27`) — so every non-horizontal
+ * generated opening was drawn at the wrong angle, and only the 0-degree case was
+ * accidentally correct. It is the raw `atan2` because that is exactly what the
+ * shipped user-facing constructors use (`interaction.ts` `makeOpening`,
+ * `placement.ts` `openingMagnetFor`); the generator must not invent a second
+ * definition of "flush on a wall".
+ */
+function edgeAngleRad(a: Vec2, b: Vec2): number {
+  return Math.atan2(b.y - a.y, b.x - a.x);
 }
 
 function opening(
   centre: Vec2,
   width: number,
-  angleDeg: number,
+  /** RADIANS. Not to be confused with `swingDeg` below, which really is degrees. */
+  angleRad: number,
   role: 'door' | 'window',
 ): RectObj {
   const base: RectObj = {
@@ -153,7 +168,7 @@ function opening(
     center: { ...centre },
     w: width,
     h: role === 'door' ? 0.1 : 0.12,
-    rotation: angleDeg,
+    rotation: angleRad,
     absorption: role === 'door' ? 0.25 : 0.04,
     label: role === 'door' ? 'Door' : 'Window',
     height: role === 'door' ? 2.05 : 2.2,
@@ -206,7 +221,7 @@ export function buildShell(
     objects.push(wall(a, lerp(a, b, lo - half), label));
     objects.push(wall(lerp(a, b, lo + half), b, label));
     const centre = lerp(a, b, lo);
-    objects.push(opening(centre, DOOR_WIDTH, edgeAngleDeg(a, b), 'door'));
+    objects.push(opening(centre, DOOR_WIDTH, edgeAngleRad(a, b), 'door'));
     doors.push(centre);
   };
 
@@ -247,7 +262,7 @@ export function buildShell(
     const width = Math.min(1.6, length * 0.35);
     const margin = width / 2 / length + 0.05;
     const t = lattice(rnd, margin, 1 - margin, 0.05);
-    objects.push(opening(lerp(w.a, w.b, t), width, edgeAngleDeg(w.a, w.b), 'window'));
+    objects.push(opening(lerp(w.a, w.b, t), width, edgeAngleRad(w.a, w.b), 'window'));
   }
 
   // Zones. `arrange.ts` builds its zone list ONLY from rooms carrying both `w`

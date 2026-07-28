@@ -24,6 +24,8 @@ import {
   sceneListeners,
 } from '../../scene';
 import { traceScene } from '../../raytrace';
+import { rectCorners } from '../../geometry';
+import { makeOpening } from '../../../components/canvas/interaction';
 import { computeAudio } from '../../stereo';
 import { regionOf } from '../../rooms';
 import type { RectObj, Scene, WallObj } from '../../types';
@@ -371,6 +373,122 @@ describe('generateDesign', () => {
     }
     expect(doors).toBeGreaterThan(0);
     expect(windows).toBeGreaterThan(0);
+  });
+
+  // An opening is emitted ON the line of the wall it cuts: a door's centre is
+  // `lerp(a, b, lo)` between two collinear jamb stubs, a window's is a point on
+  // its own wall. So the wall it belongs to is the one whose INFINITE LINE passes
+  // through its centre — not the nearest wall, which at a corner is often the
+  // PERPENDICULAR one and made an early cut of this test fail by exactly 90 deg.
+  const hostWalls = (o: RectObj, ws: WallObj[]): WallObj[] =>
+    ws.filter((w) => {
+      const dx = w.b.x - w.a.x;
+      const dy = w.b.y - w.a.y;
+      const L = Math.hypot(dx, dy);
+      if (L < 1e-9) return false;
+      const off = ((o.center.x - w.a.x) * -dy + (o.center.y - w.a.y) * dx) / L;
+      return Math.abs(off) < 1e-6;
+    });
+
+  /** |cos| between the rect's own +w axis and the wall direction. 1 = flush. */
+  const flushness = (o: RectObj, w: WallObj): number => {
+    const c = rectCorners(o);
+    const ax = c[1].x - c[0].x;
+    const ay = c[1].y - c[0].y;
+    const alen = Math.hypot(ax, ay);
+    const dx = w.b.x - w.a.x;
+    const dy = w.b.y - w.a.y;
+    const wlen = Math.hypot(dx, dy);
+    return Math.abs((ax / alen) * (dx / wlen) + (ay / alen) * (dy / wlen));
+  };
+
+  it('THE UNIT BUG: every opening sits FLUSH on its wall, on non-horizontal walls too', () => {
+    // Asserted through the REAL geometry (rectCorners), never the raw `rotation`
+    // field: the whole failure mode was a field holding a plausible-looking number
+    // in the wrong UNIT, which a field-equality test would have happily pinned.
+    //
+    // `edgeAngleDeg` returned DEGREES into a radians field, so this held only for
+    // the accidentally-correct 0-degree case. Measured ON THE GENERATED CORPUS
+    // (1406 openings over 320 designs): 49.3 % sat on 0-degree walls and were
+    // accidentally right; 40.9 % on 90-degree walls (26.62 deg out), 5.5 % on
+    // 180 (53.24 out), 3.9 % on -90 (26.62), and a handful on +/-45 (13.31).
+    // 50.7 % of every generated opening was wrong.
+    let checked = 0;
+    let nonAxisAligned = 0;
+    let diagonal = 0;
+    // The FULL seed list, not a slice. A slice of 8 contains ZERO genuinely
+    // diagonal openings — the `l-notch`/`alcove` outline variants only produce
+    // them from seed index 8 on — and a corpus without them accepts a fix that
+    // snaps every opening to the nearest QUARTER turn: right units, wrong
+    // geometry, 40/40 green. Measured, and this is the repo's own "the test
+    // corpus follows the code's guards" lesson landing on this very diff.
+    for (const id of ARCHETYPE_IDS) {
+      for (const seed of SEEDS) {
+        const { scene } = generateDesign({ archetype: id, seed });
+        const ws = walls(scene);
+        for (const role of ['door', 'window'] as const) {
+          for (const o of rects(scene, role)) {
+            const hosts = hostWalls(o, ws);
+            expect(hosts.length, `${id}/${seed} ${role}: no wall lies on this opening`).toBeGreaterThan(0);
+
+            const best = Math.max(...hosts.map((w) => flushness(o, w)));
+            expect(
+              best,
+              `${id}/${seed} ${role}: long axis is ${((Math.acos(Math.min(1, best)) * 180) / Math.PI).toFixed(2)} deg off every wall it lies on`,
+            ).toBeCloseTo(1, 9);
+
+            checked++;
+            // Guard the guard, twice over. The bug was RIGHT on horizontal walls,
+            // and an axis-snap is right on every axis-aligned one — so the corpus
+            // must contain both a vertical opening and a genuinely DIAGONAL one or
+            // it cannot falsify either wrong answer.
+            if (hosts.some((w) => Math.abs(w.b.y - w.a.y) > 1e-6)) nonAxisAligned++;
+            if (
+              hosts.some((w) => Math.abs(w.b.y - w.a.y) > 1e-6 && Math.abs(w.b.x - w.a.x) > 1e-6)
+            ) {
+              diagonal++;
+            }
+          }
+        }
+      }
+    }
+    expect(checked, 'no openings were checked at all').toBeGreaterThan(50);
+    expect(
+      nonAxisAligned,
+      'every opening sat on a horizontal wall — the ONE orientation the bug got right',
+    ).toBeGreaterThan(20);
+    expect(
+      diagonal,
+      'no DIAGONAL opening in the corpus — a quarter-turn snap would pass this test',
+    ).toBeGreaterThan(0);
+  });
+
+  it("a generated opening agrees with the UI's own makeOpening on the same wall", () => {
+    // The generator must not invent a second definition of "an opening flush on a
+    // wall". `interaction.ts` makeOpening is the shipped, user-facing one and uses
+    // the raw atan2, so the two must agree up to a half turn (same line, either
+    // direction). This is what pins the FIX to the right convention, not just to
+    // "some radian value".
+    let compared = 0;
+    // Full seed list, for the same reason as above.
+    for (const id of ARCHETYPE_IDS) {
+      for (const seed of SEEDS) {
+        const { scene } = generateDesign({ archetype: id, seed });
+        const ws = walls(scene);
+        for (const o of [...rects(scene, 'door'), ...rects(scene, 'window')]) {
+          const hosts = hostWalls(o, ws);
+          if (hosts.length === 0) continue;
+          const ok = hosts.some((w) => {
+            const ui = makeOpening(w, o.center, o.role === 'door' ? 'door' : 'window', 'probe') as RectObj;
+            const d = Math.abs(Math.atan2(Math.sin(o.rotation - ui.rotation), Math.cos(o.rotation - ui.rotation)));
+            return Math.min(d, Math.PI - d) < 1e-9;
+          });
+          expect(ok, `${id}/${seed} ${o.role}: disagrees with makeOpening on every wall it lies on`).toBe(true);
+          compared++;
+        }
+      }
+    }
+    expect(compared, 'nothing was compared').toBeGreaterThan(25);
   });
 
   it('THE PAYOFF: never ships a placed-but-UNLOCKED pair', () => {

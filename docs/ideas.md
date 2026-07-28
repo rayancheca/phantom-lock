@@ -26,6 +26,7 @@ effort — a small high-value item beats a large one.
 | 10b | Bundle IMPORTER (read an export-all backup back in, folders included) | P2 | ½ session |
 | 10c | Layout ORDER within a folder (drag to reorder; today `getAll()` key order) | P3 | small |
 | 10d | Multi-tab: `saveMeta` overwrites the folder list wholesale (last-writer-wins) | P2 | ½ session |
+| 12b | `rooms.ts` flood fill walks THROUGH a wall when a cell centre lands exactly on it | **P1 — high** | small |
 | 7 | Drag-release wall splitting | P3 | small |
 | 8 | Multi-select with a listener in it | P3 | small |
 | 9 | Window/door-leaf reflection materials | P3 | small |
@@ -539,3 +540,42 @@ does for the engine.
 **Acceptance:** a measured worst case for `detectWalls` at `WORK_MAX`, written into `docs/security.md`
 alongside the engine's; and if it exceeds the INP budget, a bound whose protected set is enumerated as
 corpus fixtures rather than asserted.
+
+---
+
+## 12b. `regionOf` leaks through a wall when a cell centre lands exactly on it — **P1 (high)**
+
+Surfaced by S24's adversarial pass, as a pre-existing degeneracy the unit fix made *more visible*.
+
+`rooms.ts` `segsCross` tests `d3 * d4 < 0` — a STRICT inequality — so a flood-fill step that lands
+exactly on a wall line scores `d4 = 0` and is **not** blocked. The step after it is not blocked either,
+so the region walks straight through the wall. Whether this fires depends on the grid ORIGIN, which is
+`sceneBounds().min − cell`, and `sceneBounds` includes door/window rect CORNERS — so anything that moves
+an opening's geometry re-rolls the dice for every design.
+
+**Measured** over 8 archetypes × seeds 0–59 (300 multi-room designs), before vs after the S24 fix:
+
+| | pre-fix | post-fix |
+|---|---|---|
+| fully unsealed (zoning ratio ≤ 1.0001) | 6 | **19** |
+| below 1.4× | 138 | **28** |
+
+So the average improved a great deal and the worst bucket tripled. Worked example, `one-bed`/seed 2
+post-fix: `min.y = −0.05` (a door corner) → grid origin `−0.35`, `cell = 0.3`, so cell centres include
+exactly `5.5000` — which is the top wall `(0,5.5)→(8,5.5)`. `regionOf(…, {doorsBlock:true}).area` reads
+**56.70 m²** for a 44 m² home and `.contains()` returns true for the far bedroom.
+
+**Consequence:** `optimize.ts`'s "This room" target silently becomes the whole house for ~6 % of
+generated multi-room designs.
+
+**The repair belongs in `rooms.ts`, not in the generator** — either make `segsCross` treat a touching
+endpoint as a crossing for the blocker side (`d3 * d4 <= 0`, with its own collinearity guard), or offset
+the flood-fill grid by half a cell so a centre can never land on an axis-aligned wall line. Either is an
+engine change and needs its own golden; it was deliberately NOT smuggled into the S24 unit-fix commit.
+
+**Related, same pass, lower priority:** `regionOf(…, {doorsBlock:false})` escapes the wall envelope on
+300 of 300 generated multi-room designs (expected — no door blockers, so it flows out through the entry
+door), which means `walkable.area` is not floor area. Benign today: 0 of 3192 placed pieces landed
+outside the envelope across 480 designs, because `openSlots` is bounded by `sceneBounds ± 0.6`. But do
+not read `walkable.area` as floor area, and bound the fill by the exterior wall loop if it ever needs
+to be exact.
