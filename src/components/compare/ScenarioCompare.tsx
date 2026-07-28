@@ -90,6 +90,16 @@ function Preview({ scene }: { scene: Scene }) {
   return <canvas ref={ref} className="compare-preview" aria-hidden="true" />;
 }
 
+/**
+ * Which seat a design shows when you first point a column at it: its OWN active
+ * seat, the one whoever built it left selected — not `seats[0]`. Picking the
+ * first seat silently showed the "Bed — TV rolled over" variant from the couch,
+ * where of course it does not lock, making the design look broken.
+ */
+function defaultSeat(layout: Layout): string {
+  return activeListener(layout.scene).id;
+}
+
 /** The (project → layout → seat) picker for one column. */
 function ScenarioPicker({
   store,
@@ -117,7 +127,7 @@ function ScenarioPicker({
             const next = store.projects.find((p) => p.id === e.target.value) ?? project;
             const first = layoutsInProject(store, next.id)[0];
             if (!first) return; // an empty folder has nothing to show
-            onChange({ layoutId: first.id, seatId: sceneListeners(first.scene)[0].id });
+            onChange({ layoutId: first.id, seatId: defaultSeat(first) });
           }}
         >
           {store.projects.map((p) => (
@@ -135,7 +145,7 @@ function ScenarioPicker({
           value={layout.id}
           onChange={(e) => {
             const next = store.layouts.find((l) => l.id === e.target.value) ?? layout;
-            onChange({ layoutId: next.id, seatId: sceneListeners(next.scene)[0].id });
+            onChange({ layoutId: next.id, seatId: defaultSeat(next) });
           }}
         >
           {inProject.map((l) => (

@@ -351,9 +351,26 @@
   border-radius: 0 0 var(--radius) var(--radius);
 }
 
-/* Compare: a static in-column block replacing the deleted .compare-verdict. */
+/* Compare: a static in-column block replacing the deleted .compare-verdict.
+   Two deliberate differences from the sidebar hero, both so N columns can be
+   SCANNED rather than merely displayed:
+     - the headline drops a step. At `--text-hero` (up to 44px) a phrase like
+       "One pair locks, another doesn't" wraps to three lines inside a 280-360px
+       column, and each column then starts its spec sheet at a different height.
+       In compare the hero is a label for the column, not the app's payoff moment
+       (that is the sidebar's job), so a smaller display size is the right trade.
+     - a min-height pins every column's spec sheet to the same baseline. Comparing
+       four ragged columns means re-finding each row in every one of them, which
+       is the whole thing this view exists to avoid. Verified live: with it, every
+       column's metrics card starts at the same y. */
 .verdict-hero--compare {
   border: 1px solid var(--surface-3);
+  min-height: 184px;
+  justify-content: flex-start;
+}
+
+.verdict-hero--compare .verdict-hero__headline {
+  font-size: var(--text-2xl);
 }
 
 .verdict-hero__seat {
