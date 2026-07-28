@@ -1761,3 +1761,60 @@ the single-layout path now round-trips the folder by name) · a second tab's `sa
 folder list wholesale, the same last-writer-wins the app has always had on `activeId` but with a larger
 blast radius · a downgrade discards folders (never layouts) · `App.tsx` is 1165 lines against the 800
 cap, already 1098 on main. All recorded in `docs/ideas.md` and `docs/database-plan.md` §6b.
+
+---
+
+### S21 — Guided tutorial mode (2026-07-28) ✅ — owner-requested (`docs/ideas.md` §3)
+
+**Shipped.** A guided tour, available at any time from a "Tour" button in the global header and offered
+as the primary action on the first-run welcome. `src/components/tutorial/` holds 7 chapters of pure
+data; the chapter menu makes each one independently launchable, which is what turns the feature into
+re-enterable documentation rather than one-shot onboarding. Two step kinds: `show` (the runner performs
+the action and narrates it) and `try` (the runner points, then waits on a pure `done(ctx)` predicate,
+with a hint after inaction and a "Show me" rescue so nobody is stranded).
+
+**The spine was designed backwards from the engine, and the numbers chose it.** Three measurements,
+not opinions:
+
+1. The lock is a PRECISION condition — with one speaker pinned, only **3–5 cells** of the 0.05 m snap
+   grid lock at all (a target ~0.05–0.10 m across, a few pixels at default zoom). "Drag it until it
+   locks" would have stalled the tour on its own climax for nearly every user.
+2. `keyboardPlacementPoint` puts the first two pods at exactly ±30°, which locks at **quality 0.997**
+   in a clean rectangular room — and does **not** lock in the furnished Maple Court demo
+   (`apexBlocked`, 0.5). Hence a disposable practice room rather than borrowing the demo.
+3. `VerdictHero`'s ignition is a false→true EDGE and mount is never an edge (S15), so a step that lands
+   on an already-locked scene shows a static headline and no celebration.
+
+So the runner does the precision placement and the USER makes the pairing click — which IS the edge.
+`actions.test.ts` proves the whole chain through the real `traceScene`→`computeAudio`, with an
+apartment negative control so the reason the practice room exists cannot be quietly forgotten.
+
+**The four defects the adversarial pass caught that the suite could not.**
+- **The climax was dead on every run after the first.** The practice room is reused by name, so it
+  still held the previous run's locked pair: `placeTwoPods` no-oped, `locked` was already true when the
+  pairing step opened, and with no edge there was no ignition — and nothing on screen to say so.
+  `armPairDemo` clears before placing, making the edge unconditional.
+- **A chapter launched from the menu wrote into the user's own layout.** `compare`'s first step adds a
+  seat; jumping straight to it wrote to whatever was active. `needsPractice` + a corpus test that
+  asserts every scene-writing chapter carries it.
+- **The spotlight went stale and pointed at the wrong control** — the pair button unmounts the instant
+  the pair exists and the sidebar reflows, so the ring ended up around "+ HomePod" exactly when the user
+  completed the key action. Now re-measured every render, made loop-safe by `rectsEqual`.
+- **"Resumable" was not met** — `progress.resume` was written and never read. The machine gained a
+  `resume` event and the menu offers "Continue … — step N of M".
+
+**Two of the project's own guards fired on this diff and both were right:** the contrast test refused
+`--text-3` on an 11px eyebrow, and the CSP scanner matched a comment in which I had spelled out the very
+API I was promising not to use. Reworded and re-toned, not suppressed.
+
+**Honest residuals, none of them regressions:** no `{kind:'world'}` canvas anchor in this pass (the view
+transform IS reachable — `SimCanvas`'s `view` is React state and `worldToScreen` is exported — but
+lifting it to App would re-render the whole sidebar on every pan frame, and jsdom's 0×0 rects make the
+projection unprovable in the a11y suite; the copy names canvas objects instead) · the practice room is
+never offered for deletion on exit, the copy points at the layouts screen instead (a delete flow is the
+riskiest thing this feature could grow) · an abandoned tour leaves the practice room on disk and active
+on next boot, deliberately, because silently deleting a layout at boot is the worse failure · the card
+sits at z-index 62, above the `Menu` popover at 60, which is unavoidable while it must clear compare at
+60 · `App.tsx` is 1234 lines against the 800 cap (1173 before this session, and already 1165 at the end of S20 — CLAUDE.md's "decomposed to 789" note is stale by five sessions) — the
+tutorial's own logic went into `hooks/useTutorial.ts` rather than making that worse, but the file still
+needs its own session.

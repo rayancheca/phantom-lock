@@ -143,7 +143,40 @@ projected for `MAX_IMPORT_ROOMS`.)*
 
 ---
 
-## 3. Guided tutorial mode — **P1 (high)**
+## 3. Guided tutorial mode — ✅ **DONE (S21, 2026-07-28)** — owner-requested
+
+**SHIPPED.** `src/components/tutorial/` — 7 chapters, independently launchable from a chapter menu
+behind a "Tour" button in the global header, plus "Take the tour" as the primary action on the
+first-run welcome. Skippable, resumable (the menu offers "Continue … — step N of M"), shown
+unprompted only on a genuine first run, page-wide axe clean, and it writes to nothing but its own
+disposable "Tutorial practice room". 1082 tests (+121).
+
+**What the design got right that the write-up below did not anticipate.** The plan assumed the hard
+part was the anchor model. It was not — the hard part was that THE LOCK IS A PRECISION CONDITION.
+Measured: with one speaker pinned, only 3–5 cells of the 0.05 m snap grid lock at all, a target
+~0.05–0.10 m across. "Drag it until it locks" would have stalled the tour on its own climax for
+almost every user. And the ignition is a false→true EDGE, so a step that merely lands on an
+already-locked scene shows nothing. The shipped spine therefore splits the work: the runner does the
+precision placement (two pods at ±30°, which locks at quality 0.997 in a clean room and NOT in the
+furnished demo), and the user makes the pairing click — which is the edge.
+
+**Deviations from the plan below, each deliberate:** no `{kind:'world'}` anchor in this pass (the
+view transform IS reachable — `SimCanvas`'s `view` is React state and `worldToScreen` is exported —
+but lifting it to App would re-render the whole sidebar on every pan frame, and jsdom's 0×0 rects
+make the projection unprovable in the a11y suite; the copy names canvas objects instead). Reduced
+motion is left entirely to CSS, as every other component in this repo does it. The `FirstRunExplainer`
+was NOT absorbed into chapter 0 — it gained a "Take the tour" button instead, which keeps a proven
+first-run gate rather than replacing it.
+
+**Still open (deliberately out of scope, as the plan said):** video/GIF, voiceover, per-step
+analytics, localisation, a mobile-specific tour. Also not built: an offered cleanup of the practice
+room on exit (the copy points at the layouts screen instead — a delete flow is the riskiest thing
+this feature could have grown, and the room is visible and clearly named).
+
+<details>
+<summary>The original design write-up (kept for the reasoning, now superseded by the shipped code)</summary>
+
+## 3-original. Guided tutorial mode — **P1 (high)**
 
 > *Owner's request:* a button, available at any time, that gives a tutorial and rundown of the app,
 > guides you where to click, creates an example, and shows all possible functionality.
@@ -241,6 +274,8 @@ header next to undo/redo, plus a "Take the tour" action in the first-run welcome
 
 Video/GIF, voiceover, per-step analytics, localisation, and a mobile-specific tour. Ship the spine
 and chapters 0–4 first; 5–7 can follow once the runner is proven.
+
+</details>
 
 ---
 
