@@ -2009,3 +2009,84 @@ Two findings were assessed and **not** acted on, with reasons: the reviewer's O(
 `docs/ideas.md` as a follow-up measurement rather than a speculative cap, because CLAUDE.md's own S18
 lesson is that a cap calibrated against a subset is a data-loss bug. And the "commits do not carry the
 Evidence block" note was simply premature: this entry is that block.
+
+
+---
+
+## Session 23 — 2026-07-28 — Seat furniture flush against a wall (`docs/ideas.md` §4)
+
+**What changed.** Dragging a furniture rect or the TV now takes the nearest wall's angle at 0.35 m of
+FACE clearance and seats flush at 0.15 m; Shift suppresses it. Doors and windows keep their own straddle
+magnet, lifted verbatim out of `SimCanvas` into `placement.ts`. `Drag['move-rc']` gained a **required**
+`rot0`.
+
+**Why it mattered more than the backlog said.** The owner supplied their real floorplan this session. It
+is almost entirely non-axis-aligned — every exterior wall skewed, the kitchen partition angled, the
+bathroom block rotated — so this is the primary furnishing gesture, not polish. And the app already had
+half of it: `arrange.ts` `wallSlots` auto-places at `rotation = atan2(dir)`, so "Decide for me" produced
+wall-aligned furniture while dragging by hand did not. This closed an inconsistency, not a gap.
+
+### Evidence block
+
+**Agents spawned (16).** Design workflow (13): 4 understand (drag-path · rotation-model · precedents ·
+test-surface) → 3 independent designs (minimal · ergonomic · invariant) → 3 judges (user · correctness ·
+fit; **unanimous** ergonomic > invariant > minimal) → synthesis → 2 skeptics. **Both skeptics returned
+defects** — `BROKEN` and `SOUND_WITH_FIXES`, 1 CRITICAL + 2 HIGH each, 15 total. Self-review (3):
+`code-reviewer` ISSUES_FOUND · `silent-failure-hunter` ISSUES_FOUND · data-safety `general-purpose`
+ISSUES_FOUND (core verdict CLEAN and proven).
+
+**Findings adjudicated against HEAD myself, not taken on trust.** Three skeptic claims were re-derived by
+hand before acceptance (`docs/sessions/S23/bench/refute.mjs`): the ⇧F quarter-turn is a no-op or a
+footprint-identical flip on all 7 probed wall angles · the `|gap|` gate releases a bed with a 0.163 m
+backward jump · a 0.7 m wall gets a 2.70 m capture window. All three upheld → `spec-v2-CORRECTED.md`.
+Two claims were **refuted**: a judge proved `bestspot.ts:31` uses `Math.abs`, so the `invariant` design's
+"the best-spot field collapses" TV justification is false (the branch was kept, the justification
+rewritten); and the S22 detection-corpus concern was out of scope.
+
+**Self-review defects fixed (2 real, 1 recorded).** (a) `normalizeAngle` on the no-seat path is an
+atan2(sin,cos) round-trip that is not bit-exact — **12.1 %** of in-range values are perturbed, silently
+rewriting rotation on every Shift-drag frame and contradicting the feature's headline invariant; the
+guarding test probed one lucky value. Fixed, test widened to 406 values with a measured failing value
+pinned by name, **negative control run** (restoring the old line fails 2 tests). (b) `q`/`e` mid-drag was
+silently reverted; fixed by re-basing `rot0` on an external write. (c) `wallSeatFor` is 96 lines against
+the 50-line guideline — recorded, not split: it is one cohesive loop at 100 % statement coverage.
+
+**Test count 1316 → 1354** (+38, `canvas/__tests__/wall-seat.test.ts`). Nothing skipped, `.only`'d or
+weakened. **Coverage:** `placement.ts` **100 % stmts / 93.7 % branch / 100 % funcs / 100 % lines**.
+`SimCanvas.tsx` stays at 24.2 % — pre-existing, it has no component tests (S10 owns that).
+
+**Gate (literal tails).** `npx eslint .` → 0 problems. `npm test` → `Test Files 67 passed (67) / Tests
+1354 passed (1354)`. `npm run build` → `dist/assets/index-CDf_Byay.js 478.25 kB │ gzip: 155.61 kB`,
+CSS `51.55 kB │ gzip: 9.56 kB` unchanged, HTML `1.31 kB`.
+
+**Live verification — 9/9, real headless Chrome.** The drag is rAF-throttled and the Browser-pane tab runs
+`document.hidden`, so it cannot be driven there (standing S4 lesson); `docs/sessions/S23/live-seat.mjs`
+drives real mouse events on a fresh profile (fresh origin ⇒ own IndexedDB ⇒ the owner's layouts are never
+read or written). On a −11.73° wall the sofa seated at **−11.730°** with a face gap of **1.11e-16 m**;
+Shift held rotation at 0.000° while still moving the piece 1.600 m; ⌘Z restored the pre-drag centre
+exactly. Artifacts: `docs/sessions/S23/shots/seat-0{1,2,3}-*.jpg`, `bench/live-seat.json`.
+
+**Acceptance.** *Align a rect's rotation to the nearest wall within a radius* → **met**. *Optionally seat
+its edge flush* → **met** (flush to 1.11e-16 m, live). *Undo returns the exact previous rotation* →
+**met structurally** (`rot0` + the existing gesture-scoped history group). *Must not fight the existing
+45°/5 cm snapping* → **met** (the 5 cm quantum moves onto the along-wall axis when seated; `settings.snap`
+honoured; the world grid is byte-unchanged when the magnet does not fire). *A no-op must not be silent* →
+**deferred to §4b** — that requirement is about the explicit command's disabled state, and the command
+did not ship. *Surfaced via a key / HUD button / magnetic drag* → **met via the magnetic drag**, one of
+the three options `ideas.md` names; the other two are §4b.
+
+**Deferred, each with its own acceptance in §4b:** the `f`/⇧F command (with the quarter turn applied
+AFTER the snap), the Inspector + touch-HUD buttons, the on-canvas snap guide, and creation-time
+alignment. Until §4b lands, the escape for a deliberately perpendicular piece is Shift-drag — real, and
+documented rather than hidden.
+
+**Found in passing, filed not folded:** `src/engine/generate/shell.ts:140` `edgeAngleDeg` returns DEGREES
+and `opening()` writes it into `RectObj.rotation`, which is RADIANS. Every non-horizontal generated door
+and window is drawn at the wrong angle (a vertical wall's opening renders at 116.62° instead of 90°), and
+generated windows are acoustically wrong too. `generate.test.ts:49` fingerprints `rotation` only for
+DETERMINISM, so it pins the wrong value's stability. Not folded in because the fix moves S22's
+determinism baselines; it needs its own block.
+
+**Stated honestly:** live checks ran ONE browser (headless Chrome), no real screen reader has ever been
+driven on this project, and detection has still never been run against the owner's own floorplan photo —
+they supplied it as a chat image this session, which the harness cannot read; it needs a file path.

@@ -70,9 +70,9 @@ say so.
 ## Commands
 
 - `npm run dev` — Vite (user usually has this running on :5173 already; autoPort will move yours)
-- `npm test` — vitest, **1316 tests** across TWO projects, all green as of 2026-07-28. `|node|` (pure logic) + `|dom|` (jsdom + axe, **10** files) — see `vite.config.ts` `test.projects`. Ratchet: never let the count drop (95→126→140→181→239→245→296→322→340→613→644→649→655→659→666→711→760→814→961→1084→**1316**). **S22 added +232.** Wall detection (+159): `engine/__tests__/detect.test.ts` **43** — the corpus regression (a per-fixture score FLOOR plus a mean floor, scored through the same instrument that measured the pre-S22 engine at 52.1 %), the refusal suite including *"does NOT refuse any legitimate plan in the corpus"*, and three NEGATIVE CONTROLS that must lower the score (duplicate every wall · add one cross-plan diagonal · outline the furniture) · `detect-score.test.ts` **20** — tests for the MEASURING INSTRUMENT itself, because every number in the S22 handoff rests on it: a perfect detection scores 1, an empty one 0, "every wall twice" ~0.5, a bbox-only answer visibly short, and the rasteriser is asserted deterministic AND seed-sensitive · `vision/__tests__/mask.test.ts` **21** (incl. the EXACT distance transform against a brute-force search, and *"separates a blob that TOUCHES a wall — which no component filter can"*) · `thin.test.ts` **12** (connectivity preserved on a thick ring, T- and X-junctions, a genuine fixed point) · `trace.test.ts` **21** (incl. *"THE TRAP: does not call a room OUTLINE annotation"* and the chamfered-corner control) · `regularize.test.ts` **31** (incl. *"THE ONE THAT MATTERS: leaves a genuinely angled wall alone"*) · `quality.test.ts` **11** (the pinned refusal thresholds). The generator (+58): `engine/generate/__tests__/generate.test.ts` **37** — incl. *"THE PAYOFF: never ships a placed-but-UNLOCKED pair"* (re-derived from the real `traceScene`→`computeAudio`, not from the flag), the VARIANT-D door proof measured end to end through `regionOf`, the listener-mirror check on every archetype, and the ZONE_AFFINITY name guard · `hooks/__tests__/useGenerateDesign.test.tsx` **11** (the ONLY store writer: preview writes nothing, keep adds exactly one, undo restores) · `gallery/__tests__/generate-dialog.a11y.test.tsx` **10** (PAGE-WIDE axe).
+- `npm test` — vitest, **1354 tests** across TWO projects, all green as of 2026-07-28. `|node|` (pure logic) + `|dom|` (jsdom + axe, **10** files) — see `vite.config.ts` `test.projects`. Ratchet: never let the count drop (95→126→140→181→239→245→296→322→340→613→644→649→655→659→666→711→760→814→961→1084→1316→**1354**). **S23 added +38** (`canvas/__tests__/wall-seat.test.ts`), **S22 added +232.** Wall detection (+159): `engine/__tests__/detect.test.ts` **43** — the corpus regression (a per-fixture score FLOOR plus a mean floor, scored through the same instrument that measured the pre-S22 engine at 52.1 %), the refusal suite including *"does NOT refuse any legitimate plan in the corpus"*, and three NEGATIVE CONTROLS that must lower the score (duplicate every wall · add one cross-plan diagonal · outline the furniture) · `detect-score.test.ts` **20** — tests for the MEASURING INSTRUMENT itself, because every number in the S22 handoff rests on it: a perfect detection scores 1, an empty one 0, "every wall twice" ~0.5, a bbox-only answer visibly short, and the rasteriser is asserted deterministic AND seed-sensitive · `vision/__tests__/mask.test.ts` **21** (incl. the EXACT distance transform against a brute-force search, and *"separates a blob that TOUCHES a wall — which no component filter can"*) · `thin.test.ts` **12** (connectivity preserved on a thick ring, T- and X-junctions, a genuine fixed point) · `trace.test.ts` **21** (incl. *"THE TRAP: does not call a room OUTLINE annotation"* and the chamfered-corner control) · `regularize.test.ts` **31** (incl. *"THE ONE THAT MATTERS: leaves a genuinely angled wall alone"*) · `quality.test.ts` **11** (the pinned refusal thresholds). The generator (+58): `engine/generate/__tests__/generate.test.ts` **37** — incl. *"THE PAYOFF: never ships a placed-but-UNLOCKED pair"* (re-derived from the real `traceScene`→`computeAudio`, not from the flag), the VARIANT-D door proof measured end to end through `regionOf`, the listener-mirror check on every archetype, and the ZONE_AFFINITY name guard · `hooks/__tests__/useGenerateDesign.test.tsx` **11** (the ONLY store writer: preview writes nothing, keep adds exactly one, undo restores) · `gallery/__tests__/generate-dialog.a11y.test.tsx` **10** (PAGE-WIDE axe).
 - `npm run lint` — **(S5)** flat ESLint (`eslint.config.js`): @eslint/js + typescript-eslint + eslint-plugin-react-hooks `recommended-latest`, scoped to `src`, ignoring `.claude`/`dist`/`coverage`. Clean (0 problems) as of 2026-07-19. exhaustive-deps is enforced; 5 documented survivor suppressions remain (SimCanvas:250/398 mount-once, Toast/Menu/LayoutGallery/ScenarioCompare mount-once) — see each file.
-- `npm run build` — tsc --noEmit + vite build (**476.00 kB / 154.75 kB gzip** JS + **51.55 kB / 9.56 kB gz** CSS + **1.31 kB** HTML after S22; JS +26.69 kB / +9.54 kB gz and CSS +2.21 kB / +0.39 kB gz vs S21's 449.31/145.21 + 49.34/9.17 for the whole `engine/vision/` directory (types/mask/thin/trace/regularize/quality), the rewritten `engine/detect.ts`, the whole `engine/generate/` directory (rng/archetypes/tile/shell/names/pair/index), `hooks/useWallDetection.ts` + `hooks/useGenerateDesign.ts`, `canvas/DetectionProposalCard.tsx` + `gallery/GenerateDialog.tsx` and their CSS. Everything under `engine/__tests__/fixtures/` (the floorplan rasteriser, the corpus and the accuracy score) is TEST-ONLY and tree-shakes out. Prior baseline: **449.31 kB / 145.21 kB gzip** JS + **49.34 kB / 9.17 kB gz** CSS + **1.31 kB** HTML after S21; JS +20.80 kB / +6.85 kB gz and CSS +4.11 kB / +0.58 kB gz vs S20's 427.43/138.02 + 44.84/8.52 for the whole `components/tutorial/` directory (types/machine/progress/steps/actions/spotlight + the three components + `tutorial.css`), `hooks/useTutorial.ts`, and the header/welcome wiring. Prior baseline: **427.43 kB / 138.02 kB gzip** JS + **44.84 kB / 8.52 kB gz** CSS + **1.31 kB** HTML after S20; JS +13.58 kB / +4.48 kB gz vs S19's 413.85/133.54 for `engine/projects.ts` + `engine/ids.ts` + the widened `seed.ts` + the N-up `ScenarioCompare` + `compare-summary.ts`/`compute-scenario.ts`/`column-gate.ts` + `hooks/useProjectActions.ts` + the folder-grouped gallery. `npm run test:coverage` is now scoped to `src/**` so gitignored session scratch cannot skew the figure the protocol asks to be pasted. Prior baseline: **413.85 kB / 133.54 kB gzip** JS + **43.18 kB / 8.24 kB gz** CSS + **1.31 kB** HTML after S19; JS +2.13 kB / +0.83 kB gz vs S18's 411.72/132.71 for the new `engine/reflection.ts`, the three `t`-only helpers in `geometry.ts`, and the two caller-level skips. Prior baseline: **411.72 kB / 132.71 kB gzip** after S18; +1.0 kB / +0.36 kB gz vs S17's 410.66/132.32 for `engine/grid.ts` + the two call sites. Prior baseline for context: **410.66 kB / 132.32 kB gzip** after S17; JS +~2.5 kB gz vs S8's 130.1 for the new `canvas/door-swing.ts` module + the door inspector branch + the opening tool. Pre-S8 baseline for context: **403.5 kB / 130.1 kB gz**; JS +0.6 kB gz for `importRejection`/`cleanVec`/`clampSpan`, HTML 0.87→1.31 kB for the injected CSP meta. `src/security-headers.ts` is BUILD/TEST-ONLY — imported by `vite.config.ts`, never by a client module, so it does not reach the bundle (verified by grep against `dist/assets/*.js`). Pre-S8 was ~402 kB / 129.5 kB gz; JS +2.4 kB gz / CSS +0.19 kB gz vs S16 for `selection-cycle.ts`/`placement.ts`/`canvas-help.ts`/`announce.ts`/`useAnnouncer.ts`/`LiveAnnouncer.tsx` + the a11y CSS). `src/styles/contrast.ts` and everything under `src/test/` are TEST-ONLY and tree-shake out of the bundle. Self-hosted fonts are static assets in `public/fonts/` (7 Latin-subset woff2 + `LICENSE.md`, ~148 kB total, 2 preloaded ≈36 kB — NOT in the JS/CSS bundle). Run all four (lint/test/build) before claiming done.
+- `npm run build` — tsc --noEmit + vite build (**478.25 kB / 155.61 kB gzip** JS + **51.55 kB / 9.56 kB gz** CSS + **1.31 kB** HTML after S23; JS +2.25 kB / +0.86 kB gz and CSS UNCHANGED vs S22's 476.00/154.75 for the `wallSeatFor`/`moveObjectTo`/`openingMagnetFor` additions to `canvas/placement.ts` and the `move-rc` rewiring in `SimCanvas.tsx`. Prior baseline: **476.00 kB / 154.75 kB gzip** JS + **51.55 kB / 9.56 kB gz** CSS + **1.31 kB** HTML after S22; JS +26.69 kB / +9.54 kB gz and CSS +2.21 kB / +0.39 kB gz vs S21's 449.31/145.21 + 49.34/9.17 for the whole `engine/vision/` directory (types/mask/thin/trace/regularize/quality), the rewritten `engine/detect.ts`, the whole `engine/generate/` directory (rng/archetypes/tile/shell/names/pair/index), `hooks/useWallDetection.ts` + `hooks/useGenerateDesign.ts`, `canvas/DetectionProposalCard.tsx` + `gallery/GenerateDialog.tsx` and their CSS. Everything under `engine/__tests__/fixtures/` (the floorplan rasteriser, the corpus and the accuracy score) is TEST-ONLY and tree-shakes out. Prior baseline: **449.31 kB / 145.21 kB gzip** JS + **49.34 kB / 9.17 kB gz** CSS + **1.31 kB** HTML after S21; JS +20.80 kB / +6.85 kB gz and CSS +4.11 kB / +0.58 kB gz vs S20's 427.43/138.02 + 44.84/8.52 for the whole `components/tutorial/` directory (types/machine/progress/steps/actions/spotlight + the three components + `tutorial.css`), `hooks/useTutorial.ts`, and the header/welcome wiring. Prior baseline: **427.43 kB / 138.02 kB gzip** JS + **44.84 kB / 8.52 kB gz** CSS + **1.31 kB** HTML after S20; JS +13.58 kB / +4.48 kB gz vs S19's 413.85/133.54 for `engine/projects.ts` + `engine/ids.ts` + the widened `seed.ts` + the N-up `ScenarioCompare` + `compare-summary.ts`/`compute-scenario.ts`/`column-gate.ts` + `hooks/useProjectActions.ts` + the folder-grouped gallery. `npm run test:coverage` is now scoped to `src/**` so gitignored session scratch cannot skew the figure the protocol asks to be pasted. Prior baseline: **413.85 kB / 133.54 kB gzip** JS + **43.18 kB / 8.24 kB gz** CSS + **1.31 kB** HTML after S19; JS +2.13 kB / +0.83 kB gz vs S18's 411.72/132.71 for the new `engine/reflection.ts`, the three `t`-only helpers in `geometry.ts`, and the two caller-level skips. Prior baseline: **411.72 kB / 132.71 kB gzip** after S18; +1.0 kB / +0.36 kB gz vs S17's 410.66/132.32 for `engine/grid.ts` + the two call sites. Prior baseline for context: **410.66 kB / 132.32 kB gzip** after S17; JS +~2.5 kB gz vs S8's 130.1 for the new `canvas/door-swing.ts` module + the door inspector branch + the opening tool. Pre-S8 baseline for context: **403.5 kB / 130.1 kB gz**; JS +0.6 kB gz for `importRejection`/`cleanVec`/`clampSpan`, HTML 0.87→1.31 kB for the injected CSP meta. `src/security-headers.ts` is BUILD/TEST-ONLY — imported by `vite.config.ts`, never by a client module, so it does not reach the bundle (verified by grep against `dist/assets/*.js`). Pre-S8 was ~402 kB / 129.5 kB gz; JS +2.4 kB gz / CSS +0.19 kB gz vs S16 for `selection-cycle.ts`/`placement.ts`/`canvas-help.ts`/`announce.ts`/`useAnnouncer.ts`/`LiveAnnouncer.tsx` + the a11y CSS). `src/styles/contrast.ts` and everything under `src/test/` are TEST-ONLY and tree-shake out of the bundle. Self-hosted fonts are static assets in `public/fonts/` (7 Latin-subset woff2 + `LICENSE.md`, ~148 kB total, 2 preloaded ≈36 kB — NOT in the JS/CSS bundle). Run all four (lint/test/build) before claiming done.
 
 **GitHub (as of 2026-07-19):** the repo is public at **github.com/rayancheca/phantom-lock** (`origin`, default
 branch `main`). The owner wants visible contribution activity, so **push `main` after every session lands the
@@ -275,7 +275,8 @@ become the loophole that reintroduces the cross-mode leak S14 structurally remov
   tie-broken) so the order can't shift under a user mid-cycle. This is what makes walls/furniture/inactive seats
   reachable at all — before S7 they were pointer-only.
 - `canvas/placement.ts` — `SNAP_STEP`/`snapPoint`/`surfaceHeightAt`/`keyboardPlacementPoint`/`placeSpeakerAt`/
-  `openingOnWall`. `surfaceHeightAt` MOVED out of SimCanvas (it only ever read `scene.objects`), and the POINTER
+  `openingOnWall`. **(S23) plus the wall-seat magnet:** `normalizeAngle`/`wallSeatFor`/`moveObjectTo`/
+  `openingMagnetFor` + `DRAG_SEAT`/`WALL_ALIGN_GAP_M` 0.35/`WALL_SEAT_GAP_M` 0.15 — see the S23 lessons. `surfaceHeightAt` MOVED out of SimCanvas (it only ever read `scene.objects`), and the POINTER
   path now calls the same `placeSpeakerAt`, so the furniture z-snap cannot drift between the two paths.
   `keyboardPlacementPoint` puts the first two pods at **±30°** in front of the seat (a real 60° triangle, so two
   `p` presses + "Pair as stereo" can actually LOCK), then walks the **golden angle** so no finite count collides.
@@ -353,6 +354,69 @@ because its gate is *reachability*, not geometry. Follow-up: `docs/ideas.md` §2
 30+ minutes at the ceiling) is now the single worst unbounded path left — `docs/ideas.md` §2c.
 
 ## Hard-won lessons
+
+- **A magnet's band must be gated on the SIGNED gap, never `|gap|` (S23):** an absolute-value gate
+  gives the band a NEAR edge as well as a far one, so pushing a piece FURTHER into a wall walks it
+  SEAT → align → nothing. Measured on a 2.0×1.6 bed against a 13° wall: at 0.65 m of centre offset the
+  seat released and the centre jumped **0.163 m BACKWARD** — larger than the seat band itself, so the
+  design's own "provable jump bound" was false — and below 0.45 m the rotation reverted to its pre-drag
+  value while the bed was half-buried in the wall. At the default 60 px/m that is a 9 px overshoot to
+  lose the seat and 21 px to lose the angle, well inside ordinary mouse slop, and "shove it harder to
+  make sure it's stuck" is exactly the gesture a magnet invites. Gate on `gap <= band` and a piece
+  pushed past flush simply stays seated and is pulled back out.
+- **Snap to the nearest HALF turn, not the nearest quarter turn — and the owner's building decides it
+  (S23):** on a plan rotated as a whole, every wall lies in the SAME quarter-turn class (22° and 112°
+  differ by exactly 90°). So under nearest-π/2 the face a piece presents to a wall is fixed forever by
+  its birth rotation, and `App.tsx` hardcodes every palette drop to `rotation: 0` — a sofa dropped on a
+  22° plan lands parallel to the 22° walls and **perpendicular** to the 112° walls, sticking a metre
+  into the room, and dragging it to another wall never fixes it. Nearest-π puts `w` along the wall
+  unconditionally, which is what `arrange.ts` `wallSlots`, `interaction.ts` `makeOpening` and
+  `generate/shell.ts` already do. Half the owner's walls would otherwise refuse to seat anything.
+- **A quarter-turn applied to the INPUT of a nearest-π snap is annihilated by it (S23):** `k =
+  round((θ + π/2 − θw)/π)` just shifts `k` by an integer, landing in the same π-class. Measured over 7
+  wall angles with the Sofa preset: a literal **no-op** on 13/22/37/68° walls, and on 0/104/−11.73° a
+  180° flip whose four `rectCorners` are **bit-identical** — so the advertised "turn it a quarter turn"
+  key does nothing, on every wall, while still pushing an undo entry and jumping the Inspector's
+  rotation slider 180°. Apply the turn AFTER the snap and derive `halfPerp`/`halfAlong` from the result.
+  This mattered because the whole justification for choosing π over π/2 was "⇧F covers the residual
+  ambiguity" — a design that rests on an escape hatch must verify the hatch opens.
+- **A wall shorter than the piece will capture the floor around it unless you require real OVERLAP
+  (S23):** an accept window of `along ∈ (−halfAlong, L + halfAlong)` is `2·halfAlong` WIDER than the
+  wall, so a 0.7 m closet wall gets a **2.70 m capture window — 3.9× its own length** — and a 2 m sofa
+  parked in open floor gets yanked onto it. Require
+  `overlap = min(along+halfAlong, L) − max(along−halfAlong, 0) ≥ min(halfAlong, L/2)` and clamp the
+  output. `arrange.ts:151` already restricts its own wall slots to `t ∈ [0.12, 0.88]` for exactly this
+  reason — when the app's own model already disagrees with your design, the model is usually right.
+- **`Math.atan2(Math.sin(r), Math.cos(r))` is NOT bit-exact, and a one-value test will not catch it
+  (S23):** measured, **12.1 %** of values already inside (−π, π] come back perturbed by ~4e-16. Calling
+  it on a no-op path silently rewrote the rotation on every frame of a Shift-drag — contradicting the
+  exact invariant the feature advertises ("leaving a wall's field restores the identical float"). The
+  test that was supposed to guard it probed the single value `0.4211`, which happens to be one of the
+  87.9 % that survive, so it **passed by luck**. Sweep the range, and pin a measured failing value by
+  name. This is the S19/S22 "the corpus follows the code's guards" lesson landing on a fresh diff.
+- **A drag that writes a field every frame silently reverts any OTHER writer of that field (S23):**
+  `keyboard.ts`'s `q`/`e` needs only an object selection, which pointerdown has just set, so a rotate
+  can land mid-gesture — and because every frame re-derives rotation from the pointerdown-captured
+  `rot0`, the next pointermove threw it away. Pre-S23 the branch wrote only `center`, so it survived.
+  Fix by comparing the object's live value against what the branch ITSELF last wrote: different means
+  someone else wrote it, so re-base. That keeps the gesture a pure function of its inputs (an external
+  edit re-bases it, its own output never does) instead of degrading into a feedback loop. Reset the
+  marker per GESTURE, not per mount.
+- **Read the app's real store, not the seed you wrote (S23):** a live harness that seeded
+  `localStorage['phantom-lock:v2']` and then asserted against that same key measured **nothing** — the
+  app autosaves to IndexedDB and never writes the legacy key again, so the read returned the frozen
+  seed forever and every assertion would have passed against a value the app never produced. Worse, on
+  a pristine origin the app ignores that key entirely and seeds its own first-run demo. Boot once, write
+  the probe layout straight into IDB, reload (it is no longer a first run), and assert the layout
+  switcher actually shows your layout's name before trusting a single number.
+- **Locate a canvas object by CONSEQUENCE, not by pixel maths or DOM selectors (S23):** deriving the
+  world→screen transform means re-implementing the app's fit logic in the harness, and probing for a
+  selection through `.inspector`-style selectors guesses at markup. Instead sweep candidate points,
+  drag each by ~30 px, and check whether the TARGET object's stored centre changed — then ⌘Z back. It
+  cannot silently test the wrong object, it needs no knowledge of the view, and it survives markup
+  changes. The drag direction still has to match the app's axis convention (+y is DOWN here), which one
+  run's numbers will tell you immediately.
+
 
 - **A component filter cannot separate furniture from a wall it TOUCHES; local thickness can (S22):** the old
   detector rejected furniture by BOUNDING-BOX SPAN, which a sofa passes, and no component-level rule (span, area,
@@ -687,10 +751,13 @@ efficiency only matters if the app gets slow.** It must be read-only and touch n
 
 ## Other known gaps (backlog)
 
-**Unscheduled ideas live in `docs/ideas.md`, prioritized.** As of S22 there is **no P0 left**: the last one
-(auto-detect accuracy) landed. The head of the queue is now P1 snap-furniture-to-a-wall's-angle, then the
-export-all bundle IMPORTER, multi-tab folder loss, the last wall-heavy CPU residual, and an `App.tsx`
-decomposition (it is **1290** lines against a 800 cap).
+**Unscheduled ideas live in `docs/ideas.md`, prioritized.** As of S23 there is **no P0 left** and the P1
+drag-magnet has landed. The head of the queue is now **§4b** — the explicit seat COMMAND (`f`/⇧F with the
+quarter turn applied AFTER the snap, plus the Inspector and touch-HUD buttons and the on-canvas snap
+guide) — then creation-time alignment (`App.tsx:446` and `SimCanvas.tsx:1015` both hardcode `rotation: 0`,
+so on a skewed plan every new rect arrives crooked before any drag), the export-all bundle IMPORTER,
+multi-tab folder loss, the last wall-heavy CPU residual, and an `App.tsx` decomposition (**1290** lines
+against an 800 cap).
 
 - **(S22 done)** Auto-detect walls rebuilt: **52.1 % → 95.6 %** on the enumerated corpus, and it now REFUSES an
   image with no floorplan rather than emitting 61 confident walls. The proposal is reviewable (per-wall strike-off,

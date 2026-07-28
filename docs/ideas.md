@@ -17,7 +17,8 @@ effort — a small high-value item beats a large one.
 | 2c | Bound `traceScene` + `arrange.openSlots` | P2 | ½ session |
 | 3 | **Guided tutorial mode** | **P1 — high** | 1–2 sessions |
 | 3b | ✅ **Door width + swing angle** (owner-requested) — **DONE S17** (G2f corridors deferred) | ~~P1~~ done | — |
-| 4 | Snap furniture to a wall's angle | **P1 — high** | ½ session |
+| 4 | ✅ **Snap furniture to a wall's angle** — **DONE S23** (drag half; `f` command → 4b) | ~~P1~~ done | — |
+| 4b | The explicit seat COMMAND (`f`/⇧F + Inspector/HUD buttons + snap guide) | **P1 — high** | ½ session |
 | 11 | ✅ **Generate a design** (owner-requested randomizer) — **DONE S22** | ~~P1~~ done | — |
 | 5 | Read-only 3D view | P2 | 1 session *(plan exists)* |
 | 6 | Component/hook tests | P2 | 1 session |
@@ -378,23 +379,54 @@ says so verbatim. `doorOpen` stays the sole acoustic switch — the honest, test
 
 </details>
 
-## 4. Snap furniture to a wall's angle — **P1 (high)**
+## 4. Snap furniture to a wall's angle — ✅ **DONE (S23)**, the drag half
 
-The deeper fix behind the rotation problem the owner hit ("I'm angling the bed but it never sits
-flush against the wall"). S8 dropped the rotate step from 5° to 1° with hold-to-sweep, which makes
-it *achievable* — but the user is still eyeballing an angle the app already knows exactly.
+The owner's complaint — *"I'm angling the bed but it never sits flush against the wall"* —
+turned out to understate it. Their real floorplan, supplied this session, is almost
+**entirely** non-axis-aligned: every exterior wall skewed, the kitchen partition angled, the
+bathroom block rotated. So this was never polish; it is the primary furnishing gesture, and
+the 5 cm world grid is useless perpendicular to a 13° wall (the lattice projects onto that
+normal quasi-densely, so there is no reachable zero).
 
-Proposal: with a rect selected, offer **align to nearest wall** — snap the rect's rotation to the
-angle of the nearest wall within some radius, and optionally seat its edge flush against that wall.
-Surfacing options: a key (`f` for flush?), a button on the selection HUD, or a magnetic snap while
-dragging when the rect comes within a few centimetres of a wall.
+The app already had HALF of it: `arrange.ts` `wallSlots` places AUTO-arranged furniture at
+`rotation = atan2(dir)` offset along the inward normal. So "Decide for me" produced
+wall-aligned furniture while dragging by hand did not — an inconsistency, not a missing
+feature. S23 applies that same convention to the drag path.
 
-Small, well-bounded, and directly removes the friction that prompted the fix. Worth doing before the
-tutorial, because the tutorial would otherwise have to teach the workaround.
+**Shipped:** drag a furniture rect or the TV within 0.35 m FACE clearance and it takes the
+wall's angle; within 0.15 m it seats flush. Shift suppresses. Doors/windows keep their own
+straddle magnet, lifted verbatim out of `SimCanvas` and pinned by a characterization oracle
+(5 000 randomised triples, bitwise) because it had shipped with zero coverage.
 
-Design notes: it needs an "undo returns the exact previous rotation" guarantee, must not fight the
-existing 45°/5 cm grid snapping, and should be a no-op (not a silent nothing) when no wall is near —
-the S14 lesson about disabling an affordance rather than letting it silently do nothing.
+**Three properties are load-bearing**, each pinned by a test, and each was forced by a
+measurement rather than chosen:
+
+- **`Drag['move-rc'].rot0` is REQUIRED** and every frame snaps from it, so the per-frame
+  transform is a pure function of the gesture rather than a feedback loop over its own
+  output. Leaving a wall's field restores the identical float; one ⌘Z restores centre and
+  rotation together, so `ideas.md`'s old *"undo returns the exact previous rotation"*
+  requirement is met **structurally**.
+- **The gate is on the SIGNED gap.** An `|gap|` gate gives the band a NEAR edge, so shoving
+  a piece harder into a wall RELEASES it — measured, a bed jumped **0.163 m backward**
+  (larger than the seat band itself) and then un-rotated while half-buried.
+- **A candidate needs real footprint overlap.** Without it a 0.7 m closet wall gets a 2.70 m
+  capture window — **3.9× its own length** — and acts as a magnet over the surrounding floor.
+
+**Nearest-π, not nearest-π/2**, and that is forced by the owner's plan: on a building rotated
+as a whole every wall shares one quarter-turn class, so under nearest-π/2 a piece born at
+`rotation: 0` (which `App.tsx:446` hardcodes for every palette drop) lands **across** half the
+walls and dragging never fixes it. Verified over both wall classes of a 22° building.
+
+**Deferred to §4b, each with its own acceptance:** the explicit `f`/⇧F command, the Inspector
+and touch-HUD buttons, and the on-canvas snap guide. Note the quarter-turn must be applied
+AFTER the snap — a skeptic proved that adding π/2 to the INPUT of a nearest-π snap is
+annihilated by it (a literal no-op on 13/22/37/68° walls, a footprint-identical 180° flip on
+the rest). Until §4b lands, the escape for a deliberately perpendicular piece is Shift-drag,
+which holds `rot0` exactly — real, and documented rather than hidden.
+
+Also deferred: **creation-time alignment**. `App.tsx:446` and `SimCanvas.tsx:1015` both
+hardcode `rotation: 0`, so on a skewed plan every new rect still arrives crooked before any
+drag. Same helper, ~2 more call sites, probably the next-biggest everyday win.
 
 ---
 
