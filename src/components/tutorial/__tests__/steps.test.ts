@@ -159,6 +159,35 @@ describe('tutorial corpus invariants', () => {
     }
   });
 
+  it('every chapter that writes to a scene is marked needsPractice', () => {
+    // THE DATA-SAFETY INVARIANT. Chapters are independently launchable from the
+    // menu, so a user can jump straight into one — and any scene-writing action
+    // it performs would land on whatever layout is active, which is THEIR work.
+    // Marking the chapter makes the runner enter the disposable practice room
+    // first. Without this, "the tutorial mutates no layout the user created" is
+    // false for every chapter but the first.
+    const WRITES = new Set(['place-two-pods', 'pair-them', 'break-lock', 'clear-speakers', 'add-seat']);
+    for (const c of CHAPTERS) {
+      const writes = c.steps.some((s) => (s.act && WRITES.has(s.act)) || (s.rescue && WRITES.has(s.rescue)));
+      if (writes) {
+        expect(c.needsPractice, `chapter ${c.id} writes to a scene but is not marked needsPractice`).toBe(true);
+      }
+    }
+  });
+
+  it('at least one chapter actually writes — the invariant above is not vacuous', () => {
+    expect(CHAPTERS.some((c) => c.needsPractice)).toBe(true);
+  });
+
+  it('a chapter that needs the practice room does not also open the gallery first', () => {
+    // Entering the practice room switches the active layout; doing that while
+    // the full-screen gallery is open would move the ground under the user.
+    for (const c of CHAPTERS) {
+      if (!c.needsPractice) continue;
+      expect(c.steps[0].act === 'open-gallery').toBe(false);
+    }
+  });
+
   it('a show step that declares an action names one the runner can perform', () => {
     const known = new Set([
       'practice-room',

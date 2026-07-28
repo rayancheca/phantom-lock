@@ -145,6 +145,15 @@ export default function TutorialRunner({
   const onStart = useCallback(
     (chapterId: string) => {
       actedRef.current = null;
+      // DATA SAFETY: chapters are independently launchable, so a chapter that
+      // writes to a scene must land in the disposable practice layout FIRST —
+      // otherwise jumping straight to it from the menu edits whatever layout is
+      // active, which is the user's own work. Doing it here (rather than relying
+      // on the chapter's first step) covers entry from the menu, which is the
+      // only way a later chapter is ever reached.
+      if (CHAPTERS.find((c) => c.id === chapterId)?.needsPractice) {
+        cbRef.current.onAction('practice-room');
+      }
       dispatch({ type: 'start', chapterId });
       cbRef.current.onCloseMenu();
     },

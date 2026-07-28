@@ -86,13 +86,14 @@ export const CHAPTERS: TutorialChapter[] = [
     id: 'lock',
     title: 'Reach the lock',
     summary: 'The main event: build a pair from scratch and watch it lock.',
+    needsPractice: true,
     steps: [
       {
         id: 'lock-practice',
         kind: 'show',
         title: 'A practice room, so nothing of yours is touched',
         body:
-          'I have made a separate design called “Tutorial practice room” and switched to it. Everything from here happens in that room — none of your own designs are changed. You can delete it when we are done.',
+          'I have made a separate design called “Tutorial practice room” and switched to it. Everything from here happens in that room, so none of your own designs are changed. Delete it whenever you like from the layouts screen.',
         anchor: { kind: 'dom', selector: SEL.layoutSwitcher, label: 'the layout switcher' },
         mode: 'tune',
         act: 'practice-room',
@@ -276,6 +277,9 @@ export const CHAPTERS: TutorialChapter[] = [
     id: 'compare',
     title: 'Compare two setups',
     summary: 'A second seat, and reading two verdicts side by side.',
+    // Adds a listening spot, which is a scene write — so this chapter must land
+    // in the practice room first even when entered straight from the menu.
+    needsPractice: true,
     steps: [
       {
         id: 'compare-seat',

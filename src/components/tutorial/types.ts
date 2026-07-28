@@ -118,5 +118,16 @@ export interface TutorialChapter {
   title: string;
   /** One line in the chapter menu — what you will learn. */
   summary: string;
+  /**
+   * This chapter writes to a scene, so the runner MUST enter the disposable
+   * practice layout before its first step.
+   *
+   * Load-bearing for data safety, not a convenience: chapters are independently
+   * launchable from the menu, so a user can jump straight into one — and a
+   * scene-writing action would otherwise land on whatever layout happens to be
+   * active, which is their own work. `steps.test.ts` asserts that every chapter
+   * containing a writing action carries this flag.
+   */
+  needsPractice?: boolean;
   steps: TutorialStep[];
 }
