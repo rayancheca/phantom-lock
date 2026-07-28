@@ -10,7 +10,7 @@ effort — a small high-value item beats a large one.
 
 | # | Idea | Priority | Effort |
 |---|---|---|---|
-| 1 | Auto-detect walls accuracy overhaul | **P0 — broken feature** | 1 session *(scheduled as S12)* |
+| 1 | ✅ **Auto-detect walls accuracy overhaul** — **DONE S22** (52.1 % → 95.6 %, and it refuses) | ~~P0~~ done | — |
 | 2 | ✅ **Grid-loop iteration cap** — **DONE S18** (safety half; slowness half → 2b) | ~~P0~~ done | — |
 | 2b | ✅ **Bound the reflection search** (`bestReflectionDb`) — **DONE S19** (50-room 13.7 s → ~0.5 s) | ~~P1~~ done | — |
 | 2d | Close the last wall-heavy residual (12–14 s → <10 s): `bestPairSpot`'s 32 null sweeps | P2 | ½ session |
@@ -18,6 +18,7 @@ effort — a small high-value item beats a large one.
 | 3 | **Guided tutorial mode** | **P1 — high** | 1–2 sessions |
 | 3b | ✅ **Door width + swing angle** (owner-requested) — **DONE S17** (G2f corridors deferred) | ~~P1~~ done | — |
 | 4 | Snap furniture to a wall's angle | **P1 — high** | ½ session |
+| 11 | ✅ **Generate a design** (owner-requested randomizer) — **DONE S22** | ~~P1~~ done | — |
 | 5 | Read-only 3D view | P2 | 1 session *(plan exists)* |
 | 6 | Component/hook tests | P2 | 1 session |
 | 10 | ✅ **Projects (folders) + N-up compare** (owner-requested) — **DONE S20** | ~~P1~~ done | — |
@@ -30,13 +31,33 @@ effort — a small high-value item beats a large one.
 
 ---
 
-## 1. Auto-detect walls accuracy overhaul — **P0**
+## 1. Auto-detect walls accuracy overhaul — ✅ **DONE (S22)**
 
-Already scheduled as **Session 12** with a full diagnosis; see the kickoff in
-[`kickoff-session-12.md`](kickoff-session-12.md). Listed here only so the priority ordering is
-complete. It is P0 because it is a headline feature that currently returns an unusable tangle on a
-real floorplan — the owner hit this in a cold clickthrough and the only available action was
-"Discard".
+Rebuilt around thinning and connected tracing rather than a global Hough transform. Measured against
+a new code-generated corpus with exact ground truth (`src/engine/__tests__/fixtures/`), scored through
+an intersection-over-union on wall LENGTH:
+
+| | before | after |
+|---|---|---|
+| mean over 20 fixtures | **52.1 %** | **95.6 %** |
+| furnished plan | 26.6 % | 99.8 % |
+| cavity (double-drawn) walls | 41.1 % | 100 % |
+| an image with NO floorplan | **61 walls emitted** | **refused** |
+| a plan shot 22° off-square | 16.8 % | 84.9 % |
+| cost | 1 288 ms / corpus | 850 ms / corpus |
+
+The proposal is now REVIEWABLE — a confidence readout, three named sensitivity levels, and per-wall
+strike-off before anything is committed.
+
+**Not delivered, and worth naming:** detection has never been run against the owner's own floorplan
+photo — every number above is from the synthetic corpus. The harness takes one directly:
+`score-corpus.ts --image <file.png>`. Two fixtures also remain below 92 %: `hatched` (91.6 %) and
+`apartment-cluttered` (82.3 %). Both lose PRECISION or coverage rather than duplicating, so the
+failure direction is "a couple extra to delete" — never the tangle the feature used to produce.
+
+The Session-12 acceptance bullet *"the detected result is committed through `integrateWall`"* was
+deliberately RETIRED rather than met: measured, feeding N detected walls through it produces N²/2
+objects, and `joinCorners` already makes corners meet. See the S22 lesson in `CLAUDE.md`.
 
 ## 2. Grid-loop iteration cap — ✅ **DONE (S18)**, safety half only
 
@@ -439,3 +460,50 @@ projects list older than the stored one is the cheapest sound option.
 S20 did reduce the exposure: `saveMeta` now runs FIRST in the persist cycle, so a torn write leaves a
 folder with no members (invisible, self-correcting) rather than layouts pointing at a folder the meta
 row has never heard of.
+
+## 11. Generate a design — ✅ **DONE (S22)**
+
+Owner-requested: *"a create or randomize button that makes designs for you. either from a selection
+of hundreds or randomly generated ones."* Shipped as both — eight hand-authored archetypes crossed
+with randomised envelopes, room tiling, doors, windows, furniture and a verified stereo pair,
+deterministic per 32-bit seed so any design can be returned to by typing its seed back in.
+
+Measured over 480 designs (`docs/sessions/S22/bench/gen-bench.txt`):
+
+```
+480 designs: locked 420 (88%) · importRejected 0 · mirror-desync 0 · sanitize-loss 0
+distinct shells among these seeds: 477/480
+mean 3.9 ms/design, worst 18.5 ms
+same seed -> identical geometry: true
+```
+
+**Follow-ups worth having, none blocking:**
+
+- the three single-room archetypes (`studio`, `cinema`, `office`) get their variety from
+  `ShapeVariant` (`l-notch`, `alcove`) rather than from room cuts. That works, but the space is
+  narrower than the multi-room archetypes and a user rerolling `office` will notice sooner.
+- the 12 % of designs that ship with no speakers land on the existing "Nothing to analyze yet"
+  empty state. Honest, but a line saying *why* ("this room is too small for a 60° triangle") would
+  be better than silence.
+- the arranger's first-reflection-absorber layer never fires, because furniture is placed before
+  speakers (deliberate — `fits()` cannot see speakers, so the other order drops a wardrobe on a
+  HomePod). A second arrange pass after the pair lands would recover it.
+
+## 12. Measure detection's worst case, then decide whether it needs a cap — **P2**
+
+The S22 self-review raised a real shape without a real reproduction: nothing caps how many candidate
+segments `skeletonToSegments` hands to `regularize`, and `mergeCollinear` degrades toward O(n²) when
+segments do not collapse onto shared lines, while `joinCorners` and `structureScore` are
+unconditionally O(n²) over whatever survives. `WORK_MAX` (900 px) plus the thickness and
+small-component filters bound the input hard, and every corpus fixture stays in the tens of segments —
+but a densely-textured photo (fine hatching that never closes, a photographed rug, heavy scan noise)
+is the shape that could survive as thousands of short non-collinear strokes.
+
+**No cap was added, deliberately.** S18's lesson is that a cap calibrated against a subset is a
+data-loss bug, and the protected set here is not yet enumerated. The right order is: build the
+adversarial images, measure, and only then decide — exactly what `docs/security.md` §"Worst-case CPU"
+does for the engine.
+
+**Acceptance:** a measured worst case for `detectWalls` at `WORK_MAX`, written into `docs/security.md`
+alongside the engine's; and if it exceeds the INP budget, a bound whose protected set is enumerated as
+corpus fixtures rather than asserted.

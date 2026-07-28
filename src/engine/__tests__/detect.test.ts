@@ -187,15 +187,26 @@ const FLOORS: Record<string, number> = {
 
 const MEAN_FLOOR = 0.92;
 
+/**
+ * The whole corpus, detected ONCE at module scope.
+ *
+ * Not a micro-optimisation. Re-running detection inside each `it` passed under
+ * `npm test` and TIMED OUT under `npm run test:coverage`, where v8
+ * instrumentation makes the same work several times slower — the S18 lesson in
+ * a new costume. Computing once removes the duplication instead of raising a
+ * timeout to paper over it.
+ */
+const RESULTS = corpusFixtures().map((f) => {
+  const res = detectWalls(f.img);
+  // A refusal is what the user gets, so it is what gets scored. Scoring the raw
+  // segments while the app would have shown nothing is exactly how a
+  // wrongly-fired refusal stays invisible.
+  const segs = res.quality.refusal ? [] : res.segments;
+  return { f, res, d: scoreDetection(segs, f.truth, { tolerance: Math.max(6, f.strokeWidth) }) };
+});
+
 describe('the corpus — accuracy', () => {
-  const results = corpusFixtures().map((f) => {
-    const res = detectWalls(f.img);
-    // A refusal is what the user gets, so it is what gets scored. Scoring the
-    // raw segments while the app would have shown nothing is exactly how a
-    // wrongly-fired refusal stays invisible.
-    const segs = res.quality.refusal ? [] : res.segments;
-    return { f, res, d: scoreDetection(segs, f.truth, { tolerance: Math.max(6, f.strokeWidth) }) };
-  });
+  const results = RESULTS;
 
   for (const { f, d, res } of results) {
     if (f.entry.refuse) continue;
@@ -235,11 +246,13 @@ describe('the corpus — accuracy', () => {
 });
 
 describe('the corpus — refusal', () => {
-  it('REFUSES an image with no floorplan in it, and says why', () => {
-    const f = fixtureByName('no-plan');
-    const res = detectWalls(f.img);
-    expect(res.quality.refusal).not.toBeNull();
-    expect(res.quality.refusal).toMatch(/floorplan|walls|lines/i);
+  it('REFUSES every image with no floorplan in it, and says why', () => {
+    const nulls = RESULTS.filter((r) => r.f.entry.refuse);
+    expect(nulls.length).toBeGreaterThanOrEqual(2);
+    for (const { res } of nulls) {
+      expect(res.quality.refusal).not.toBeNull();
+      expect(res.quality.refusal).toMatch(/floorplan|walls|lines/i);
+    }
   });
 
   it('refuses a blank page', () => {
@@ -252,17 +265,16 @@ describe('the corpus — refusal', () => {
     // kind: a threshold that fires on real data. It caught exactly that during
     // S22 — `hairline` was refused because the corner-joining radius collapsed
     // on a thin stroke, and no test then in existence could see it.
-    for (const f of corpusFixtures()) {
+    for (const { f, res } of RESULTS) {
       if (f.entry.refuse) continue;
-      expect(detectWalls(f.img).quality.refusal).toBeNull();
+      expect(res.quality.refusal).toBeNull();
     }
   });
 
   it('reports a confidence that ranks a clean plan above a hard one', () => {
-    const clean = detectWalls(fixtureByName('apartment-bare').img).quality.confidence;
-    const hard = detectWalls(fixtureByName('apartment-cluttered').img).quality.confidence;
-    expect(clean).toBeGreaterThan(0.8);
-    expect(clean).toBeGreaterThanOrEqual(hard);
+    const at = (n: string) => RESULTS.find((r) => r.f.name === n)!.res.quality.confidence;
+    expect(at('apartment-bare')).toBeGreaterThan(0.8);
+    expect(at('apartment-bare')).toBeGreaterThanOrEqual(at('apartment-cluttered'));
   });
 });
 
@@ -324,7 +336,7 @@ describe('negative controls — the score must be able to FALL', () => {
 
 describe('shape of the output', () => {
   it('emits axis-consistent walls on a Manhattan plan', () => {
-    const res = detectWalls(fixtureByName('apartment-bare').img);
+    const res = RESULTS.find((r) => r.f.name === 'apartment-bare')!.res;
     for (const s of res.segments) {
       const g = Math.min(headingGap(segHeading(s), 0), headingGap(segHeading(s), Math.PI / 2));
       expect((g * 180) / Math.PI).toBeLessThan(1);
@@ -332,7 +344,7 @@ describe('shape of the output', () => {
   });
 
   it('PRESERVES a genuinely angled wall rather than flattening it', () => {
-    const res = detectWalls(fixtureByName('angled-wall').img);
+    const res = RESULTS.find((r) => r.f.name === 'angled-wall')!.res;
     const angled = res.segments.filter((s) => {
       const g = Math.min(headingGap(segHeading(s), 0), headingGap(segHeading(s), Math.PI / 2));
       return (g * 180) / Math.PI > 10;
@@ -343,9 +355,9 @@ describe('shape of the output', () => {
   });
 
   it('returns the wall mask and a measured stroke width alongside the segments', () => {
-    const f = fixtureByName('thick-rect');
-    const res = detectWalls(f.img);
-    expect(res.wallMask.width).toBe(f.img.width);
+    const entry = RESULTS.find((r) => r.f.name === 'thick-rect')!;
+    const res = entry.res;
+    expect(res.wallMask.width).toBe(entry.f.img.width);
     expect(res.strokeWidth).toBeGreaterThan(5);
     expect(res.strokeWidth).toBeLessThan(20);
   });

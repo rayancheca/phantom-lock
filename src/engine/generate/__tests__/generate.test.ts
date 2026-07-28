@@ -429,6 +429,25 @@ describe('generateDesign', () => {
     expect(activeListener(r.scene).name).toBe(seats[0].name);
   });
 
+  it('REPORTS furniture it could not place instead of dropping the notes', () => {
+    // Measured across 8 archetypes x 200 seeds, 23.5 % of designs skip at least
+    // one requested piece and a handful skip the TV. `arrangeFurniture` says so
+    // in its notes; reading `objects` and discarding `notes` made that silent.
+    let sawSkip = false;
+    for (const id of ARCHETYPE_IDS) {
+      for (const seed of SEEDS) {
+        const r = generateDesign({ archetype: id, seed });
+        expect(Array.isArray(r.skipped)).toBe(true);
+        if (r.skipped.length > 0) {
+          sawSkip = true;
+          for (const note of r.skipped) expect(note).toMatch(/skipped/i);
+        }
+      }
+    }
+    // If this ever stops being true the reporting is vacuous and should go.
+    expect(sawSkip).toBe(true);
+  });
+
   it('survives every archetype without throwing, at many seeds', () => {
     for (const id of ARCHETYPE_IDS) {
       for (const seed of [0, 1, 0xffffffff, 123456789]) {

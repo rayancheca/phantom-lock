@@ -1833,3 +1833,179 @@ sits at z-index 62, above the `Menu` popover at 60, which is unavoidable while i
 60 · `App.tsx` is 1234 lines against the 800 cap (1173 before this session, and already 1165 at the end of S20 — CLAUDE.md's "decomposed to 789" note is stale by five sessions) — the
 tutorial's own logic went into `hooks/useTutorial.ts` rather than making that worse, but the file still
 needs its own session.
+
+### S22 — Auto-detect walls: the accuracy overhaul (the last P0) + "Generate a design" (2026-07-28) ✅
+
+Two deliverables. The first was the last remaining **P0** and the only thing in the app the owner had
+personally found broken by using it; the second was owner-requested in the same message that
+authorised this session.
+
+---
+
+#### Part 1 — wall detection: **52.1 % → 95.6 %**, and it refuses instead of lying
+
+**The measurement came first, because there wasn't one.** "Is detection better?" is unanswerable
+without ground truth, and ground truth is exact only when the image was *drawn* from a description.
+So the corpus is CODE:
+
+- `__tests__/fixtures/floorplan-raster.ts` — a deterministic, pure-TS, zero-dep floorplan rasteriser
+  (thick lines, cavity walls, furniture blobs, door arcs, hatching, dimension-text speckle, plus
+  blur / gaussian noise / uneven lighting / low contrast / rotation / shear). It hands back the wall
+  centrelines it painted, so the answer key cannot drift from the question — even under rotation,
+  because the warp is applied to the drawing coordinates and to the truth together.
+- `__tests__/fixtures/detect-score.ts` — the score: an intersection-over-union on wall LENGTH, which
+  is the same thing as *what fraction of the user's editing work the detector did*. `hit / (hit +
+  miss + off + redundant)`. Duplicates and hallucinations both count as deletion work, which matters
+  because **precision alone is blind to a duplicate** — a duplicate lies exactly on a real wall.
+- `__tests__/fixtures/floorplan-corpus.ts` — 22 enumerated fixtures, one per regime a constant is
+  tuned for, in the `legit-scenes.ts` tradition.
+
+**Baseline, measured with that instrument on the pre-S22 engine** (restored via
+`git checkout <baseline> -- src/engine/detect.ts`, its own command, verified with `git status`):
+**52.1 %**, and **61 hallucinated walls** on an image containing no floorplan.
+
+The diagnosis in `kickoff-session-12.md` was re-verified and found true, plus one thing it missed:
+`MERGE_RHO_PX` served as BOTH the Hough NMS window and `mergeSegments`' perpendicular-offset window,
+so a parallel pair that survived suppression could never be merged — that code path was
+**unreachable**, and loosening the constant would have loosened the suppressor in lockstep.
+
+**The replacement** asks a local, connected question instead of a global one — `engine/vision/`:
+Otsu ink → drop anything locally FATTER than a wall → close cavity walls → drop annotation
+components → Zhang-Suen thinning → follow each skeleton branch → regularize (dominant axis, snap,
+collinear merge, corner join) → reject geometry with no ink under it → assess and REFUSE.
+
+| fixture | before | after |
+|---|---|---|
+| furnished apartment | 26.6 % | 99.8 % |
+| cavity (double-drawn) walls | 41.1 % | 100 % |
+| 22° rotated phone shot | 16.8 % | 84.9 % |
+| heavy poché + thin partitions | — | 99.4 % |
+| an image with NO floorplan | **61 walls** | **refused** |
+| **mean over 20 scored fixtures** | **52.1 %** | **95.6 %** |
+| cost for the whole corpus | 1 288 ms | 850 ms |
+
+**Three defects found by adversarial review, all real, all fixed, each now carrying the fixture that
+would have caught it:**
+
+1. **CRITICAL** — `classify` used a raw 8-neighbour count where it needed the Rutovitz crossing
+   number. Thinning leaves staircases; a staircase pixel has three neighbours mid-line; tracing stops
+   at junctions. Measured on an isolated straight line: **128 false junctions at 8°, 203 at 30°, 310
+   at 40°** — and a plan photographed 8/20/22/24/26° off-square returned **ZERO walls**. The corpus
+   rotated by 4° and its angled fixture was 30°: calibrated at exactly the two angles where the bug
+   does not fire.
+2. The arc filter dropped a whole room outline, because thinning chamfers a right angle into two 45°
+   bends — monotone, under the max-turn gate, therefore "an arc". `hollow-rect` scored **0**. The
+   rule now compares an implied RADIUS against the plan's scale.
+3. `MIN_STRUCTURE` 0.40 refused two legitimate plans (22°-rotated at 0.364, heavy poché at 0.313).
+   Lowered to 0.25 against the measured lows, with a harder null fixture (`no-plan-lines`) added so
+   the loosening has something to be falsified against.
+
+**The Session-12 acceptance bullet "commit through `integrateWall`" was RETIRED, not met.** Measured:
+feeding N detected walls through it sequentially produces exactly **N²/2 objects** (40 → 800,
+60 → 1 800), multiplying `collectSurfaces` and every engine sweep S18/S19 spent two sessions
+bounding; and its `EPS = 0.02` is in NORMALISED parameter space, so it silently drops a chunk shorter
+than 2 % of a wall's length (a 10 m wall crossed twice 0.10 m apart returns 9.900 m — a 10 cm
+acoustic hole). `joinCorners` already makes corners meet.
+
+**UI.** The proposal is now REVIEWABLE rather than take-it-or-leave-it: a read-confidence bar, three
+named sensitivity levels (`Careful` / `Balanced` / `Thorough` — chips rather than a slider, because
+each run costs 80–125 ms and a range input fires per step), and per-wall strike-off. The list lives
+in the CARD, not on the canvas: `wallProposal !== null` is a term of `overlayOpen`, so while the
+proposal is up the canvas is out of the tab order and any canvas-driven reject would be pointer-only.
+Refusal is surfaced as a sentence about the image; the old single message *"No clear walls found in
+that image"* was emitted for four distinct causes including a `getContext('2d')` failure, which told
+the user their floorplan was the problem when it was not.
+
+---
+
+#### Part 2 — "Generate a design"
+
+Eight hand-authored ARCHETYPES × randomised envelopes → guillotine room tiling → shared walls →
+variant-D doors → windows → furniture → a verified stereo pair. Deterministic per 32-bit seed, shown
+as hex and re-enterable.
+
+```
+480 designs: locked 420 (88%) · importRejected 0 · mirror-desync 0 · sanitize-loss 0
+distinct shells among these seeds: 477/480
+mean 3.9 ms/design, worst 18.5 ms · same seed -> identical geometry: true
+```
+
+Three things the measurements decided rather than taste:
+
+- **Variant D.** `rooms.ts` `collectBlockers` pushes the whole wall segment and never consults
+  `wallKeptSpans`, so a door rect in a SOLID wall opens an acoustic path but no walkable one and all
+  the furniture stays trapped in the seat's room. Partitions are two stubs with a real gap and the
+  door inside it — measured end to end: walkable 91.3 m² vs zoning 59.3 m².
+- **A verified ladder, not a formula.** The pair search accepts only what the real
+  `traceScene`→`computeAudio` already reports as locked, so a design ships locked or with no
+  speakers — never placed-but-unlocked, which the hero's edge-triggered ignition cannot celebrate.
+- **Furniture before speakers**, because `arrange.ts` `fits()` cannot see speakers and would drop a
+  wardrobe on a HomePod. Documented cost: the first-reflection-absorber layer never fires.
+
+One bug found by measuring rather than reading: a guillotine tiling is **not conforming**, so
+matching whole cell edges to find shared walls draws a boundary three times with no door in any of
+them. `collectEdges` reduces each axis line to atomic intervals instead. The tell was not a crash —
+it was `walkable === zoning`.
+
+---
+
+#### Evidence
+
+**Agents spawned.** 4 parallel readers (detect core / detection wiring / generator surface /
+metric design) · 2 designers (detection pipeline, generator) · 3 adversarial skeptics
+(detection: **SOUND WITH FIXES**, and it found the CRITICAL crossing-number bug that returned zero
+walls on a rotated photo, plus the heavy-poché refusal; generator; metric) · 2 self-reviewers over
+the actual diff (`code-reviewer`, `silent-failure-hunter`).
+
+**Test count: 1084 → 1316** (+232). No test skipped, `.only`'d or weakened.
+
+**Gate** (pasted tails in the handoff): `npm run lint` 0 problems · `npm test` 1316 passed
+(66 files) · `npm run build` clean, **476.00 kB / 154.75 kB gz** JS + **51.55 kB / 9.56 kB gz** CSS.
+
+**Frozen engine files byte-unchanged:** `git diff --stat HEAD -- optimize rooms stereo raytrace
+pairspot bestspot reflection grid` → empty.
+
+**Live** (fresh headless-Chrome profile ⇒ fresh origin ⇒ the owner's real layout never loaded or
+written; verified `localStorage['phantom-lock:v2'] === null` at the start of both runs):
+`docs/sessions/S22/live.mjs` and `live-detect.mjs`, 15/15 checks pass. Screenshots in
+`docs/sessions/S22/shots/`. The generated design opens on **"Phantom center locked"** on first paint;
+detection on a furnished four-room plan with door arcs and dimension text returns **12 walls at 87 %
+confidence** with a working strike-off, and an image of a table is REFUSED with a sentence.
+
+**Honest limits.** Live checks ran ONE browser. No real screen reader has ever been driven on this
+project. **Detection has never been run against the owner's own floorplan photo** — every accuracy
+number is from the synthetic corpus; the harness accepts one directly via
+`score-corpus.ts --image <file.png>`. Two fixtures stay below 92 % (`hatched` 91.6 %,
+`apartment-cluttered` 82.3 %), both losing precision or coverage rather than duplicating.
+
+**Self-review findings, all fixed in the same session** (`code-reviewer` + `silent-failure-hunter` over
+the actual diff):
+
+1. **HIGH** — the generate dialog's seed field fought the user on every keystroke: committing a seed
+   re-ran the mirroring effect, which overwrote the half-typed value with its zero-padded form.
+   Typing "1234" produced "00000001234" and the field could not recover; only an atomic paste worked,
+   which broke the one thing the seed exists for. The mirror now writes only when the field does not
+   already MEAN that seed, and there is a regression test that types one character at a time.
+2. **HIGH** — `arrangeFurniture`'s notes were discarded. Measured across 8 archetypes × 200 seeds,
+   **23.5 % of designs skip at least one requested piece** and a few `railroad` seeds skip the TV
+   itself, with no note, no toast and no console output. `GenerateResult.skipped` now carries them and
+   the dialog says so.
+3. **HIGH** — `explained` was folded into confidence as a 0.2-weight TERM, so a detection that
+   described only 23 % of a plan's wall ink still reported **77 % confidence**. It is now a FACTOR, so
+   it cannot be outvoted. Deliberately not a refusal: under-reading is a partial answer the user can
+   finish, and this file has already had to walk back one refusal that fired on real data.
+4. **MEDIUM** — the generator's undo restored the store but never called `afterLayoutSwitch`, leaving
+   the restored scene under the generated layout's mode with a selection pointing at objects that no
+   longer existed. Every other restore path in the app calls it; this one now does too.
+5. **MEDIUM** — the detection `.catch` swallowed the real error behind "Could not read that image",
+   with nothing in the console. The pipeline behind it is nine stages of numeric work; it now logs.
+6. **LOW** — `DetectionProposalCard`'s focus ladder aimed at the Accept button, which is disabled at
+   exactly the instant the ladder fires (`.focus()` on a disabled control is a silent no-op — the same
+   S20 lesson the comment cited). It aims at Discard now.
+
+Two findings were assessed and **not** acted on, with reasons: the reviewer's O(n²) concern in
+`regularize`/`structureScore` is real in shape but unproven (no pathological image was constructed, and
+`WORK_MAX` plus the thickness and small-component filters bound the input hard) — recorded in
+`docs/ideas.md` as a follow-up measurement rather than a speculative cap, because CLAUDE.md's own S18
+lesson is that a cap calibrated against a subset is a data-loss bug. And the "commits do not carry the
+Evidence block" note was simply premature: this entry is that block.

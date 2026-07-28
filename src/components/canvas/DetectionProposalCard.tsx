@@ -57,14 +57,19 @@ export default function DetectionProposalCard({
   const confidence = Math.round(proposal.quality.confidence * 100);
 
   /**
-   * Keep focus inside the list when a row is struck off. Rows are toggles, not
-   * removals, so the button survives — but the S20 lesson still applies to the
-   * empty case, where the accept button becomes the only live target.
+   * Focus ladder for the "everything struck off" case.
+   *
+   * Rows are toggles rather than removals, so the focused row survives and
+   * nothing is stranded — but the ACCEPT button goes disabled at exactly that
+   * moment, and `.focus()` on a disabled control is a silent no-op (the S20
+   * lesson). So the ladder aims at DISCARD, which is never disabled, and only
+   * when focus was about to sit on something inert.
    */
-  const acceptRef = useRef<HTMLButtonElement>(null);
+  const discardRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
-    if (kept.length === 0 && listRef.current?.contains(document.activeElement)) {
-      acceptRef.current?.focus();
+    if (kept.length === 0 && document.activeElement instanceof HTMLButtonElement
+        && document.activeElement.disabled) {
+      discardRef.current?.focus();
     }
   }, [kept.length]);
 
@@ -136,7 +141,6 @@ export default function DetectionProposalCard({
         <button
           type="button"
           className="btn btn-ok"
-          ref={acceptRef}
           disabled={kept.length === 0}
           onClick={onAccept}
         >
@@ -147,7 +151,7 @@ export default function DetectionProposalCard({
           <Icon name="wall" size={13} />
           Trace instead
         </button>
-        <button type="button" className="btn" onClick={onDiscard}>
+        <button type="button" className="btn" ref={discardRef} onClick={onDiscard}>
           Discard
         </button>
       </div>

@@ -120,13 +120,20 @@ export function useGenerateDesign(a: Args): GenerateDesignApi {
       action: {
         label: 'Undo',
         run: () => {
-          argsRef.current.setStore((st) => ({
+          const current = argsRef.current;
+          const restored = current.store.layouts.find((l) => l.id === previousActive);
+          current.setStore((st) => ({
             ...st,
             layouts: st.layouts.filter((l) => l.id !== layout.id),
             // Only restore the previous active layout if it is still there —
             // the user may have deleted it between creating and undoing.
             activeId: st.layouts.some((l) => l.id === previousActive) ? previousActive : st.activeId,
           }));
+          // Every other restore path in the app calls this, and skipping it
+          // leaves the RESTORED scene under the generated layout's mode and a
+          // selection pointing at objects that no longer exist. The store is
+          // correct either way; the screen is not.
+          if (restored) current.afterLayoutSwitch(restored.scene);
         },
       },
     });

@@ -72,6 +72,16 @@ export interface GenerateResult {
    * speakers, never an unlocked pair.
    */
   locked: boolean;
+  /**
+   * What the arranger could not place, in its own words.
+   *
+   * `arrangeFurniture` explains every skipped piece ("No spot survives the
+   * rules for a plant — it was skipped."), and dropping those notes on the
+   * floor is a silent failure: measured across 8 archetypes x 200 seeds,
+   * **23.5 % of designs skip at least one requested piece**, and a handful of
+   * `railroad` seeds skip the TV itself. Carried here so the UI can say so.
+   */
+  skipped: string[];
 }
 
 /** Envelope dimensions are drawn on a 0.5 m lattice. */
@@ -159,6 +169,7 @@ export function generateDesign(opts: GenerateOptions): GenerateResult {
   // Furnish BEFORE placing speakers — see the module header.
   const furniture = arrangeFurniture(scene, inventoryFor(cells));
   scene = { ...scene, objects: [...scene.objects, ...furniture.objects] };
+  const skipped = furniture.notes.filter((n) => /skipped/i.test(n));
 
   const tv = scene.objects.find((o): o is Extract<SceneObject, { kind: 'rect' }> =>
     o.kind === 'rect' && o.role === 'tv',
@@ -179,7 +190,7 @@ export function generateDesign(opts: GenerateOptions): GenerateResult {
     if (active) scene = setActiveListener(scene, active);
   }
 
-  return { scene, name, seed: opts.seed >>> 0, archetype: opts.archetype, locked: pair.locked };
+  return { scene, name, seed: opts.seed >>> 0, archetype: opts.archetype, locked: pair.locked, skipped };
 }
 
 function isSeatRoom(cell: Cell, arch: { rooms: Array<{ name: string; seat: string }> }, want: string): boolean {

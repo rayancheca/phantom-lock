@@ -106,7 +106,12 @@ export function useWallDetection(a: Args): WallDetection {
         setProposal({ walls, rejected: new Set(), quality, sensitivity: level });
         argsRef.current.setMode('select');
       })
-      .catch(() => {
+      .catch((err) => {
+        // Say something true to the user AND leave a trace for whoever debugs
+        // it. The pipeline behind this promise is nine stages of numeric work;
+        // converting a genuine bug in it into an undiagnosable "bad image" is
+        // the exact anti-pattern the S13 `font-ready.ts` lesson closed.
+        console.error('[phantom-lock] wall detection failed', err);
         setProposal(null);
         argsRef.current.showToast('Could not read that image.', { tone: 'bad' });
       })

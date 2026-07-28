@@ -154,6 +154,24 @@ describe('useGenerateDesign', () => {
     expect(h.read().activeId).toBe(extra.id);
   });
 
+  it('undo RESYNCS the app, like every other restore path', () => {
+    // The store being right is not enough: `afterLayoutSwitch` clears the
+    // selection, resets the view and re-derives the mode from the scene. Skip
+    // it and the restored layout is shown under the generated one's mode with a
+    // selection pointing at objects that no longer exist.
+    const base = defaultStore();
+    const extra = makeLayout('Second', blankScene(), undefined, base.projects[0].id);
+    const store: LayoutStore = { ...base, layouts: [...base.layouts, extra], activeId: extra.id };
+    const h = harness(store);
+    act(() => h.view.result.current.open(base.projects[0].id));
+    act(() => h.view.result.current.keep());
+    h.afterLayoutSwitch.mockClear();
+    const toast = h.showToast.mock.calls.at(-1)!;
+    act(() => toast[1].action.run());
+    expect(h.afterLayoutSwitch).toHaveBeenCalledTimes(1);
+    expect(h.afterLayoutSwitch.mock.calls[0][0]).toBe(extra.scene);
+  });
+
   it('undo does not resurrect an active layout the user deleted in the meantime', () => {
     const base = defaultStore();
     const extra = makeLayout('Second', blankScene(), undefined, base.projects[0].id);

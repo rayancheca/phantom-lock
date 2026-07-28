@@ -76,6 +76,17 @@ export const MIN_SUPPORT = 0.55;
  */
 export const MIN_STRUCTURE = 0.25;
 
+/**
+ * The `explained` fraction at which a read counts as complete.
+ *
+ * Deliberately NOT a refusal threshold. Under-reading a plan is a partial
+ * answer the user can finish by hand, whereas refusing it hands back nothing —
+ * and a refusal that fires on real data is the failure mode this file already
+ * had to walk back once. So a low `explained` costs CONFIDENCE, loudly, and
+ * still offers the walls it did find.
+ */
+export const EXPLAINED_FULL = 0.7;
+
 function distToSegment(p: { x: number; y: number }, s: PxSegment): number {
   const dx = s.b.x - s.a.x;
   const dy = s.b.y - s.a.y;
@@ -175,11 +186,19 @@ export function assessDetection(
     refusal = "The lines in this image don't join up into rooms, so it doesn't look like a floorplan.";
   }
 
-  // A blend, not a product: each signal saturates, and a plan with one open
-  // wall should not be reported as half-confident.
+  // A blend for the two signals that saturate — a plan with one open wall must
+  // not read as half-confident — but `explained` is applied as a FACTOR, not a
+  // term.
+  //
+  // As a term it was almost inert: with support and structure both perfect, a
+  // detection that described only 23 % of the plan's wall ink still reported
+  // 77 % confidence, because the term contributes at most 0.2. That is the
+  // opposite of honest — "most of your floorplan was never read" is exactly
+  // what a confidence number is for. As a factor it cannot be outvoted.
+  const found = Math.min(1, explained / EXPLAINED_FULL);
   const confidence = Math.max(
     0,
-    Math.min(1, 0.45 * support + 0.35 * Math.min(1, structure / 0.8) + 0.2 * Math.min(1, explained / 0.7)),
+    Math.min(1, (0.6 * support + 0.4 * Math.min(1, structure / 0.8)) * (0.35 + 0.65 * found)),
   );
 
   return {

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import GenerateDialog from '../GenerateDialog';
@@ -55,6 +56,34 @@ describe('GenerateDialog', () => {
     renderDialog({ state: state('one-bed', 0xdeadbeef) });
     const input = screen.getByLabelText('Seed') as HTMLInputElement;
     expect(input.value).toBe(formatSeed(0xdeadbeef));
+  });
+
+  it('SURVIVES BEING TYPED INTO one keystroke at a time', () => {
+    // The regression this exists for: mirroring `state.seed` back into the
+    // field unconditionally meant every committed keystroke overwrote the
+    // half-typed value with its zero-padded 8-digit form, so "1234" became
+    // "00000001234" and the field could never recover. Only an atomic paste
+    // worked — which broke the one thing the seed is for.
+    function Harness() {
+      const [seed, setSeed] = useState(0xdeadbeef);
+      return (
+        <GenerateDialog
+          state={{ archetype: 'studio', seed, projectId: 'p1', result: generateDesign({ archetype: 'studio', seed }) }}
+          onArchetype={() => {}}
+          onSeed={setSeed}
+          onReroll={() => {}}
+          onKeep={() => {}}
+          onClose={() => {}}
+        />
+      );
+    }
+    render(<Harness />);
+    const input = screen.getByLabelText('Seed') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '' } });
+    for (const ch of '1234') {
+      fireEvent.change(input, { target: { value: input.value + ch } });
+    }
+    expect(input.value).toBe('1234');
   });
 
   it('reports a valid seed edit and ignores an invalid one', () => {

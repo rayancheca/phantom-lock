@@ -46,10 +46,20 @@ export default function GenerateDialog({ state, onArchetype, onSeed, onReroll, o
     if (canvasRef.current) drawMiniPlan(canvasRef.current, scene, { allSeats: true });
   }, [scene]);
 
-  // The seed field mirrors state when the state changes from elsewhere (a
-  // reroll, an archetype switch) but never fights the user mid-typing.
+  /**
+   * Mirror the seed into the field ONLY when the field does not already mean
+   * that seed.
+   *
+   * The naive `setSeedText(formatSeed(state.seed))` is a keystroke-eating bug,
+   * not a style point: typing commits the seed, the commit re-runs this effect,
+   * and the effect overwrites the half-typed value with its zero-padded 8-digit
+   * form. Typing "1", "2", "3", "4" produced "00000001" -> "000000012" ->
+   * "0000000123" -> "00000001234", after which `parseSeed` rejects 9+ chars and
+   * the field can never recover. Only an atomic paste worked — which broke the
+   * one thing the seed exists for.
+   */
   useEffect(() => {
-    setSeedText(formatSeed(state.seed));
+    setSeedText((cur) => (parseSeed(cur) === state.seed ? cur : formatSeed(state.seed)));
   }, [state.seed]);
 
   const rooms = scene.rooms ?? [];
@@ -87,6 +97,14 @@ export default function GenerateDialog({ state, onArchetype, onSeed, onReroll, o
             {speakers === 2
               ? 'Opens with a stereo pair that locks.'
               : 'No stereo pair fits this one — Suggest placement will help.'}
+            {state.result.skipped.length > 0 && (
+              <>
+                {' '}
+                {state.result.skipped.length} piece
+                {state.result.skipped.length === 1 ? '' : 's'} of furniture had nowhere to go — reroll or
+                pick a larger shape.
+              </>
+            )}
           </p>
         </div>
 
