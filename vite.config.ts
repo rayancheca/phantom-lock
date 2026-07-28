@@ -52,6 +52,14 @@ export default defineConfig({
   preview: { headers: { ...SECURITY_HEADERS } },
   test: {
     /**
+     * Coverage reports only the SHIPPED source. Session working directories
+     * (`docs/sessions/<S>/`) are gitignored scratch — benchmark scripts and
+     * headless-Chrome harnesses — and they are never imported by the app, so
+     * including them dragged "All files" down by ~10 points and made the number
+     * that the operating protocol asks to be pasted as evidence meaningless.
+     */
+    coverage: { include: ['src/**'] },
+    /**
      * Two projects (S7). `test.projects` is the supported mechanism in vitest 3;
      * `environmentMatchGlobs` and `test.workspace` are both deprecated and would
      * print a deprecation banner into the terminal tail the operating protocol
