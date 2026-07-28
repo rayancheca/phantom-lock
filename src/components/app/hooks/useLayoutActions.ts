@@ -11,7 +11,7 @@ import {
   sanitizeScene,
 } from '../../../engine/scene';
 import type { ToastData } from '../../ui/Toast';
-import { activeProject } from '../../../engine/projects';
+import { activeProject, findOrCreateProject } from '../../../engine/projects';
 import { initialMode, type ModeEntry } from '../mode';
 import type { Deleted } from '../app-types';
 
@@ -190,6 +190,10 @@ export function useLayoutActions(a: Args): LayoutActions {
   };
 
   const importLayout = (file: File) => {
+    // Captured out of the store updater so the post-commit UI reset can use it
+    // without re-finding the layout (the updater is the only place that knows the
+    // folder it resolved to).
+    let importedScene: Scene | null = null;
     file
       .text()
       .then((text) => {
@@ -221,19 +225,29 @@ export function useLayoutActions(a: Args): LayoutActions {
           a.showToast(`${rejection} It was not imported.`, { tone: 'bad' });
           return;
         }
-        // A fresh id, without mutating the object we just built (immutability
-        // rule; the old code assigned `layout.id` in place). The file's own
-        // `projectId` is deliberately IGNORED — an id from another store is
-        // meaningless here and honouring it would mint a phantom folder — so the
-        // import lands in the folder the user is looking at.
-        const layout: Layout = {
-          ...sanitized,
-          id: createId('layout'),
-          projectId: currentProjectId(),
-        };
-        a.setStore((st) => ({ ...st, layouts: [...st.layouts, layout], activeId: layout.id }));
-        afterLayoutSwitch(layout.scene);
-        a.showToast(`Imported “${layout.name}”`, { tone: 'ok' });
+        // The file's own `projectId` is deliberately IGNORED — an id from another
+        // store is meaningless here and honouring it would mint a phantom folder or
+        // collide with a real one. The exported `project` NAME is what round-trips:
+        // it resolves to the matching folder if there is one, otherwise creates it,
+        // and falls back to the folder the user is looking at.
+        const wantedFolder =
+          typeof (parsed as { project?: unknown }).project === 'string'
+            ? ((parsed as { project: string }).project)
+            : '';
+        a.setStore((st) => {
+          const { store: withFolder, projectId } = findOrCreateProject(
+            st,
+            wantedFolder,
+            activeProject(st).id,
+          );
+          // A fresh id, without mutating the object we just built (immutability
+          // rule; the old code assigned `layout.id` in place).
+          const layout: Layout = { ...sanitized, id: createId('layout'), projectId };
+          importedScene = layout.scene;
+          return { ...withFolder, layouts: [...withFolder.layouts, layout], activeId: layout.id };
+        });
+        if (importedScene) afterLayoutSwitch(importedScene);
+        a.showToast(`Imported “${sanitized.name}”`, { tone: 'ok' });
       })
       .catch(() => a.showToast('Could not read that file.', { tone: 'bad' }));
   };

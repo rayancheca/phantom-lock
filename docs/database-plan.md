@@ -204,6 +204,57 @@ the data. Migration is re-runnable (guarded by the meta flag, reads from still-p
 
 ---
 
+## 6b. Folders (projects) — added in **Session 20**, no schema version bump
+
+A layout now belongs to a **project** (a folder grouping several designs of one space).
+The model is FLAT: `Layout.projectId` → `Project.id`, and `LayoutStore.projects` is the list.
+Nesting the layouts inside the projects was designed and rejected — it changes the shape of
+every read site at once, and its natural project-delete is a cascade that removes N layouts
+behind one auto-dismissing toast.
+
+**Where it lives on disk — and why `DB_VERSION` stays at 1.**
+
+| | |
+|---|---|
+| Membership | `LayoutRecord.projectId?` — a field on the EXISTING `layouts` store |
+| The folder list | `MetaRecord.projects?` — a field on the EXISTING singleton `meta` row |
+| `DB_VERSION` | **unchanged (1)**. `onupgradeneeded` is byte-unchanged. |
+
+IndexedDB records are structured clones with no declared schema, so adding a field to an
+existing store needs no migration at all. A *fourth object store* would have needed version 2,
+and that bump has a live, reachable, user-visible failure: an old tab still holds the v1
+connection (there is no `onversionchange` handler), the new tab's open fires `onblocked`,
+`openDB` **rejects**, `bootstrapPersistence` catches → `mode: 'localStorage'` → the fallback
+loader reads the FROZEN pre-migration snapshot → autosave overwrites that snapshot ~400 ms
+later. The rollback artifact is destroyed to buy a tidier schema. Not worth it.
+
+**Both new fields are OPTIONAL on the record types and REQUIRED on the in-memory types.**
+Optional-on-disk is simply the truth: every record written before S20 has no such key, and a
+required `MetaRecord.projects` would let `meta.projects.map(...)` compile clean and throw for
+100 % of returning users. Required-in-memory is what turns the seven non-spreading `setStore`
+literals into compile errors instead of silent folder resets.
+
+**Migration is lazy-on-read, at one seam.** `assembleStore` (in the pure leaf
+`src/engine/projects.ts`) is the only place a store is assembled from parsed input. On an old
+store it mints one default folder — id `project-default`, name **“My layouts”** (the gallery
+already says “Your layouts”, so a returning user sees the same words, now as a group header) —
+and homes every layout into it. Proven by `projects-migration.test.ts`, which SEEDS pre-S20 IDB
+records and a pre-S20 localStorage blob by hand and asserts what comes back.
+
+**Reversibility.** A downgrade (old build, unchanged DB version, so it opens fine) renders
+correctly — flat gallery, every layout present, geometry and settings intact — and then erases
+the new fields on its next write. **Loss is bounded to the GROUPING; no scene, seat, setting or
+name is ever touched.** There is no mitigation that survives an old build actively running; the
+v2 export bundle (which carries each layout's project NAME) is the restore path.
+
+**Export/import.** `ExportBundle.version` is now `1 | 2`; a v2 bundle carries `project` per
+layout as a NAME, never an id — an id is meaningless in another store, and honouring one would
+mint a phantom folder. The bundle still has no importer (pre-existing: an export-all bundle has
+never been readable by `importLayout`), so the field is write-only today. Single-layout import
+lands in the folder the user is looking at and deliberately ignores the file's own `projectId`.
+
+---
+
 ## 7. Open questions (need your call)
 
 1. ~~**Cross-device sync — the big one.**~~ **ANSWERED 2026-07-19: yes, cross-device sync.** So (b)

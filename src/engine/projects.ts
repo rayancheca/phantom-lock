@@ -76,8 +76,10 @@ function orphanHome(projects: Project[]): string {
   return best.id;
 }
 
+/** Trimmed, then length-capped. Trimming matters: an untrimmed name renders with
+ *  its whitespace in the gallery heading and breaks name-matching on import. */
 const cleanName = (raw: unknown, fallback: string): string =>
-  typeof raw === 'string' && raw.trim() ? raw.slice(0, MAX_PROJECT_NAME_LEN) : fallback;
+  typeof raw === 'string' && raw.trim() ? raw.trim().slice(0, MAX_PROJECT_NAME_LEN) : fallback;
 
 /**
  * Untrusted `projects` → a clean list. Malformed entries are dropped individually
@@ -207,7 +209,7 @@ export function addProject(store: LayoutStore, name: string): LayoutStore {
 
 export function renameProject(store: LayoutStore, id: string, name: string): LayoutStore {
   if (!name.trim() || !store.projects.some((p) => p.id === id)) return store;
-  const next = name.slice(0, MAX_PROJECT_NAME_LEN);
+  const next = name.trim().slice(0, MAX_PROJECT_NAME_LEN);
   return {
     ...store,
     projects: store.projects.map((p) => (p.id === id ? { ...p, name: next } : p)),
@@ -244,6 +246,31 @@ export function removeProject(store: LayoutStore, id: string): LayoutStore {
       l.projectId === id ? { ...l, projectId: target.id, updatedAt: Date.now() } : l,
     ),
   };
+}
+
+/**
+ * Resolve a folder by NAME, creating it if it does not exist — what an imported
+ * file needs, since a bundle carries its project's name rather than an id (an id
+ * from another store is meaningless, and honouring one would mint a phantom
+ * folder or collide with a real one).
+ *
+ * Matching is case-insensitive on the trimmed name, so re-importing into a store
+ * that already has "Maple Court" does not produce a second one. At `MAX_PROJECTS`
+ * it returns `fallbackId` rather than failing the import — refusing a layout
+ * because the folder cap is full would lose the user's file for a cosmetic reason.
+ */
+export function findOrCreateProject(
+  store: LayoutStore,
+  name: string,
+  fallbackId: string,
+): { store: LayoutStore; projectId: string } {
+  const wanted = name.trim().toLowerCase();
+  if (!wanted) return { store, projectId: fallbackId };
+  const existing = store.projects.find((p) => p.name.trim().toLowerCase() === wanted);
+  if (existing) return { store, projectId: existing.id };
+  if (store.projects.length >= MAX_PROJECTS) return { store, projectId: fallbackId };
+  const next = addProject(store, name);
+  return { store: next, projectId: next.projects[next.projects.length - 1].id };
 }
 
 /** Move one layout into another folder. The ONLY writer of `projectId`. */

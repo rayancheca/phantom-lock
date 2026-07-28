@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_PROJECT_ID,
+  findOrCreateProject,
   DEFAULT_PROJECT_NAME,
   MAX_PROJECTS,
   MAX_PROJECT_NAME_LEN,
@@ -280,5 +281,47 @@ describe('derived readers', () => {
     expect(layoutsInProject(st, 'p2').map((l) => l.id)).toEqual(['lb', 'lc']);
     const all = st.projects.flatMap((p) => layoutsInProject(st, p.id));
     expect(all).toHaveLength(st.layouts.length);
+  });
+});
+
+
+describe('findOrCreateProject — what makes an exported folder round-trip', () => {
+  const st0 = assembleStore([P('p1', 'Maple Court'), P('p2', 'Sketches')], [], undefined);
+
+  it('matches an existing folder by name, case- and whitespace-insensitively', () => {
+    for (const name of ['Maple Court', 'maple court', '  MAPLE COURT  ']) {
+      const r = findOrCreateProject(st0, name, 'p2');
+      expect(r.projectId).toBe('p1');
+      expect(r.store).toBe(st0); // no new folder, and no pointless new store identity
+    }
+  });
+
+  it('creates the folder when the name is new, and files into it', () => {
+    const r = findOrCreateProject(st0, 'Cabin', 'p1');
+    expect(r.store.projects).toHaveLength(3);
+    expect(r.store.projects[2].name).toBe('Cabin');
+    expect(r.projectId).toBe(r.store.projects[2].id);
+  });
+
+  it('falls back rather than failing when the name is absent', () => {
+    expect(findOrCreateProject(st0, '', 'p2').projectId).toBe('p2');
+    expect(findOrCreateProject(st0, '   ', 'p2').projectId).toBe('p2');
+  });
+
+  it('falls back at MAX_PROJECTS instead of refusing the import', () => {
+    let st = st0;
+    while (st.projects.length < MAX_PROJECTS) st = addProject(st, 'filler');
+    const r = findOrCreateProject(st, 'One too many', 'p1');
+    expect(r.projectId).toBe('p1');
+    expect(r.store.projects).toHaveLength(MAX_PROJECTS);
+  });
+});
+
+describe('names are trimmed, not just capped', () => {
+  it('trims on sanitize, on create and on rename', () => {
+    expect(sanitizeProjects([{ id: 'a', name: '  Padded  ' }])[0].name).toBe('Padded');
+    const st = addProject(assembleStore(undefined, [], undefined), '  Spaced  ');
+    expect(st.projects[st.projects.length - 1].name).toBe('Spaced');
+    expect(renameProject(st, st.projects[0].id, '  Tidy  ').projects[0].name).toBe('Tidy');
   });
 });

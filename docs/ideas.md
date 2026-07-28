@@ -20,6 +20,9 @@ effort — a small high-value item beats a large one.
 | 4 | Snap furniture to a wall's angle | **P1 — high** | ½ session |
 | 5 | Read-only 3D view | P2 | 1 session *(plan exists)* |
 | 6 | Component/hook tests | P2 | 1 session |
+| 10 | ✅ **Projects (folders) + N-up compare** (owner-requested) — **DONE S20** | ~~P1~~ done | — |
+| 10b | Bundle IMPORTER (read an export-all backup back in, folders included) | P2 | ½ session |
+| 10c | Layout ORDER within a folder (drag to reorder; today `getAll()` key order) | P3 | small |
 | 7 | Drag-release wall splitting | P3 | small |
 | 8 | Multi-select with a listener in it | P3 | small |
 | 9 | Window/door-leaf reflection materials | P3 | small |

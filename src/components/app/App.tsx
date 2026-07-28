@@ -81,9 +81,12 @@ interface AppInnerProps {
   showFirstRun: boolean;
   /** Records `loadFromIDB` could not reconstruct — reported to the user on mount. */
   droppedCount: number;
+  /** FOLDER-level repair notices — never routed through `droppedCount`, which
+   *  means "a saved layout could not be read". */
+  projectNotices: string[];
 }
 
-function AppInner({ initialStore, persistMode, showFirstRun, droppedCount }: AppInnerProps) {
+function AppInner({ initialStore, persistMode, showFirstRun, droppedCount, projectNotices }: AppInnerProps) {
   const [store, setStore] = useState<LayoutStore>(initialStore);
   const [selection, setSelection] = useState<Selection>(null);
   const [mode, setMode] = useState<ToolMode>('select');
@@ -149,6 +152,15 @@ function AppInner({ initialStore, persistMode, showFirstRun, droppedCount }: App
       );
     }
   }, [droppedCount, showToast]);
+
+  // Folder repairs are a DIFFERENT thing from a lost layout, and get their own,
+  // accurate, non-alarming message. Nothing was destroyed — the filing was fixed.
+  useEffect(() => {
+    if (projectNotices.length > 0) {
+      showToast(`Folders were repaired on load: ${projectNotices.join('; ')}.`, { tone: 'default' });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectNotices.length, showToast]);
 
   // --- hooks: store, history, persistence, simulation ------------------------
   const { active, applyToLayout, setSettings, duplicateLayout, exportLayout } = useLayoutStore(store, setStore);
@@ -417,14 +429,18 @@ function AppInner({ initialStore, persistMode, showFirstRun, droppedCount }: App
       const projects = [...st.projects];
       projects.splice(Math.min(d.index, projects.length), 0, d.project);
       const moved = new Set(d.movedLayoutIds);
+      // Only the layouts THIS delete moved go back, and only if they are STILL
+      // where it put them — a design the user has since filed somewhere else on
+      // purpose must not be dragged back. `landedIn` is where `removeProject` sent
+      // them, so anything that has moved on since fails the second test.
+      const landedIn = st.projects[Math.max(0, d.index - 1)]?.id;
       return {
         ...st,
         projects,
-        // Only the layouts THIS delete moved go back, and only if they are still
-        // where it put them — a design the user has since filed somewhere else on
-        // purpose must not be dragged back.
         layouts: st.layouts.map((l) =>
-          moved.has(l.id) ? { ...l, projectId: d.project.id, updatedAt: Date.now() } : l,
+          moved.has(l.id) && l.projectId === landedIn
+            ? { ...l, projectId: d.project.id, updatedAt: Date.now() }
+            : l,
         ),
       };
     });
@@ -442,7 +458,11 @@ function AppInner({ initialStore, persistMode, showFirstRun, droppedCount }: App
       movedLayoutIds: moved.map((l) => l.id),
     };
     setStore((st) => removeProject(st, id));
-    const target = store.projects[Math.max(0, index - 1)] ?? store.projects[1];
+    // Compute the destination the SAME way `removeProject` does — from the array
+    // with `id` already removed. Reading `store.projects[index - 1]` off the
+    // unfiltered array names the folder being deleted when it is the first one,
+    // so the toast read "moved to <the folder you just deleted>".
+    const target = store.projects.filter((p) => p.id !== id)[Math.max(0, index - 1)];
     showToast(
       moved.length === 0
         ? `Deleted “${project.name}”`
@@ -1161,6 +1181,8 @@ export default function App() {
   const startedRef = useRef(false);
   /** Ids of records `loadFromIDB` could not reconstruct — reported once mounted. */
   const droppedRef = useRef<string[]>([]);
+  /** Folder-level repairs — reported separately; nothing was lost. */
+  const noticesRef = useRef<string[]>([]);
 
   useEffect(() => {
     if (startedRef.current) return;
@@ -1179,6 +1201,12 @@ export default function App() {
       (id) => {
         droppedRef.current.push(id);
         console.error(`[phantom-lock] dropped an unreadable layout record: ${id}`);
+      },
+      // Separate channel: a repaired folder loses NO layout, so it must never
+      // reach the "your work may be gone" warning above.
+      (reason) => {
+        noticesRef.current.push(reason);
+        console.warn(`[phantom-lock] folder repair on load: ${reason}`);
       },
     )
       .then(setBoot)
@@ -1206,6 +1234,7 @@ export default function App() {
       persistMode={boot.mode}
       showFirstRun={showFirstRun}
       droppedCount={droppedRef.current.length}
+      projectNotices={noticesRef.current}
     />
   );
 }

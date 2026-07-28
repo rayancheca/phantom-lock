@@ -61,8 +61,11 @@ export function useLayoutStore(
   const exportLayout = useCallback(
     (id: string) => {
       const l = store.layouts.find((x) => x.id === id) ?? active;
+      // The folder travels as a NAME. This is the one export path that has a
+      // matching importer, so this is what makes a folder actually round-trip.
+      const project = store.projects.find((p) => p.id === l.projectId)?.name;
       const blob = new Blob(
-        [JSON.stringify({ name: l.name, scene: l.scene, settings: l.settings }, null, 2)],
+        [JSON.stringify({ name: l.name, scene: l.scene, settings: l.settings, project }, null, 2)],
         { type: 'application/json' },
       );
       const url = URL.createObjectURL(blob);
@@ -72,7 +75,7 @@ export function useLayoutStore(
       a.click();
       URL.revokeObjectURL(url);
     },
-    [store.layouts, active],
+    [store.layouts, store.projects, active],
   );
 
   return { active, applyToLayout, setSettings, duplicateLayout, exportLayout };

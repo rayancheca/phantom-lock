@@ -281,7 +281,18 @@ async function readMeta(db: IDBDatabase): Promise<MetaRecord | undefined> {
  * the gallery with nothing to explain it, which is indistinguishable from the
  * app having eaten their work. The caller surfaces the count.
  */
-export async function loadFromIDB(onDrop?: (id: string) => void): Promise<LayoutStore | null> {
+export async function loadFromIDB(
+  onDrop?: (id: string) => void,
+  /**
+   * FOLDER-level notices — a SEPARATE channel from `onDrop` on purpose. `onDrop`
+   * means "a saved layout could not be reconstructed", which the App turns into a
+   * "your work may be gone, export now" warning. A folder being repaired loses no
+   * layout at all, so routing it through `onDrop` would tell the user their work
+   * was destroyed every single boot (the repair is deliberately not persisted, so
+   * it recurs) — a false alarm about the one thing they must be able to trust.
+   */
+  onProjectNotice?: (reason: string) => void,
+): Promise<LayoutStore | null> {
   const db = await openDB();
   const meta = await readMeta(db);
   if (!meta) return null;
@@ -349,9 +360,9 @@ export async function loadFromIDB(onDrop?: (id: string) => void): Promise<Layout
   // thing allowed to degrade, and it degrades to "one default folder holding
   // everything" — which is exactly the pre-S20 shape.
   try {
-    return assembleStore(meta.projects, layouts, meta.activeId, (reason) => onDrop?.(reason));
+    return assembleStore(meta.projects, layouts, meta.activeId, onProjectNotice);
   } catch {
-    onDrop?.('the folder structure could not be read');
+    onProjectNotice?.('the folder structure could not be read');
     const fallback = defaultProject();
     return {
       layouts: layouts.map((l) => ({ ...l, projectId: fallback.id })),
@@ -397,10 +408,11 @@ export async function bootstrapPersistence(
   loadLegacy: () => LayoutStore,
   loadFallback: () => LayoutStore = loadLegacy,
   onDrop?: (id: string) => void,
+  onProjectNotice?: (reason: string) => void,
 ): Promise<{ store: LayoutStore; mode: PersistMode; firstRun: boolean }> {
   try {
     await openDB();
-    const existing = await loadFromIDB(onDrop);
+    const existing = await loadFromIDB(onDrop, onProjectNotice);
     if (existing) return { store: existing, mode: 'idb', firstRun: false };
     // First run on IDB: migrate whatever the legacy loader produces (real saved
     // data, or the bundled default apartment / seeded demo).
@@ -431,8 +443,13 @@ interface ExportedLayout {
   /**
    * Owning project's NAME, not its id — an id is meaningless in another store, and
    * honouring an imported id would let a file mint a folder that collides with one
-   * the user already has. A reader matches on name and creates the folder if it is
-   * missing. Absent in a v1 bundle.
+   * the user already has. Absent in a v1 bundle.
+   *
+   * ⚠ The SINGLE-layout export/import path reads this (via `findOrCreateProject`).
+   * The BUNDLE has no reader at all — `importLayout` handles one layout, and an
+   * "Export all" bundle has never been importable (pre-existing, `docs/ideas.md`
+   * §10b). So in a bundle this field is currently write-only: it is emitted so a
+   * future importer can restore the filing, not because one exists today.
    */
   project?: string;
 }

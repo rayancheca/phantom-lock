@@ -79,6 +79,18 @@ export function usePersistence({ store, persistMode, showToast }: Args): { expor
       const st = storeRef.current;
       const seen = persistedRef.current!;
       let anyFailed = false;
+      // The folder list goes FIRST. If a cycle is torn (tab killed inside the
+      // pagehide flush, a quota error, an IDB abort) the surviving on-disk state
+      // is then "a folder with no members yet" — invisible, and self-correcting on
+      // the next write. With the layouts first it would be "layouts pointing at a
+      // folder the meta row has never heard of", i.e. orphans that get re-homed
+      // into a folder the user never chose. `loadFromIDB` re-derives `activeId`
+      // against the layouts it actually finds, so writing meta early is safe.
+      try {
+        await saveMeta(st.activeId, st.projects);
+      } catch {
+        anyFailed = true;
+      }
       for (const l of st.layouts) {
         const prev = seen.get(l.id);
         const src = l.scene.underlay?.src ?? null;
@@ -101,11 +113,6 @@ export function usePersistence({ store, persistMode, showToast }: Args): { expor
             anyFailed = true;
           }
         }
-      }
-      try {
-        await saveMeta(st.activeId, st.projects);
-      } catch {
-        anyFailed = true;
       }
       if (anyFailed) {
         warnSaveFailed('Could not save everything to the database — export your layouts to keep them safe.');

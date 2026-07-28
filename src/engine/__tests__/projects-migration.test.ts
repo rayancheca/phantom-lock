@@ -11,7 +11,13 @@ import {
   __resetConnectionForTests,
 } from '../db';
 import { apartmentScene, blankScene, defaultStore, loadStore, makeLayout, STORAGE_KEY } from '../scene';
-import { DEFAULT_PROJECT_ID, DEFAULT_PROJECT_NAME } from '../projects';
+import {
+  DEFAULT_PROJECT_ID,
+  DEFAULT_PROJECT_NAME,
+  assembleStore,
+  findOrCreateProject,
+} from '../projects';
+import { sanitizeLayout } from '../scene';
 import type { LayoutStore } from '../types';
 
 /**
@@ -152,13 +158,56 @@ describe('OLD-SHAPE IndexedDB records upgrade on read', () => {
     await new Promise<void>((res) => {
       tx.oncomplete = () => res();
     });
-    const reports: string[] = [];
-    const store = await loadFromIDB((r) => reports.push(r));
+    const dropped: string[] = [];
+    const notices: string[] = [];
+    const store = await loadFromIDB(
+      (id) => dropped.push(id),
+      (r) => notices.push(r),
+    );
     expect(store!.layouts).toHaveLength(2);
     // The user is TOLD their filing was lost — silence here is indistinguishable
     // from the app having eaten their organisation.
-    expect(reports.length).toBeGreaterThan(0);
-    expect(reports.join(' ')).toMatch(/folder/i);
+    expect(notices.length).toBeGreaterThan(0);
+    expect(notices.join(' ')).toMatch(/folder/i);
+    // …and CRUCIALLY not through the drop channel. `onDrop` means "a saved layout
+    // could not be reconstructed", which the App turns into a "your work may be
+    // gone, export now" warning. No layout was lost here; routing a folder repair
+    // through it would raise that alarm on EVERY boot, since the repair is
+    // deliberately never persisted and therefore recurs.
+    expect(dropped).toEqual([]);
+  });
+
+  it('a re-homed orphan is a NOTICE, never a dropped-layout alarm', async () => {
+    const db = await openDB();
+    const tx = db.transaction(['layouts', 'meta'], 'readwrite');
+    tx.objectStore('layouts').put({
+      id: 'orphan-x',
+      name: 'Orphan',
+      scene: blankScene(),
+      settings: defaultStore().layouts[0].settings,
+      updatedAt: 5,
+      projectId: 'ghost-folder',
+    });
+    tx.objectStore('meta').put({
+      key: 'root',
+      activeId: 'orphan-x',
+      projects: [{ id: 'p-live', name: 'Live', createdAt: 1 }],
+      schemaVersion: 1,
+      updatedAt: 1,
+      migratedFromLocalStorage: true,
+    });
+    await new Promise<void>((res) => {
+      tx.oncomplete = () => res();
+    });
+    const dropped: string[] = [];
+    const notices: string[] = [];
+    const store = await loadFromIDB(
+      (id) => dropped.push(id),
+      (r) => notices.push(r),
+    );
+    expect(store!.layouts).toHaveLength(1);
+    expect(dropped).toEqual([]);
+    expect(notices.join(' ')).toMatch(/no folder/i);
   });
 
   it('an old record whose projectId names a dead folder is RE-HOMED, never dropped', async () => {
@@ -290,5 +339,93 @@ describe('the export bundle carries the folder, by NAME', () => {
     expect(bundle.layouts[0].project).toBe('Maple Court');
     // ids are deliberately NOT exported — they are meaningless in another store
     expect(JSON.stringify(bundle)).not.toContain('p1"');
+  });
+});
+
+
+describe('a folder ROUND-TRIPS through the single-layout export/import path', () => {
+  /** Exactly what `useLayoutStore.exportLayout` writes to the file. */
+  const exported = (l: { name: string; scene: unknown; settings: unknown }, project: string) =>
+    JSON.parse(JSON.stringify({ ...l, project }));
+
+  /** Exactly what `useLayoutActions.importLayout` does with it. */
+  function importInto(store: LayoutStore, file: Record<string, unknown>): LayoutStore {
+    const sanitized = sanitizeLayout(file)!;
+    const wanted = typeof file.project === 'string' ? file.project : '';
+    const { store: withFolder, projectId } = findOrCreateProject(
+      store,
+      wanted,
+      withFolderFallback(store),
+    );
+    return {
+      ...withFolder,
+      layouts: [...withFolder.layouts, { ...sanitized, id: 'imported', projectId }],
+      activeId: 'imported',
+    };
+  }
+  const withFolderFallback = (s: LayoutStore): string => s.projects[0].id;
+
+  it('lands in the SAME folder when one of that name already exists', () => {
+    const base = assembleStore(
+      [
+        { id: 'p1', name: 'Maple Court', createdAt: 1 },
+        { id: 'p2', name: 'Sketches', createdAt: 2 },
+      ],
+      [makeLayout('Existing', blankScene(), undefined, 'p1')],
+      undefined,
+    );
+    const file = exported(
+      { name: 'Sent to me', scene: blankScene(), settings: base.layouts[0].settings },
+      'Sketches',
+    );
+    const after = importInto(base, file);
+    expect(after.projects).toHaveLength(2); // no duplicate folder minted
+    expect(after.layouts.find((l) => l.id === 'imported')!.projectId).toBe('p2');
+  });
+
+  it('CREATES the folder when the receiving store has never heard of it', () => {
+    const base = assembleStore(
+      [{ id: 'p1', name: 'Mine', createdAt: 1 }],
+      [makeLayout('Existing', blankScene(), undefined, 'p1')],
+      undefined,
+    );
+    const file = exported(
+      { name: 'From a friend', scene: blankScene(), settings: base.layouts[0].settings },
+      'Their studio',
+    );
+    const after = importInto(base, file);
+    expect(after.projects.map((p) => p.name)).toEqual(['Mine', 'Their studio']);
+    const landed = after.layouts.find((l) => l.id === 'imported')!;
+    expect(landed.projectId).toBe(after.projects[1].id);
+  });
+
+  it('ignores a foreign projectId — no phantom folder, no dangling pointer', () => {
+    const base = assembleStore(
+      [{ id: 'p1', name: 'Mine', createdAt: 1 }],
+      [makeLayout('Existing', blankScene(), undefined, 'p1')],
+      undefined,
+    );
+    const file = {
+      ...exported({ name: 'X', scene: blankScene(), settings: base.layouts[0].settings }, ''),
+      projectId: 'a-project-id-from-someone-elses-store',
+    };
+    const after = importInto(base, file);
+    expect(after.projects).toHaveLength(1);
+    expect(after.layouts.find((l) => l.id === 'imported')!.projectId).toBe('p1');
+    // …and the whole store still satisfies the invariant
+    const ids = new Set(after.projects.map((p) => p.id));
+    for (const l of after.layouts) expect(ids.has(l.projectId)).toBe(true);
+  });
+
+  it('a PRE-S20 file (no project key at all) still imports, into the current folder', () => {
+    const base = assembleStore(
+      [{ id: 'p1', name: 'Mine', createdAt: 1 }],
+      [makeLayout('Existing', blankScene(), undefined, 'p1')],
+      undefined,
+    );
+    const old = { name: 'Old export', scene: blankScene(), settings: base.layouts[0].settings };
+    const after = importInto(base, JSON.parse(JSON.stringify(old)));
+    expect(after.layouts).toHaveLength(2);
+    expect(after.layouts.find((l) => l.id === 'imported')!.projectId).toBe('p1');
   });
 });
