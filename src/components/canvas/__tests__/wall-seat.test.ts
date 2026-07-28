@@ -328,11 +328,35 @@ describe('moveObjectTo — the drag, end to end', () => {
   });
 
   it('THE ANTI-RATCHET: Shift restores the exact pre-drag rotation float', () => {
-    const rot0 = 0.4211;
-    const out = moveObjectTo(s, 'sofa', { x: 3, y: 0.72 }, rot0, { snapOn: true, seat: null });
+    // SWEEP, do not probe one value. The first cut of this test used 0.4211 alone
+    // and passed against a normalizeAngle round-trip that is NOT bit-exact — 12.1 %
+    // of already-in-range values come back perturbed, and 0.4211 happens to be one
+    // of the 87.9 % that survive. -2.1410631454196234 is a measured failing value
+    // and is pinned here by name so the round-trip cannot come back.
+    const probes = [0.4211, -2.1410631454196234, 0, Math.PI, -Math.PI + 1e-9, 1.2345678901234];
+    for (let i = 0; i < 400; i++) probes.push(-Math.PI + (2 * Math.PI * i) / 400);
+    for (const rot0 of probes) {
+      const out = moveObjectTo(s, 'sofa', { x: 3, y: 0.72 }, rot0, { snapOn: true, seat: null });
+      const o = out.scene.objects.find((x) => x.id === 'sofa') as RectObj;
+      expect(Object.is(o.rotation, rot0), `rot0 ${rot0}`).toBe(true);
+      expect(out.guide).toBeNull();
+    }
+  });
+
+  it('still refuses to write a NON-FINITE rotation, which would delete the object', () => {
+    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      const out = moveObjectTo(s, 'sofa', { x: 3, y: 7 }, bad, { snapOn: true, seat: null });
+      const o = out.scene.objects.find((x) => x.id === 'sofa') as RectObj;
+      expect(Number.isFinite(o.rotation), `rot0 ${bad}`).toBe(true);
+    }
+  });
+
+  it('leaves rot0 bit-exact after a tour past a wall with NO wall in the scene at all', () => {
+    const bare = scene([rect('sofa', { x: 3, y: 0.55 }, 0)]);
+    const rot0 = -2.1410631454196234;
+    const out = moveObjectTo(bare, 'sofa', { x: 4, y: 2 }, rot0, { snapOn: true, seat: DRAG_SEAT });
     const o = out.scene.objects.find((x) => x.id === 'sofa') as RectObj;
     expect(Object.is(o.rotation, rot0)).toBe(true);
-    expect(out.guide).toBeNull();
   });
 
   it('restores rot0 exactly after touring past a wall and leaving its field', () => {

@@ -452,7 +452,15 @@ export function moveObjectTo(
         );
 
   const center = seat?.seated ? seat.center : grid;
-  const rotation = seat ? seat.rotation : normalizeAngle(rot0);
+  // Pass `rot0` through UNTOUCHED when no wall interaction fired. Re-normalising
+  // here would break the invariant this whole design rests on: `normalizeAngle` is
+  // an atan2(sin, cos) round-trip, and that is NOT bit-exact — measured, 12.1 % of
+  // already-in-range values come back perturbed by ~4e-16. So a Shift-drag, or a
+  // drag anywhere in a wall-less scene, would silently rewrite the rotation every
+  // frame. Invisible on screen, but it contradicts "leaving a wall's field restores
+  // the identical float" and can compound. The finite check stays: `rot0` reaching
+  // the scene as NaN would make `sanitizeObject` DELETE the object on next load.
+  const rotation = seat ? seat.rotation : fin(rot0) ? rot0 : 0;
 
   return {
     scene: {
