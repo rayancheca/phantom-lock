@@ -1,0 +1,118 @@
+/* The reviewable detection proposal. Inherits `.optimize-dialog`'s surface,
+   scroll behaviour and reduced-motion rule; everything here is the list. */
+
+.detect-card {
+  --detect-row-gap: 2px;
+}
+
+.detect-confidence {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  gap: 2px 8px;
+  margin: 10px 0 4px;
+}
+
+.detect-confidence-label {
+  font-size: var(--text-sm);
+  color: var(--text-2);
+}
+
+.detect-confidence-value {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.detect-confidence-bar {
+  grid-column: 1 / -1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.detect-confidence-fill {
+  display: block;
+  height: 100%;
+  background: var(--signal);
+}
+
+.detect-levels {
+  border: 0;
+  margin: 8px 0 0;
+  padding: 0;
+}
+
+.detect-levels legend {
+  padding: 0;
+  font-size: var(--text-sm);
+  color: var(--text-2);
+}
+
+.detect-level-hint {
+  margin-top: 4px;
+}
+
+.detect-list {
+  list-style: none;
+  margin: 10px 0;
+  padding: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--detect-row-gap);
+}
+
+.detect-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-1) ease;
+}
+
+.detect-row:hover {
+  background: var(--surface-3);
+}
+
+.detect-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* A struck-off row drops an emphasis TIER rather than fading, because an
+   opacity fade takes the text below 4.5:1 (the S7 disabled-state lesson). */
+.detect-row.is-off {
+  background: transparent;
+  color: var(--text-2);
+}
+
+.detect-row.is-off .detect-row-name {
+  text-decoration: line-through;
+}
+
+.detect-row-len {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .detect-row {
+    transition: none;
+  }
+}

@@ -16,6 +16,8 @@ import type { ListeningField } from '../../engine/bestspot';
 import SimCanvas from '../canvas/SimCanvas';
 import SelectionActions from '../canvas/SelectionActions';
 import Legend from '../canvas/Legend';
+import DetectionProposalCard from '../canvas/DetectionProposalCard';
+import type { WallDetection } from './hooks/useWallDetection';
 import type { CanvasTheme } from '../canvas/render';
 import Toolbar from '../panels/Toolbar';
 import OptimizeDialog from '../panels/OptimizeDialog';
@@ -80,10 +82,8 @@ interface CanvasStageProps {
   onApplyArrange: () => void;
   onCloseArrange: () => void;
 
-  wallProposal: SceneObject[] | null;
-  onAcceptDetection: () => void;
+  detection: WallDetection;
   onTraceInstead: () => void;
-  onDiscardWalls: () => void;
 }
 
 /** The centre stage: the interactive canvas, its toolbar, the mode hint, the
@@ -218,38 +218,16 @@ export default function CanvasStage(p: CanvasStageProps) {
           onClose={p.onCloseArrange}
         />
       )}
-      {p.wallProposal && (
-        <div className="optimize-dialog" role="dialog" aria-label="Detected layout">
-          <h2>Detected layout</h2>
-          <p className="card-sub">
-            Found <strong>{p.wallProposal.length} walls</strong>
-            {' — '}
-            {p.wallProposal
-              .reduce(
-                (sum, w) => (w.kind === 'wall' ? sum + Math.hypot(w.b.x - w.a.x, w.b.y - w.a.y) : sum),
-                0,
-              )
-              .toFixed(1)}{' '}
-            m of them, shown as ghost lines over your floorplan. Does this look right?
-          </p>
-          <p className="card-sub">
-            Lengths come from the current image scale — if they look off, discard, calibrate the scale,
-            and detect again.
-          </p>
-          <div className="dialog-actions">
-            <button type="button" className="btn btn-ok" onClick={p.onAcceptDetection}>
-              <Icon name="check" size={13} />
-              Use this layout
-            </button>
-            <button type="button" className="btn" onClick={p.onTraceInstead}>
-              <Icon name="wall" size={13} />
-              Trace instead
-            </button>
-            <button type="button" className="btn" onClick={p.onDiscardWalls}>
-              Discard
-            </button>
-          </div>
-        </div>
+      {p.detection.proposal && (
+        <DetectionProposalCard
+          proposal={p.detection.proposal}
+          detecting={p.detection.detecting}
+          onToggleWall={p.detection.toggleWall}
+          onSensitivity={(level) => p.detection.run(level)}
+          onAccept={p.detection.accept}
+          onTraceInstead={p.onTraceInstead}
+          onDiscard={p.detection.discard}
+        />
       )}
     </section>
   );

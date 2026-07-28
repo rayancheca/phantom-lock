@@ -1,0 +1,194 @@
+/**
+ * Is this detection worth showing at all?
+ *
+ * The old pipeline had exactly one honesty check — `walls.length < 2` in the
+ * App — so an image with no floorplan in it produced 61 confident walls and the
+ * user's only move was Discard. A detector that cannot tell a plan from a photo
+ * of a table is not a detector, it is a random-line generator with a progress
+ * spinner.
+ *
+ * Everything here is computable from the image and the candidate output ALONE —
+ * no ground truth — which is what lets the same numbers drive both the refusal
+ * and the confidence the user is shown.
+ *
+ * Three signals, chosen because they fail independently:
+ *
+ *   support     is there ink under each segment? Catches geometry invented by
+ *               gap-bridging and corner-joining
+ *   structure   do the segments MEET each other? A floorplan is a connected
+ *               graph of walls; the edges of furniture, text and photographic
+ *               noise are a scatter of unrelated sticks. This is the signal
+ *               that separates "a plan" from "an image with lines in it"
+ *   explained   how much of the wall-like ink ended up described? Catches the
+ *               opposite failure, where a few confident walls hide the fact
+ *               that most of the plan was missed
+ */
+
+import type { Mask, PxSegment } from './types';
+import { segLength } from './types';
+import { inkSupport } from './regularize';
+
+export interface DetectionQuality {
+  /** Overall confidence in [0,1] — what the UI shows. */
+  confidence: number;
+  /** Set when the result should NOT be offered; a sentence for the user. */
+  refusal: string | null;
+  wallCount: number;
+  /** Mean fraction of each segment's length that sits on ink. */
+  support: number;
+  /** Fraction of segment endpoints that meet another segment. */
+  structure: number;
+  /** Fraction of wall-ink pixels that lie under some segment. */
+  explained: number;
+  /** Total detected wall length, px. */
+  totalLength: number;
+}
+
+export interface QualityOptions {
+  /** How near an endpoint must be to another segment to count as joined, px. */
+  junctionRadius: number;
+  /** Radius used for the ink-support probe, px. */
+  supportRadius: number;
+  /** How near a segment an ink pixel must be to count as explained, px. */
+  explainRadius: number;
+}
+
+/** Minimum walls before a result is worth offering at all. */
+export const MIN_WALLS = 3;
+/** Below this mean support the geometry is not backed by the image. */
+export const MIN_SUPPORT = 0.55;
+/**
+ * Below this the segments do not form a connected structure.
+ *
+ * Calibrated against MEASURED legitimate lows, not against taste. It started at
+ * 0.40 and that fired on real plans twice:
+ *
+ *   0.364  the standard apartment photographed 22 degrees off-square
+ *   0.313  heavy poche exterior with thin interior partitions — a standard
+ *          architectural convention, where one global stroke width fits neither
+ *          population
+ *
+ * Both were 83-96 % correct reads thrown away, which is the failure mode
+ * CLAUDE.md names as worse than the problem it prevents. 0.25 keeps a margin
+ * under the lower of the two while still refusing the null cases, which produce
+ * either no segments at all or a scatter measuring 0.00 — see the `no-plan`
+ * and `no-plan-lines` fixtures.
+ */
+export const MIN_STRUCTURE = 0.25;
+
+function distToSegment(p: { x: number; y: number }, s: PxSegment): number {
+  const dx = s.b.x - s.a.x;
+  const dy = s.b.y - s.a.y;
+  const l2 = dx * dx + dy * dy;
+  const t = l2 === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - s.a.x) * dx + (p.y - s.a.y) * dy) / l2));
+  return Math.hypot(p.x - (s.a.x + dx * t), p.y - (s.a.y + dy * t));
+}
+
+/**
+ * Fraction of endpoints that touch another segment.
+ *
+ * A rectangular room scores 1.0 — all eight endpoints are corners. A scatter of
+ * unrelated sticks scores near 0. It is deliberately measured on ENDPOINTS
+ * rather than crossings: walls in a real plan terminate on each other, whereas
+ * lines extracted from a photograph of furniture cross at random interior
+ * points as often as not.
+ */
+export function structureScore(segs: PxSegment[], radius: number): number {
+  if (segs.length === 0) return 0;
+  let joined = 0;
+  let total = 0;
+  for (let i = 0; i < segs.length; i++) {
+    for (const end of [segs[i].a, segs[i].b]) {
+      total++;
+      for (let j = 0; j < segs.length; j++) {
+        if (j === i) continue;
+        if (distToSegment(end, segs[j]) <= radius) {
+          joined++;
+          break;
+        }
+      }
+    }
+  }
+  return total === 0 ? 0 : joined / total;
+}
+
+/** Fraction of the wall-mask's ink that lies under some detected segment. */
+export function explainedFraction(segs: PxSegment[], mask: Mask, radius: number): number {
+  const { width: w, height: h, data } = mask;
+  let ink = 0;
+  let covered = 0;
+  // Rasterise the segments into a coverage mask once, rather than testing every
+  // ink pixel against every segment.
+  const paint = new Uint8Array(w * h);
+  const r = Math.max(1, Math.round(radius));
+  for (const s of segs) {
+    const n = Math.max(1, Math.ceil(segLength(s)));
+    for (let i = 0; i <= n; i++) {
+      const t = i / n;
+      const cx = Math.round(s.a.x + (s.b.x - s.a.x) * t);
+      const cy = Math.round(s.a.y + (s.b.y - s.a.y) * t);
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          const nx = cx + dx;
+          const ny = cy + dy;
+          if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+          paint[ny * w + nx] = 1;
+        }
+      }
+    }
+  }
+  for (let i = 0; i < data.length; i++) {
+    if (!data[i]) continue;
+    ink++;
+    if (paint[i]) covered++;
+  }
+  return ink === 0 ? 0 : covered / ink;
+}
+
+/**
+ * Score a candidate detection and decide whether to offer it.
+ *
+ * `refusal` is a sentence, not a boolean, because the honest answer to "why did
+ * nothing happen?" is different in each case and the user's next move depends
+ * on which one it was — redraw the photo, or trace by hand.
+ */
+export function assessDetection(
+  segs: PxSegment[],
+  wallMask: Mask,
+  opts: QualityOptions,
+): DetectionQuality {
+  const totalLength = segs.reduce((a, s) => a + segLength(s), 0);
+  const support =
+    segs.length === 0
+      ? 0
+      : segs.reduce((a, s) => a + inkSupport(s, wallMask, opts.supportRadius) * segLength(s), 0) /
+        Math.max(1e-9, totalLength);
+  const structure = structureScore(segs, opts.junctionRadius);
+  const explained = explainedFraction(segs, wallMask, opts.explainRadius);
+
+  let refusal: string | null = null;
+  if (segs.length < MIN_WALLS) {
+    refusal = "This image doesn't have enough clear straight lines to read as a floorplan.";
+  } else if (support < MIN_SUPPORT) {
+    refusal = "The lines in this image are too broken up to trace as walls.";
+  } else if (structure < MIN_STRUCTURE) {
+    refusal = "The lines in this image don't join up into rooms, so it doesn't look like a floorplan.";
+  }
+
+  // A blend, not a product: each signal saturates, and a plan with one open
+  // wall should not be reported as half-confident.
+  const confidence = Math.max(
+    0,
+    Math.min(1, 0.45 * support + 0.35 * Math.min(1, structure / 0.8) + 0.2 * Math.min(1, explained / 0.7)),
+  );
+
+  return {
+    confidence,
+    refusal,
+    wallCount: segs.length,
+    support,
+    structure,
+    explained,
+    totalLength,
+  };
+}

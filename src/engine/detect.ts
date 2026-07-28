@@ -1,289 +1,252 @@
+/**
+ * Floorplan image -> wall segments.
+ *
+ * ## What changed in S22, and why
+ *
+ * The previous pipeline was `ink -> global Hough -> peaks -> pixels near each
+ * peak -> merge`. Measured against the corpus in
+ * `__tests__/fixtures/floorplan-corpus.ts` it scored **52.1 %**, and the way it
+ * failed was structural rather than a matter of thresholds:
+ *
+ *   - Hough ran on FILLED strokes, so a 9-px wall offered a band of nearly
+ *     equal lines and several survived suppression. Cavity walls came back
+ *     doubled every time (duplication 45.7 % on `hollow-rect`).
+ *   - `segmentsOnLine` collected every ink pixel within a band of an INFINITE
+ *     line, so one diagonal stitched a sofa, a wall and a door arc into a
+ *     cross-plan beam. On a furnished plan precision fell to 35.9 %.
+ *   - Furniture was rejected by BOUNDING-BOX SPAN, which a sofa passes.
+ *   - Nothing was regularised globally, so corners overshot and halves of one
+ *     wall landed on different lines.
+ *   - Nothing checked whether the answer was any good: an image with no
+ *     floorplan in it produced 61 walls.
+ *
+ * The replacement asks a local, connected question instead of a global one:
+ *
+ *   1. `inkMaskOf`            Otsu, ink as the minority class (blueprints work)
+ *   2. `removeThickRegions`   drop anything locally FATTER than a wall, which
+ *                             separates furniture from walls even when they
+ *                             touch — a component filter cannot
+ *   3. `closeMask`            fill the cavity of a double-drawn wall so it
+ *                             thins to one centreline instead of two
+ *   4. `removeSmallComponents` dimension text, speckle, stray marks
+ *   5. `thin`                 Zhang-Suen to a 1-px skeleton: thickness can no
+ *                             longer manufacture duplicates
+ *   6. `skeletonToSegments`   follow each branch; only CONNECTED ink can share
+ *                             a segment, so a cross-plan beam is unconstructible
+ *   7. `regularize`           dominant axis, snap, collinear merge, corners
+ *   8. `filterBySupport`      reject geometry with no ink under it
+ *   9. `assessDetection`      refuse rather than emit a tangle
+ *
+ * Corpus scores, before and after, are in `docs/sessions/S22/bench/`.
+ *
+ * ## Contract
+ *
+ * The pure core takes RGBA bytes and is DOM-free, so every stage is provable in
+ * node. `detectWallsFromUnderlay` is the only part that touches the DOM.
+ * Detection output is a PROPOSAL the user confirms — it never writes a scene.
+ */
+
 import type { Underlay, Vec2, WallObj } from './types';
 import { createId, ROOM_HEIGHT } from './scene';
+import type { GrayImage, Mask, PxSegment } from './vision/types';
+import { segLength } from './vision/types';
+import {
+  closeMask,
+  countInk,
+  inkMaskOf,
+  meanStrokeWidth,
+  removeSmallComponents,
+  removeThickRegions,
+} from './vision/mask';
+import { thin } from './vision/thin';
+import { skeletonToSegments } from './vision/trace';
+import { filterBySupport, regularize, type RegularizeOptions } from './vision/regularize';
+import { assessDetection, type DetectionQuality } from './vision/quality';
 
-/** A detected wall segment in image pixel space. */
-export interface PxSegment {
-  a: Vec2;
-  b: Vec2;
+export type { GrayImage, PxSegment } from './vision/types';
+export type { DetectionQuality } from './vision/quality';
+
+// ---------------------------------------------------------------------------
+// tuning
+//
+// Every constant below is a FRACTION of the image's larger dimension, or is
+// derived from the measured stroke width, so the pipeline behaves the same at
+// any resolution. They are calibrated against the enumerated corpus in
+// `__tests__/fixtures/floorplan-corpus.ts` — re-derive them against that list
+// if you change one, the same discipline `grid.ts` follows for its cell budget.
+// ---------------------------------------------------------------------------
+
+/**
+ * Half-thickness above which ink is furniture, not wall. 1.8 % of the larger
+ * dimension admits walls up to ~3.6 % thick — heavier than any plan draws them
+ * — while a sofa, a bath or a kitchen island is far fatter.
+ */
+const WALL_HALF_WIDTH_FRAC = 0.018;
+const WALL_HALF_WIDTH_MIN = 3;
+const WALL_HALF_WIDTH_MAX = 24;
+
+/**
+ * Closing radius: fills gaps up to twice this. It must exceed half the widest
+ * CAVITY (a double-drawn wall) and stay well under half the narrowest DOOR, or
+ * closing would seal the doorways and the plan would come back with no
+ * openings at all.
+ */
+const CLOSE_FRAC = 0.01;
+const CLOSE_MIN = 2;
+const CLOSE_MAX = 12;
+
+/** Components smaller than this in either dimension are annotation, not wall. */
+const MIN_COMPONENT_SPAN_FRAC = 0.045;
+/** ...and this many pixels, which catches a sparse run of text marks. */
+const MIN_COMPONENT_PIXELS = 24;
+
+/** The shortest run of centreline worth calling a wall. */
+const MIN_SEGMENT_FRAC = 0.05;
+const MIN_SEGMENT_PX = 12;
+
+/** Max deviation from the plan's own axis that still gets snapped. */
+const SNAP_ANGLE_DEG = 9;
+/** Max heading difference for two segments to be treated as the same line. */
+const PARALLEL_ANGLE_DEG = 20;
+
+/** Fraction of a segment that must sit on ink for it to survive. */
+const MIN_INK_SUPPORT = 0.6;
+
+/**
+ * Corner-joining radius as a fraction of the minimum wall length — the floor
+ * that stops the radius collapsing on a hairline drawing. See the derivation at
+ * the call site.
+ */
+const CORNER_RADIUS_FRAC = 0.25;
+
+export interface DetectOptions {
+  /**
+   * 0.5 finds fewer, more certain walls; 1.5 finds more and accepts weaker
+   * evidence. This is the ONE knob the UI exposes, so that a user whose plan is
+   * under- or over-read can steer instead of only discarding.
+   */
+  sensitivity?: number;
 }
 
-export interface GrayImage {
-  /** RGBA bytes, as in ImageData.data. */
-  data: Uint8ClampedArray;
-  width: number;
-  height: number;
+export interface DetectionResult {
+  segments: PxSegment[];
+  quality: DetectionQuality;
+  /** Ink judged to be wall, after furniture and annotation were removed. */
+  wallMask: Mask;
+  /** Measured mean wall thickness in px — what the tuning derived from. */
+  strokeWidth: number;
 }
 
-// Tunables, expressed as fractions of the image's max dimension so the
-// pipeline behaves the same across resolutions.
-const MIN_SEG_FRAC = 0.09; // shortest wall worth keeping
-const GAP_FRAC = 0.02; // ink gap that still counts as one wall (doors in plans)
-const BAND_PX = 1.6; // how far a pixel may sit off the Hough line
-const MERGE_RHO_PX = 7; // parallel lines closer than this merge (double-drawn walls)
+function clamp(v: number, lo: number, hi: number): number {
+  return v < lo ? lo : v > hi ? hi : v;
+}
 
-/** Luminance + Otsu threshold → boolean ink mask (true = wall ink). Handles
- *  both dark-on-light plans and light-on-dark blueprints. */
+/**
+ * The pure pipeline, with everything it learned along the way.
+ *
+ * `sensitivity` scales exactly two things — the minimum wall length and the
+ * required ink support — because those are the two places a correct pipeline
+ * can still disagree with a particular drawing about what counts as a wall. It
+ * deliberately does NOT scale the furniture threshold or the closing radius:
+ * those encode what a wall physically IS, and a user turning a slider should
+ * not be able to reclassify their sofa.
+ */
+export function detectWalls(img: GrayImage, opts: DetectOptions = {}): DetectionResult {
+  const sensitivity = clamp(opts.sensitivity ?? 1, 0.4, 2);
+  const maxDim = Math.max(img.width, img.height);
+
+  const maxHalfWidth = clamp(
+    Math.round(WALL_HALF_WIDTH_FRAC * maxDim),
+    WALL_HALF_WIDTH_MIN,
+    WALL_HALF_WIDTH_MAX,
+  );
+  const closeRadius = clamp(Math.round(CLOSE_FRAC * maxDim), CLOSE_MIN, CLOSE_MAX);
+  const minComponentSpan = Math.max(8, MIN_COMPONENT_SPAN_FRAC * maxDim);
+  const minSegment = Math.max(MIN_SEGMENT_PX, (MIN_SEGMENT_FRAC * maxDim) / sensitivity);
+
+  // 1-4: page -> wall ink.
+  //
+  // The thickness filter runs TWICE, and the second pass is not belt-and-
+  // braces: closing is a gap-filling operation, so it MANUFACTURES thick
+  // regions that were not in the image. Diagonal hatching at a pitch under
+  // `2 * closeRadius` — a hatched wall section, a tiled bathroom floor — fills
+  // into a solid mass, and a mass that arrives after the first filter has run
+  // is a mass nothing else will ever reject.
+  const ink = inkMaskOf(img);
+  const deFurnished = removeThickRegions(ink, maxHalfWidth);
+  const closed = removeThickRegions(closeMask(deFurnished, closeRadius), maxHalfWidth, maxHalfWidth * 0.5);
+  const wallMask = removeSmallComponents(closed, minComponentSpan, MIN_COMPONENT_PIXELS);
+
+  // 5: centrelines.
+  const skeleton = thin(wallMask);
+  const strokeWidth = meanStrokeWidth(countInk(wallMask), countInk(skeleton));
+
+  // 6: connected runs -> straight spans. The RDP epsilon has to exceed the
+  // staircase amplitude of a rasterised diagonal (about half a pixel) but stay
+  // under the smallest real bend, so it is tied to the stroke, not the image.
+  const epsilon = clamp(strokeWidth * 0.5, 1.2, 6);
+  const raw = skeletonToSegments(skeleton, epsilon, Math.max(4, minSegment * 0.35), minSegment);
+
+  // 7: make the pieces agree with each other.
+  //
+  // `cornerRadius` deliberately has a floor tied to the PLAN's scale, not only
+  // to the stroke. How far a traced endpoint lands from its true corner is
+  // governed by thinning and by the simplification epsilon, and on a hairline
+  // drawing both still leave a 6-8 px shortfall while `strokeWidth * 2` has
+  // collapsed to 4. Measured: with a stroke-only radius the `hairline` fixture
+  // joined 21 % of its corners and was then REFUSED as "not a floorplan" — a
+  // perfectly good plan rejected because one constant scaled off the wrong
+  // quantity.
+  const cornerRadius = Math.max(6, strokeWidth * 2, minSegment * CORNER_RADIUS_FRAC);
+  const regOpts: RegularizeOptions = {
+    snapAngle: (SNAP_ANGLE_DEG * Math.PI) / 180,
+    parallelAngle: (PARALLEL_ANGLE_DEG * Math.PI) / 180,
+    mergeDistance: Math.max(4, strokeWidth * 1.1),
+    joinGap: Math.max(4, strokeWidth * 1.5),
+    cornerRadius,
+    minLength: minSegment,
+  };
+  const tidy = regularize(raw, regOpts);
+
+  // 8: nothing survives that the image does not support.
+  const supportRadius = Math.max(2, strokeWidth * 0.8);
+  const minSupport = clamp(MIN_INK_SUPPORT / sensitivity, 0.25, 0.95);
+  const segments = filterBySupport(tidy, wallMask, supportRadius, minSupport).filter(
+    (s) => segLength(s) >= minSegment,
+  );
+
+  // 9: is this worth showing?
+  // The junction radius must be the SAME quantity `joinCorners` was given: the
+  // structure signal asks "did the corners meet?", so measuring it at a tighter
+  // radius than the joiner was allowed to work at would report a failure the
+  // joiner was never given the chance to avoid.
+  const quality = assessDetection(segments, wallMask, {
+    junctionRadius: cornerRadius,
+    supportRadius,
+    explainRadius: Math.max(3, strokeWidth * 0.9),
+  });
+
+  return { segments, quality, wallMask, strokeWidth };
+}
+
+/**
+ * Back-compatible entry point: just the segments.
+ *
+ * Kept because "give me the walls" is the honest shape of the question when the
+ * caller is not going to show a confidence, and because every existing test
+ * reaches for it.
+ */
+export function detectSegments(img: GrayImage, opts: DetectOptions = {}): PxSegment[] {
+  return detectWalls(img, opts).segments;
+}
+
+/**
+ * Luminance + Otsu -> boolean ink mask (1 = ink). Handles both dark-on-light
+ * plans and light-on-dark blueprints, because ink is taken to be the minority
+ * class rather than the dark one.
+ */
 export function inkMask(img: GrayImage): Uint8Array {
-  const { data, width, height } = img;
-  const n = width * height;
-  const gray = new Uint8Array(n);
-  const hist = new Uint32Array(256);
-  for (let i = 0; i < n; i++) {
-    const j = i * 4;
-    const g = (data[j] * 299 + data[j + 1] * 587 + data[j + 2] * 114) / 1000;
-    const gi = g | 0;
-    gray[i] = gi;
-    hist[gi]++;
-  }
-  // Otsu: threshold maximizing between-class variance.
-  let sum = 0;
-  for (let t = 0; t < 256; t++) sum += t * hist[t];
-  let sumB = 0;
-  let wB = 0;
-  let best = 0;
-  let thresh = 127;
-  for (let t = 0; t < 256; t++) {
-    wB += hist[t];
-    if (wB === 0) continue;
-    const wF = n - wB;
-    if (wF === 0) break;
-    sumB += t * hist[t];
-    const mB = sumB / wB;
-    const mF = (sum - sumB) / wF;
-    const between = wB * wF * (mB - mF) * (mB - mF);
-    if (between > best) {
-      best = between;
-      thresh = t;
-    }
-  }
-  // Ink is the minority class: invert for white-on-dark blueprints.
-  let darkCount = 0;
-  for (let i = 0; i < n; i++) if (gray[i] <= thresh) darkCount++;
-  const inkIsDark = darkCount <= n - darkCount;
-  const mask = new Uint8Array(n);
-  for (let i = 0; i < n; i++) {
-    mask[i] = (gray[i] <= thresh) === inkIsDark ? 1 : 0;
-  }
-  return mask;
-}
-
-/** Remove small connected components — dimension text, door arcs, hatching.
- *  Keeps components whose bounding box spans a meaningful part of the plan. */
-export function dropSmallComponents(mask: Uint8Array, width: number, height: number): Uint8Array {
-  const n = width * height;
-  const out = new Uint8Array(n);
-  const seen = new Uint8Array(n);
-  const keepSpan = Math.max(width, height) * 0.12;
-  const stack = new Int32Array(n);
-  for (let start = 0; start < n; start++) {
-    if (!mask[start] || seen[start]) continue;
-    let top = 0;
-    stack[top++] = start;
-    seen[start] = 1;
-    const px: number[] = [];
-    let minX = width;
-    let maxX = 0;
-    let minY = height;
-    let maxY = 0;
-    while (top > 0) {
-      const i = stack[--top];
-      px.push(i);
-      const x = i % width;
-      const y = (i / width) | 0;
-      if (x < minX) minX = x;
-      if (x > maxX) maxX = x;
-      if (y < minY) minY = y;
-      if (y > maxY) maxY = y;
-      // 8-connected neighbours.
-      for (let dy = -1; dy <= 1; dy++) {
-        for (let dx = -1; dx <= 1; dx++) {
-          if (dx === 0 && dy === 0) continue;
-          const nx = x + dx;
-          const ny = y + dy;
-          if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
-          const ni = ny * width + nx;
-          if (mask[ni] && !seen[ni]) {
-            seen[ni] = 1;
-            stack[top++] = ni;
-          }
-        }
-      }
-    }
-    const span = Math.max(maxX - minX, maxY - minY);
-    if (span >= keepSpan) {
-      for (const i of px) out[i] = 1;
-    }
-  }
-  return out;
-}
-
-interface Peak {
-  theta: number; // radians
-  rho: number; // px
-}
-
-/** Hough accumulator over the ink mask; returns line peaks via greedy NMS. */
-function houghPeaks(mask: Uint8Array, width: number, height: number): Peak[] {
-  const diag = Math.ceil(Math.hypot(width, height));
-  const nTheta = 180;
-  const acc = new Uint32Array(nTheta * (2 * diag + 1));
-  const sinT = new Float64Array(nTheta);
-  const cosT = new Float64Array(nTheta);
-  for (let t = 0; t < nTheta; t++) {
-    sinT[t] = Math.sin((t * Math.PI) / nTheta);
-    cosT[t] = Math.cos((t * Math.PI) / nTheta);
-  }
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      if (!mask[y * width + x]) continue;
-      for (let t = 0; t < nTheta; t++) {
-        const rho = Math.round(x * cosT[t] + y * sinT[t]) + diag;
-        acc[t * (2 * diag + 1) + rho]++;
-      }
-    }
-  }
-  const minVotes = Math.max(width, height) * MIN_SEG_FRAC * 0.8;
-  const peaks: Peak[] = [];
-  const taken: Array<{ t: number; r: number }> = [];
-  for (let iter = 0; iter < 48; iter++) {
-    let bestV = 0;
-    let bestT = -1;
-    let bestR = 0;
-    for (let t = 0; t < nTheta; t++) {
-      for (let r = 0; r <= 2 * diag; r++) {
-        const vv = acc[t * (2 * diag + 1) + r];
-        if (vv <= bestV) continue;
-        let clear = true;
-        for (const tk of taken) {
-          const dt = Math.min(Math.abs(tk.t - t), nTheta - Math.abs(tk.t - t));
-          if (dt <= 3 && Math.abs(tk.r - r) <= MERGE_RHO_PX) {
-            clear = false;
-            break;
-          }
-        }
-        if (clear) {
-          bestV = vv;
-          bestT = t;
-          bestR = r;
-        }
-      }
-    }
-    if (bestT < 0 || bestV < minVotes) break;
-    taken.push({ t: bestT, r: bestR });
-    peaks.push({ theta: (bestT * Math.PI) / nTheta, rho: bestR - diag });
-  }
-  return peaks;
-}
-
-/** Walk the ink pixels near a Hough line and split them into runs. */
-function segmentsOnLine(mask: Uint8Array, width: number, height: number, peak: Peak): PxSegment[] {
-  const cos = Math.cos(peak.theta);
-  const sin = Math.sin(peak.theta);
-  // Collect s (position along line) for every ink pixel within the band.
-  const svals: number[] = [];
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      if (!mask[y * width + x]) continue;
-      const d = x * cos + y * sin - peak.rho;
-      if (Math.abs(d) > BAND_PX + 1) continue;
-      svals.push(-x * sin + y * cos);
-    }
-  }
-  if (svals.length === 0) return [];
-  svals.sort((a, b) => a - b);
-  const maxDim = Math.max(width, height);
-  const gap = maxDim * GAP_FRAC;
-  const minLen = maxDim * MIN_SEG_FRAC;
-  const out: PxSegment[] = [];
-  let runStart = svals[0];
-  let prev = svals[0];
-  const flush = (s0: number, s1: number) => {
-    if (s1 - s0 < minLen) return;
-    const pt = (s: number): Vec2 => ({ x: cos * peak.rho - sin * s, y: sin * peak.rho + cos * s });
-    out.push({ a: pt(s0), b: pt(s1) });
-  };
-  for (let i = 1; i < svals.length; i++) {
-    if (svals[i] - prev > gap) {
-      flush(runStart, prev);
-      runStart = svals[i];
-    }
-    prev = svals[i];
-  }
-  flush(runStart, prev);
-  return out;
-}
-
-/** Snap a segment's angle to 0/45/90/135° when within tolerance. */
-function snapSegment(seg: PxSegment): PxSegment {
-  const dx = seg.b.x - seg.a.x;
-  const dy = seg.b.y - seg.a.y;
-  const len = Math.hypot(dx, dy);
-  const ang = Math.atan2(dy, dx);
-  const step = Math.PI / 4;
-  const snapped = Math.round(ang / step) * step;
-  if (Math.abs(ang - snapped) > (6 * Math.PI) / 180) return seg;
-  const mid = { x: (seg.a.x + seg.b.x) / 2, y: (seg.a.y + seg.b.y) / 2 };
-  const ux = Math.cos(snapped);
-  const uy = Math.sin(snapped);
-  return {
-    a: { x: mid.x - (ux * len) / 2, y: mid.y - (uy * len) / 2 },
-    b: { x: mid.x + (ux * len) / 2, y: mid.y + (uy * len) / 2 },
-  };
-}
-
-/** Merge overlapping collinear segments (plans draw walls as double lines). */
-function mergeSegments(segs: PxSegment[]): PxSegment[] {
-  const merged: PxSegment[] = [];
-  const used = new Array<boolean>(segs.length).fill(false);
-  for (let i = 0; i < segs.length; i++) {
-    if (used[i]) continue;
-    let cur = segs[i];
-    used[i] = true;
-    let changed = true;
-    while (changed) {
-      changed = false;
-      for (let j = 0; j < segs.length; j++) {
-        if (used[j]) continue;
-        const o = segs[j];
-        const d = { x: cur.b.x - cur.a.x, y: cur.b.y - cur.a.y };
-        const len = Math.hypot(d.x, d.y) || 1;
-        const u = { x: d.x / len, y: d.y / len };
-        const angO = Math.atan2(o.b.y - o.a.y, o.b.x - o.a.x);
-        const angC = Math.atan2(d.y, d.x);
-        let dAng = Math.abs(angO - angC) % Math.PI;
-        if (dAng > Math.PI / 2) dAng = Math.PI - dAng;
-        if (dAng > (5 * Math.PI) / 180) continue;
-        // Perpendicular offset of the other segment's midpoint.
-        const mid = { x: (o.a.x + o.b.x) / 2 - cur.a.x, y: (o.a.y + o.b.y) / 2 - cur.a.y };
-        const off = Math.abs(-mid.x * u.y + mid.y * u.x);
-        if (off > MERGE_RHO_PX) continue;
-        // Overlap (or near-touch) along the shared axis?
-        const s = (p: Vec2) => (p.x - cur.a.x) * u.x + (p.y - cur.a.y) * u.y;
-        const [c0, c1] = [0, len];
-        const [o0, o1] = [s(o.a), s(o.b)].sort((a, b) => a - b);
-        if (o1 < c0 - 12 || o0 > c1 + 12) continue;
-        const lo = Math.min(c0, o0);
-        const hi = Math.max(c1, o1);
-        cur = {
-          a: { x: cur.a.x + u.x * lo, y: cur.a.y + u.y * lo },
-          b: { x: cur.a.x + u.x * hi, y: cur.a.y + u.y * hi },
-        };
-        used[j] = true;
-        changed = true;
-      }
-    }
-    merged.push(cur);
-  }
-  return merged;
-}
-
-/** Pure pipeline: RGBA image → wall segments in pixel space. */
-export function detectSegments(img: GrayImage): PxSegment[] {
-  const mask = dropSmallComponents(inkMask(img), img.width, img.height);
-  const peaks = houghPeaks(mask, img.width, img.height);
-  const raw: PxSegment[] = [];
-  for (const p of peaks) raw.push(...segmentsOnLine(mask, img.width, img.height, p));
-  return mergeSegments(raw.map(snapSegment)).map(snapSegment);
+  return inkMaskOf(img).data;
 }
 
 /** Map a pixel-space point through the underlay transform into world metres. */
@@ -307,11 +270,35 @@ export function segmentsToWalls(segs: PxSegment[], u: Underlay, workScale: numbe
   }));
 }
 
-const WORK_MAX = 640;
+/**
+ * Working resolution.
+ *
+ * Raised from 640 in S22. The old cost was dominated by a Hough accumulator
+ * that scanned 180 angles per ink pixel and then swept the whole accumulator 48
+ * times; the new cost is a handful of linear-time passes plus thinning, whose
+ * iteration count is half the stroke width and therefore does NOT grow with
+ * resolution the way the accumulator sweep did. More pixels also means thinner
+ * strokes relative to the plan, which is the regime every stage here prefers.
+ */
+const WORK_MAX = 900;
 
-/** DOM wrapper: rasterize the underlay image and run the pure pipeline.
- *  Returns walls in world metres (via the current underlay calibration). */
-export async function detectWallsFromUnderlay(u: Underlay): Promise<WallObj[]> {
+export interface UnderlayDetection {
+  walls: WallObj[];
+  quality: DetectionQuality;
+}
+
+/**
+ * DOM wrapper: rasterize the underlay image and run the pure pipeline.
+ *
+ * Returns walls AND the quality assessment, so the caller can tell the
+ * difference between "nothing found" and "found, but not worth showing" — and
+ * say which. On a refusal the walls list is empty by construction, so a caller
+ * that ignores `quality` still cannot commit a tangle.
+ */
+export async function detectWallsFromUnderlay(
+  u: Underlay,
+  opts: DetectOptions = {},
+): Promise<UnderlayDetection> {
   const img = await new Promise<HTMLImageElement>((resolve, reject) => {
     const el = new Image();
     el.onload = () => resolve(el);
@@ -325,11 +312,27 @@ export async function detectWallsFromUnderlay(u: Underlay): Promise<WallObj[]> {
   canvas.width = w;
   canvas.height = h;
   const ctx = canvas.getContext('2d');
-  if (!ctx) return [];
+  if (!ctx) {
+    return {
+      walls: [],
+      quality: {
+        confidence: 0,
+        refusal: 'This browser could not read the image.',
+        wallCount: 0,
+        support: 0,
+        structure: 0,
+        explained: 0,
+        totalLength: 0,
+      },
+    };
+  }
   ctx.drawImage(img, 0, 0, w, h);
   const data = ctx.getImageData(0, 0, w, h);
-  const segs = detectSegments({ data: data.data, width: w, height: h });
+  const result = detectWalls({ data: data.data, width: w, height: h }, opts);
   // workScale maps detection pixels back to the underlay's own pixel grid.
   const workScale = w / u.wPx;
-  return segmentsToWalls(segs, u, workScale);
+  return {
+    walls: result.quality.refusal ? [] : segmentsToWalls(result.segments, u, workScale),
+    quality: result.quality,
+  };
 }

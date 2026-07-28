@@ -12,7 +12,7 @@ import type {
 import { matchTrims } from '../../engine/speakers';
 import { suggestPlacement, type PlacementOptions } from '../../engine/optimize';
 import { arrangeFurniture, suggestInventory, type ArrangeItem } from '../../engine/arrange';
-import { detectWallsFromUnderlay } from '../../engine/detect';
+import { useWallDetection } from './hooks/useWallDetection';
 import {
   activeListener,
   addListener,
@@ -107,7 +107,6 @@ function AppInner({ initialStore, persistMode, showFirstRun, droppedCount, proje
   const [furnitureProposal, setFurnitureProposal] = useState<ReturnType<typeof arrangeFurniture> | null>(null);
   const [dialog, setDialog] = useState<DialogState>(null);
   const [toast, setToast] = useState<ToastData | null>(null);
-  const [wallProposal, setWallProposal] = useState<SceneObject[] | null>(null);
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [compare, setCompare] = useState<Scenario[] | null>(null);
   /** The folder a pending "New room…" dialog should file its result into. */
@@ -115,7 +114,6 @@ function AppInner({ initialStore, persistMode, showFirstRun, droppedCount, proje
   /** A one-shot spoken explanation for a keyboard command that could not act
    *  (e.g. `d` with furniture selected). Cleared by the next command. */
   const [notice, setNotice] = useState<string | null>(null);
-  const [detecting, setDetecting] = useState(false);
   const [showIntro, setShowIntro] = useState(() => showFirstRun && introUnseen());
   const dismissIntro = useCallback(() => {
     setShowIntro(false);
@@ -185,12 +183,16 @@ function AppInner({ initialStore, persistMode, showFirstRun, droppedCount, proje
 
   /** Floating cards (optimizer, arrange, detected walls) never outlive the
    *  context they were opened in — any step/layout/mode change closes them. */
+  /** `useWallDetection` is created far below this callback (it needs `scene`
+   *  and `setScene`), and this callback is deliberately mount-once. A ref is how
+   *  the rest of this file bridges that same gap — see `overlayOpenRef`. */
+  const discardDetectionRef = useRef<() => void>(() => {});
   const closeFloatingPanels = useCallback(() => {
     setOptimizeOpen(false);
     setProposal(null);
     setArrangeOpen(false);
     setFurnitureProposal(null);
-    setWallProposal(null);
+    discardDetectionRef.current();
   }, []);
 
   /** Enter a mode + sub-step (the single theme controller: theme derives from
@@ -518,38 +520,17 @@ function AppInner({ initialStore, persistMode, showFirstRun, droppedCount, proje
 
   // --- floorplan wall detection ---------------------------------------------
 
-  const runDetection = async () => {
-    if (!scene.underlay || detecting) return;
-    setDetecting(true);
-    try {
-      const walls = await detectWallsFromUnderlay(scene.underlay);
-      if (walls.length < 2) {
-        showToast('No clear walls found in that image — trace them instead.', { tone: 'bad' });
-        return;
-      }
-      setWallProposal(walls);
-      setMode('select');
-    } catch {
-      showToast('Could not analyse that image.', { tone: 'bad' });
-    } finally {
-      setDetecting(false);
-    }
-  };
-
-  const acceptDetection = () => {
-    if (!wallProposal) return;
-    setScene((s) => ({
-      ...s,
-      objects: [...s.objects, ...wallProposal],
-      // Drop the underlay back so the accepted walls read clearly over it.
-      underlay: s.underlay ? { ...s.underlay, opacity: Math.min(s.underlay.opacity, 0.25) } : s.underlay,
-    }));
-    const n = wallProposal.length;
-    setWallProposal(null);
-    showToast(`Added ${n} detected wall${n === 1 ? '' : 's'} — drag any corner to correct it`, {
-      tone: 'ok',
-    });
-  };
+  const detection = useWallDetection({
+    scene,
+    setScene,
+    showToast,
+    undoScene,
+    setMode,
+  });
+  const wallProposal = detection.keptWalls;
+  useEffect(() => {
+    discardDetectionRef.current = detection.discard;
+  }, [detection.discard]);
 
   const applyArrange = () => {
     if (!furnitureProposal || furnitureProposal.objects.length === 0) return;
@@ -745,7 +726,7 @@ function AppInner({ initialStore, persistMode, showFirstRun, droppedCount, proje
     switch (cmd.type) {
       case 'escape':
         if (cmd.target === 'dialog') setDialog(null);
-        else if (cmd.target === 'wallProposal') setWallProposal(null);
+        else if (cmd.target === 'wallProposal') detection.discard();
         else if (cmd.target === 'optimize') {
           setOptimizeOpen(false);
           setProposal(null);
@@ -918,7 +899,7 @@ function AppInner({ initialStore, persistMode, showFirstRun, droppedCount, proje
     mode !== 'wall' &&
     !scene.underlay &&
     !wallProposal &&
-    !detecting;
+    !detection.detecting;
 
   return (
     <div className="app">
@@ -994,13 +975,11 @@ function AppInner({ initialStore, persistMode, showFirstRun, droppedCount, proje
             setArrangeOpen(false);
             setFurnitureProposal(null);
           }}
-          wallProposal={wallProposal}
-          onAcceptDetection={acceptDetection}
+          detection={detection}
           onTraceInstead={() => {
-            setWallProposal(null);
+            detection.discard();
             applyTool('wall');
           }}
-          onDiscardWalls={() => setWallProposal(null)}
         />
 
         <Sidebar
@@ -1017,14 +996,14 @@ function AppInner({ initialStore, persistMode, showFirstRun, droppedCount, proje
           audio={audio}
           hasWalls={hasWalls}
           calibrating={mode === 'calibrate'}
-          detecting={detecting}
+          detecting={detection.detecting}
           onCreateRoom={() => applyTool('room')}
           onDeleteRoom={deleteRoom}
           onInsertRectRoom={() => setDialog({ kind: 'room-size', purpose: 'add-room' })}
           onDrawWalls={() => applyTool('wall')}
           onUnderlay={setUnderlay}
           onCalibrate={() => applyTool(mode === 'calibrate' ? 'select' : 'calibrate')}
-          onDetect={runDetection}
+          onDetect={() => detection.run()}
           onError={(m) => showToast(m, { tone: 'bad' })}
           onAddPreset={addPreset}
           onCustomBox={() => applyTool('rect')}

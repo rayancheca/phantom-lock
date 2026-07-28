@@ -3,7 +3,7 @@ import { render, cleanup } from '@testing-library/react';
 import { afterEach } from 'vitest';
 import CanvasStage from '../../app/CanvasStage';
 import { CANVAS_HELP } from '../canvas-help';
-import { expectNoAxeViolations } from '../../../test/axe';
+import { expectNoAxeViolations, expectNoAxeViolationsOnPage } from '../../../test/axe';
 import { apartmentScene } from '../../../engine/scene';
 import { traceScene } from '../../../engine/raytrace';
 import { computeAudio } from '../../../engine/stereo';
@@ -77,10 +77,16 @@ function renderStage(over: Record<string, unknown> = {}) {
       onRunArrange={noop}
       onApplyArrange={noop}
       onCloseArrange={noop}
-      wallProposal={null}
-      onAcceptDetection={noop}
+      detection={{
+        proposal: null,
+        detecting: false,
+        keptWalls: null,
+        run: () => {},
+        toggleWall: () => {},
+        accept: () => {},
+        discard: () => {},
+      }}
       onTraceInstead={noop}
-      onDiscardWalls={noop}
       {...over}
     />,
   );
@@ -143,8 +149,37 @@ describe('the canvas is a focusable, AT-legible widget (S7 deliverable 1)', () =
 
   it('has no axe violations with the detected-layout dialog open', async () => {
     const scene = apartmentScene();
-    const { container } = renderStage({ wallProposal: scene.objects.slice(0, 3), overlayOpen: true });
-    await expectNoAxeViolations(container);
+    const walls = scene.objects.filter((o) => o.kind === 'wall').slice(0, 4);
+    const { container } = renderStage({
+      overlayOpen: true,
+      detection: {
+        proposal: {
+          walls,
+          rejected: new Set([walls[1].id]),
+          sensitivity: 'balanced' as const,
+          quality: {
+            confidence: 0.82,
+            refusal: null,
+            wallCount: walls.length,
+            support: 0.97,
+            structure: 0.85,
+            explained: 0.94,
+            totalLength: 42,
+          },
+        },
+        detecting: false,
+        keptWalls: walls,
+        run: noop,
+        toggleWall: noop,
+        accept: noop,
+        discard: noop,
+      },
+    });
+    // PAGE-WIDE, not the subtree runner: `landmark-unique` is a best-practice
+    // rule the WCAG-tags-only run does not see, and this card adds a dialog
+    // plus a fieldset over the still-mounted canvas (the S20 lesson).
+    await expectNoAxeViolationsOnPage();
+    expect(container.querySelectorAll('.detect-row')).toHaveLength(4);
   });
 
   it('has no axe violations with the empty-state starter showing', async () => {
