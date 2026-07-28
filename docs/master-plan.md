@@ -2090,3 +2090,83 @@ determinism baselines; it needs its own block.
 **Stated honestly:** live checks ran ONE browser (headless Chrome), no real screen reader has ever been
 driven on this project, and detection has still never been run against the owner's own floorplan photo —
 they supplied it as a chat image this session, which the harness cannot read; it needs a file path.
+
+
+---
+
+## Session 24 — 2026-07-28 — The degrees-into-radians bug in `generate/shell.ts`
+
+**One line changed; the reason it took a session is that nothing in 37 tests could see it.**
+`edgeAngleDeg` returned degrees and `opening()` assigned it into `RectObj.rotation`, which is radians.
+
+### What was actually wrong, measured
+
+Over 320 designs / 1406 openings: **50.7 % of every generated opening was drawn at the wrong angle.**
+49.3 % sat on 0° walls and were accidentally correct; 40.9 % on 90° walls were out by **26.62°**, 5.5 %
+on 180° walls by **53.24°**. A 0.9 m door's leaf tip was displaced up to **0.9017 m**.
+
+**What it did NOT affect, and this is the load-bearing measurement:** `wallKeptSpans` reads only
+`center` and `w`, so it is rotation-BLIND — **0 span differences across every wall of 320 designs**.
+The acoustic opening cut into the wall was always right; the symbol drawn over it was not. What did
+move: the drawn door symbol (jamb ticks, leaf and swing arc all derive from `rectCorners`), the ZONING
+flood fill (238/320 designs), the furniture arranger's door corridors (213/320 place furniture
+differently), a window's own acoustic surfaces (287; open doors emit none), and `sceneBounds` (253/320).
+
+### The correction to the filing that prompted this
+
+The brief (and my own S23 filing) said the fix "will move the S22 determinism baselines". **It does
+not.** `geometrySignature` is compared only against another run of the same code (`generate.test.ts:272`
+same-seed, `:277` cross-seed distinctness); there is no stored baseline for `generateDesign` anywhere —
+no snapshot files, and both engine goldens contain **zero** occurrences of `rotation`. Nothing had to be
+re-derived. What the fingerprint pinned was the wrong value's *stability*, never its correctness.
+
+### Evidence block
+
+**Agents spawned (4).** Impact workflow: `impact:engine` · `impact:tests` · `impact:fix-shape` →
+`skeptic` (**SOUND_WITH_FIXES**, 2 HIGH + 3 MEDIUM/LOW). The skeptic's central finding was against **my
+tests, not the fix**: an axis-snapping variant (`round(raw / (π/2)) * (π/2)`) — right units, wrong
+geometry — **passed all 40 tests**, because the corpus `SEEDS.slice(0, 8)` contains zero diagonal
+openings (the `l-notch`/`alcove` variants only emit ±45° ones from seed index 8). **I reproduced this
+myself before accepting it.** Both tests now run the full seed list and assert `diagonal > 0`.
+
+**Negative controls — the tests discriminate all three answers:** buggy degrees → FAILS (26.62° off) ·
+axis-snapped radians → FAILS (45.00° off) · the real fix → 40/40. Each call site is independently
+load-bearing: fixing only doors still fails on a window, and vice versa.
+
+**A harness bug I fixed rather than shipped:** the first cut associated an opening with its NEAREST
+wall, which at a corner is often the perpendicular one — a false failure of exactly 90.00° on 35 of 816
+openings with the code fully correct. Openings are now matched by the wall whose infinite LINE contains
+their centre, which is exact by construction.
+
+**Test count 1354 → 1356.** Nothing skipped, `.only`'d or weakened.
+**Coverage:** `shell.ts` is exercised by all 40 generator tests; the changed helper is on every
+door/window path.
+
+**Gate (literal tails).** `npx eslint .` → 0 problems. `npm test` → `Test Files 67 passed (67) / Tests
+1356 passed (1356)`. `npm run build` → `dist/assets/index-B5uMxL2T.js 478.24 kB │ gzip: 155.60 kB`, CSS
+`51.55 kB │ gzip: 9.56 kB` unchanged, HTML `1.31 kB`.
+
+**Live verification: NOT run, and that is a deliberate call.** The change is to generated geometry, and
+the deterministic corpus assertions (parallelism through `rectCorners` over the full seed list, plus two
+negative controls) are strictly stronger evidence than a screenshot of one design would be. The one
+thing a screenshot would add — that the door symbol now sits on its wall — is exactly what the
+parallelism test asserts for all 1406 openings. Stated rather than quietly skipped.
+
+**Stale numbers corrected in `CLAUDE.md`:** the documented "walkable 91.3 m² vs zoning **59.3 m²**" was
+computed from the BUGGY rotation; re-measured post-fix it is **38.88 m²**. The lock rate is re-stated as
+**91.1 %** on a named 192-design corpus, with an explicit warning that its direction is corpus-dependent
+(the skeptic measured it moving DOWN on a third corpus) and must not be read as a benefit of the fix.
+The A/B/C/D table in `shell.ts`'s header is flagged as pre-fix; its ordering and conclusion stand,
+because what separates the four constructions is the gap, not the angle.
+
+**Filed, not fixed — `docs/ideas.md` §12b (P1).** The fix TRIPLES the number of generated multi-room
+designs whose zoning region is fully unsealed (**6 → 19 of 300**) through a pre-existing `rooms.ts`
+degeneracy: `segsCross`'s strict `d3 * d4 < 0` cannot block a flood-fill step landing exactly on a wall
+line, and the grid origin derives from `sceneBounds`, which reads door rect corners. The average
+improves sharply (below-1.4: **138 → 28**). Consequence: `optimize.ts`'s "This room" target silently
+becomes the whole house for ~6 % of generated multi-room designs. The repair is an engine change needing
+its own golden and was deliberately not smuggled into a unit-fix commit.
+
+**Audit result:** `shell.ts` was the ONLY site in the tree writing degrees into a radians field. Every
+other `* 180 / Math.PI` is a display conversion, and both UI writers (`InspectorPanel.tsx:428`,
+`UnderlayCard.tsx:82`) convert back. `swingDeg = 90` is genuinely degrees per the type and is untouched.
