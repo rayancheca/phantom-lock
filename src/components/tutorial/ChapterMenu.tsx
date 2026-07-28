@@ -6,7 +6,10 @@ interface ChapterMenuProps {
   chapters: readonly TutorialChapter[];
   /** Chapter ids already completed at least once. */
   done: readonly string[];
+  /** Where the user left off, when that still resolves to a real step. */
+  resume: { chapter: TutorialChapter; stepIndex: number } | null;
   onStart: (chapterId: string) => void;
+  onResume: () => void;
   onClose: () => void;
 }
 
@@ -23,7 +26,14 @@ interface ChapterMenuProps {
  * block: you are choosing what to do, not doing it. Its `open` state is wired
  * into the App's `overlayOpen` for exactly that reason.
  */
-export default function ChapterMenu({ chapters, done, onStart, onClose }: ChapterMenuProps) {
+export default function ChapterMenu({
+  chapters,
+  done,
+  resume,
+  onStart,
+  onResume,
+  onClose,
+}: ChapterMenuProps) {
   const doneSet = new Set(done);
   const finishedAll = chapters.every((c) => doneSet.has(c.id));
 
@@ -34,6 +44,15 @@ export default function ChapterMenu({ chapters, done, onStart, onClose }: Chapte
           ? 'You have been through all of these — pick any one to run through it again.'
           : 'Start at the top for the short version, or jump straight to what you need. Everything happens in a practice design, so your own work is never touched.'}
       </p>
+      {resume && (
+        /* "Resumable" is an explicit requirement, and a bookmark you cannot
+           return to is not one. Only offered when the saved chapter still
+           exists — a later session editing steps.ts can delete it. */
+        <button type="button" className="btn btn-primary btn-block tour-resume" onClick={onResume}>
+          Continue “{resume.chapter.title}” — step {resume.stepIndex + 1} of{' '}
+          {resume.chapter.steps.length}
+        </button>
+      )}
       <ul className="tour-menu">
         {chapters.map((c, i) => {
           const isDone = doneSet.has(c.id);

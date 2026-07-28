@@ -60,6 +60,10 @@ export const CHAPTERS: TutorialChapter[] = [
         body:
           'Phantom Lock hunts for the spot where a stereo pair “locks” — where the sound seems to float dead-centre between the two speakers, with nothing actually in the middle. That readout is live: it re-reads every time anything moves.',
         anchor: { kind: 'dom', selector: SEL.verdict, label: 'the verdict readout' },
+        // The hero only exists in TUNE, and the tour can be started from either
+        // mode — without this the very first step points at nothing.
+        mode: 'tune',
+        covers: { modes: ['tune'] },
       },
       {
         id: 'orientation-modes',
@@ -127,9 +131,13 @@ export const CHAPTERS: TutorialChapter[] = [
       {
         id: 'lock-read',
         kind: 'show',
-        title: 'That is a lock',
+        title: 'What a lock is made of',
+        // Deliberately NOT "that is a lock": the previous step is skippable, so
+        // this copy must stay true for someone who skipped it and is looking at
+        // an unlocked readout. It describes the condition rather than asserting
+        // the current state.
         body:
-          'Equal distances, a 60° triangle, and a clear line of sight to both speakers. Below the headline the spec sheet shows the numbers behind it — tap any dotted term for a plain-English definition.',
+          'A lock needs three things: equal distances to both speakers, roughly a 60° triangle, and a clear line of sight. Below the headline the spec sheet shows each of those numbers — tap any dotted term for a plain-English definition.',
         anchor: { kind: 'dom', selector: SEL.verdict, label: 'the verdict readout' },
         mode: 'tune',
       },

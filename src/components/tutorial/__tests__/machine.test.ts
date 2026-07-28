@@ -134,6 +134,31 @@ describe('tutorial machine', () => {
     expect(tourReduce(stale, { type: 'next' }, CH).status).toBe('finished');
   });
 
+  // --- resume ---------------------------------------------------------------
+
+  it('resume re-enters a chapter at the saved step', () => {
+    const s = tourReduce(initialTour(), { type: 'resume', chapterId: 'a', stepIndex: 2 }, CH);
+    expect(s.status).toBe('running');
+    expect(currentStep(s, CH)?.id).toBe('a3');
+  });
+
+  it('resume clamps a saved index that is now past the end', () => {
+    const s = tourReduce(initialTour(), { type: 'resume', chapterId: 'b', stepIndex: 7 }, CH);
+    expect(currentStep(s, CH)?.id).toBe('b1');
+  });
+
+  it('resume into a chapter that no longer exists is a no-op, not a blank tour', () => {
+    const s = tourReduce(initialTour(), { type: 'resume', chapterId: 'gone', stepIndex: 1 }, CH);
+    expect(s.status).toBe('idle');
+  });
+
+  it('resume with a negative or non-integer index still lands on a real step', () => {
+    for (const stepIndex of [-3, 1.7, Number.NaN]) {
+      const s = tourReduce(initialTour(), { type: 'resume', chapterId: 'a', stepIndex }, CH);
+      expect(currentStep(s, CH)).not.toBeNull();
+    }
+  });
+
   it('events on an idle tour do not fabricate a running state', () => {
     for (const e of [{ type: 'next' }, { type: 'back' }, { type: 'exit' }] as const) {
       expect(tourReduce(initialTour(), e, CH).status).toBe('idle');

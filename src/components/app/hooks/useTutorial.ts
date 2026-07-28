@@ -5,10 +5,10 @@ import { activeProject } from '../../../engine/projects';
 import type { AppMode, DesignSubStep, ModeEntry } from '../mode';
 import {
   PRACTICE_LAYOUT_NAME,
+  armPairDemo,
   breakLock,
   clearSpeakers,
   pairFirstTwo,
-  placeTwoPods,
   practiceScene,
 } from '../../tutorial/actions';
 import type { TutorialActionName } from '../../tutorial/types';
@@ -95,7 +95,12 @@ export function useTutorial(a: Args): TutorialControls {
           enterPracticeRoom();
           return;
         case 'place-two-pods':
-          a.setScene((s) => placeTwoPods(s).scene);
+          // `armPairDemo`, not `placeTwoPods`: the practice room is reused by
+          // name, so on a repeat run it still holds last run's locked pair.
+          // Re-arming makes the pairing step's false->true edge unconditional —
+          // without it the tour's climax is silently dead on every run but the
+          // first. See the header of `actions.ts`.
+          a.setScene((s) => armPairDemo(s));
           return;
         case 'pair-them':
           a.setScene((s) => pairFirstTwo(s));

@@ -11,7 +11,14 @@ import { traceScene } from '../../../engine/raytrace';
 import { computeAudio } from '../../../engine/stereo';
 import { DEFAULT_SETTINGS } from '../../../engine/scene';
 import { apartmentScene } from '../../../engine/scene';
-import { PRACTICE_LAYOUT_NAME, breakLock, pairFirstTwo, placeTwoPods, practiceScene } from '../actions';
+import {
+  PRACTICE_LAYOUT_NAME,
+  armPairDemo,
+  breakLock,
+  pairFirstTwo,
+  placeTwoPods,
+  practiceScene,
+} from '../actions';
 import type { Scene } from '../../../engine/types';
 
 const lockedIn = (scene: Scene): boolean => {
@@ -100,6 +107,40 @@ describe('tutorial actions', () => {
 
   it('breakLock is a no-op below two speakers', () => {
     expect(breakLock(practiceScene()).speakers).toHaveLength(0);
+  });
+
+  // ---- the SECOND run must work exactly like the first ----------------------
+
+  it('re-arming a used practice room restores the unlocked, unpaired start state', () => {
+    // THE SECOND-RUN BUG. The practice layout is reused by name, so on a repeat
+    // run it still holds the locked pair from last time. `placeTwoPods` is
+    // idempotent and would no-op, `locked` is already true, and the pairing step
+    // would show "Done" the instant it opened — no false->true edge, so
+    // VerdictHero never ignites and the tour's entire climax is silently dead.
+    const used = pairFirstTwo(placeTwoPods(practiceScene()).scene);
+    expect(lockedIn(used)).toBe(true);
+
+    const rearmed = armPairDemo(used);
+    expect(rearmed.speakers).toHaveLength(2);
+    expect(rearmed.pairs).toHaveLength(0);
+    expect(lockedIn(rearmed)).toBe(false);
+
+    // ...and pairing it still reaches the lock, so the second run has a real edge.
+    expect(lockedIn(pairFirstTwo(rearmed))).toBe(true);
+  });
+
+  it('re-arming a FRESH practice room is the same as placing two pods', () => {
+    const fresh = armPairDemo(practiceScene());
+    expect(fresh.speakers).toHaveLength(2);
+    expect(fresh.pairs).toHaveLength(0);
+    expect(lockedIn(fresh)).toBe(false);
+  });
+
+  it('re-arming is idempotent — repeated entry never stacks speakers', () => {
+    let s = armPairDemo(practiceScene());
+    for (let i = 0; i < 4; i++) s = armPairDemo(s);
+    expect(s.speakers).toHaveLength(2);
+    expect(s.pairs).toHaveLength(0);
   });
 
   // ---- purity + safety ------------------------------------------------------

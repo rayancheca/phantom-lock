@@ -27,6 +27,9 @@ export interface TourState {
 
 export type TourEvent =
   | { type: 'start'; chapterId: string }
+  /** Re-enter a chapter at a saved step. The index is UNTRUSTED — it comes from
+   *  localStorage and may name a step a later session deleted. */
+  | { type: 'resume'; chapterId: string; stepIndex: number }
   | { type: 'next' }
   | { type: 'back' }
   | { type: 'exit' };
@@ -94,6 +97,16 @@ export function tourReduce(
       const exists = chapters.some((c) => c.id === event.chapterId);
       if (!exists) return state;
       return { status: 'running', chapterId: event.chapterId, stepIndex: 0 };
+    }
+    case 'resume': {
+      const chapter = chapters.find((c) => c.id === event.chapterId);
+      if (!chapter || chapter.steps.length === 0) return state;
+      // Clamp here rather than trusting the stored value: `safeIndex` protects
+      // every READ, but leaving a wild index in state would persist it straight
+      // back out again on the next autosave of progress.
+      const raw = Math.trunc(event.stepIndex);
+      const i = Number.isFinite(raw) ? Math.min(Math.max(raw, 0), chapter.steps.length - 1) : 0;
+      return { status: 'running', chapterId: event.chapterId, stepIndex: i };
     }
     case 'next': {
       if (state.status !== 'running') return state;

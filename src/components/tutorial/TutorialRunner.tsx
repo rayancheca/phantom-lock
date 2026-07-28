@@ -167,11 +167,31 @@ export default function TutorialRunner({
   }, [tour.status, dispatch]);
 
   if (menuOpen) {
+    // Resolve the stored bookmark against the CURRENT corpus. A chapter a later
+    // session deleted simply stops being offered, rather than presenting a
+    // button that does nothing.
+    const saved = progress.resume;
+    const savedChapter = saved ? CHAPTERS.find((c) => c.id === saved.chapterId) : undefined;
+    const resume =
+      saved && savedChapter && savedChapter.steps.length > 0
+        ? {
+            chapter: savedChapter,
+            stepIndex: Math.min(Math.max(saved.stepIndex, 0), savedChapter.steps.length - 1),
+          }
+        : null;
     return (
       <ChapterMenu
         chapters={CHAPTERS}
         done={progress.done}
+        resume={resume}
         onStart={onStart}
+        onResume={() => {
+          if (!resume) return;
+          actedRef.current = null;
+          if (resume.chapter.needsPractice) cbRef.current.onAction('practice-room');
+          dispatch({ type: 'resume', chapterId: resume.chapter.id, stepIndex: resume.stepIndex });
+          cbRef.current.onCloseMenu();
+        }}
         onClose={onCloseMenu}
       />
     );

@@ -72,9 +72,30 @@ export function pairFirstTwo(scene: Scene): Scene {
   return { ...scene, pairs: [...scene.pairs, [a.id, b.id]] };
 }
 
-/** Remove every speaker and pair — re-arms the pairing demo from a clean slate. */
+/** Remove every speaker and pair — the clean slate `armPairDemo` starts from. */
 export function clearSpeakers(scene: Scene): Scene {
   return { ...scene, speakers: [], pairs: [] };
+}
+
+/**
+ * Put the practice room into the state the pairing step NEEDS: exactly two
+ * HomePods at the reference angle, and NOT yet paired.
+ *
+ * This exists because of the second-run bug, which is subtle and silent. The
+ * practice layout is found by name and reused, so on a repeat run it still holds
+ * the locked pair from last time. `placeTwoPods` is idempotent and would no-op,
+ * `locked` would already be true when the pairing step opened, the step would
+ * show "Done" immediately — and because `VerdictHero`'s ignition is a false->true
+ * EDGE, there would be no edge and therefore no celebration. The tour's entire
+ * climax would be dead on every run after the first, with nothing on screen to
+ * indicate anything was wrong.
+ *
+ * Clearing first makes the edge unconditional: whatever state the room was left
+ * in, the pairing step always opens unlocked and the user's click always lights
+ * it up. Idempotent, so re-entry and Back-then-Next re-arm rather than stack.
+ */
+export function armPairDemo(scene: Scene): Scene {
+  return placeTwoPods(clearSpeakers(scene)).scene;
 }
 
 /**

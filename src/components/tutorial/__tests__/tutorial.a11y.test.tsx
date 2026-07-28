@@ -185,6 +185,84 @@ describe('`try` steps', () => {
   });
 });
 
+describe('resume', () => {
+  it('offers nothing to continue on a clean slate', () => {
+    renderRunner({ menuOpen: true });
+    expect(screen.queryByRole('button', { name: /continue/i })).toBeNull();
+  });
+
+  it('offers the saved point, and continuing lands on that step', async () => {
+    const saved = {
+      getItem: () => JSON.stringify({ seen: false, done: [], resume: { chapterId: 'build', stepIndex: 2 } }),
+      setItem: () => undefined,
+    };
+    const onAction = vi.fn();
+    const onEnterMode = vi.fn();
+    const onCloseMenu = vi.fn();
+    const h = render(
+      <TutorialRunner
+        menuOpen
+        onCloseMenu={onCloseMenu}
+        ctx={ctx()}
+        onAction={onAction}
+        onEnterMode={onEnterMode}
+        storage={saved}
+      />,
+    );
+    const btn = screen.getByRole('button', { name: /continue/i });
+    expect(btn.textContent).toMatch(/step 3 of 4/i);
+    await click(btn);
+    h.rerender(
+      <TutorialRunner
+        menuOpen={false}
+        onCloseMenu={onCloseMenu}
+        ctx={ctx()}
+        onAction={onAction}
+        onEnterMode={onEnterMode}
+        storage={saved}
+      />,
+    );
+    const chapter = CHAPTERS.find((c) => c.id === 'build')!;
+    expect(screen.getByText(chapter.steps[2].title)).toBeTruthy();
+  });
+
+  it('does NOT offer a saved point whose chapter no longer exists', () => {
+    const stale = {
+      getItem: () => JSON.stringify({ seen: false, done: [], resume: { chapterId: 'deleted', stepIndex: 1 } }),
+      setItem: () => undefined,
+    };
+    render(
+      <TutorialRunner
+        menuOpen
+        onCloseMenu={vi.fn()}
+        ctx={ctx()}
+        onAction={vi.fn()}
+        onEnterMode={vi.fn()}
+        storage={stale}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: /continue/i })).toBeNull();
+  });
+
+  it('the menu with a resume offer is still page-wide axe clean', async () => {
+    const saved = {
+      getItem: () => JSON.stringify({ seen: false, done: ['orientation'], resume: { chapterId: 'lock', stepIndex: 1 } }),
+      setItem: () => undefined,
+    };
+    render(
+      <TutorialRunner
+        menuOpen
+        onCloseMenu={vi.fn()}
+        ctx={ctx()}
+        onAction={vi.fn()}
+        onEnterMode={vi.fn()}
+        storage={saved}
+      />,
+    );
+    await expectNoAxeViolationsOnPage();
+  });
+});
+
 describe('data safety', () => {
   it('entering a scene-writing chapter enters the practice room FIRST', async () => {
     // Chapters are launchable straight from the menu, so this is the only thing

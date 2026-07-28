@@ -190,6 +190,11 @@
 
 /* --- the chapter menu ----------------------------------------------------- */
 
+.tour-resume {
+  margin-top: var(--space-3);
+  justify-content: center;
+}
+
 .tour-menu {
   list-style: none;
   margin: var(--space-3) 0 0;
