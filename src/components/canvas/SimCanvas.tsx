@@ -14,7 +14,6 @@ import type { AudioMetrics } from '../../engine/stereo';
 import type { Proposal } from '../../engine/optimize';
 import type { ListeningField } from '../../engine/bestspot';
 import { hitInactiveSeat, hitTestNodes, hitTestObjects } from '../../engine/hit';
-import { closestPointOnSegment, distPointSegment } from '../../engine/geometry';
 import { createId, ROOM_HEIGHT, sceneBounds, updateActiveListener } from '../../engine/scene';
 import { integrateWall, snapToWalls } from '../../engine/joints';
 import * as v from '../../engine/vec';
@@ -48,7 +47,7 @@ import { repaintOnFontLoad } from './font-ready';
 // SNAP_STEP and the placement primitives are shared with the KEYBOARD path, so
 // there is exactly one definition of each (S7). `surfaceHeightAt` used to be a
 // closure here even though it only ever read `scene.objects`.
-import { SNAP_STEP, placeSpeakerAt, surfaceHeightAt } from './placement';
+import { DRAG_SEAT, SNAP_STEP, moveObjectTo, placeSpeakerAt, surfaceHeightAt } from './placement';
 import { CANVAS_HELP } from './canvas-help';
 import './sim-canvas.css';
 const MIN_SCALE = 8;
@@ -105,7 +104,11 @@ type Drag =
   | { kind: 'node'; pointerId: number; node: 'listener' | { speakerId: string } }
   | { kind: 'wall-end'; pointerId: number; id: string; end: 'a' | 'b' }
   | { kind: 'move-wall'; pointerId: number; id: string; start: Vec2; a0: Vec2; b0: Vec2 }
-  | { kind: 'move-rc'; pointerId: number; id: string; start: Vec2; c0: Vec2 }
+  // `rot0` is REQUIRED so any future drag path that forgets it is a compile error.
+  // Every frame snaps from it rather than from the object's live rotation, which is
+  // what makes the transform a pure function of the gesture: leaving a wall's field
+  // restores the identical float, and one undo restores centre AND rotation.
+  | { kind: 'move-rc'; pointerId: number; id: string; start: Vec2; c0: Vec2; rot0: number }
   | { kind: 'draw'; pointerId: number; tool: DrawTool; anchor: Vec2 }
   | { kind: 'band'; pointerId: number; shape: 'marquee' | 'lasso'; additive: boolean }
   | {
@@ -754,7 +757,14 @@ export default function SimCanvas({
       if (o?.kind === 'wall') {
         startDrag({ kind: 'move-wall', pointerId: e.pointerId, id: o.id, start: p, a0: o.a, b0: o.b });
       } else if (o) {
-        startDrag({ kind: 'move-rc', pointerId: e.pointerId, id: o.id, start: p, c0: o.center });
+        startDrag({
+          kind: 'move-rc',
+          pointerId: e.pointerId,
+          id: o.id,
+          start: p,
+          c0: o.center,
+          rot0: o.kind === 'rect' ? o.rotation : 0,
+        });
       }
       return;
     }
@@ -976,29 +986,15 @@ export default function SimCanvas({
 
     if (drag.kind === 'move-rc') {
       const d = v.sub(p, drag.start);
-      onScene({
-        ...cur,
-        objects: cur.objects.map((o) => {
-          if (o.id !== drag.id || o.kind === 'wall') return o;
-          const center = snap(v.add(drag.c0, d));
-          // Windows and doors magnetise onto the nearest wall.
-          if (o.kind === 'rect' && (o.role === 'window' || o.role === 'door')) {
-            let bestWall: { point: Vec2; angle: number; dist: number } | null = null;
-            for (const w of cur.objects) {
-              if (w.kind !== 'wall') continue;
-              const dist = distPointSegment(center, w.a, w.b);
-              if (dist < 0.35 && (!bestWall || dist < bestWall.dist)) {
-                const { point } = closestPointOnSegment(center, w.a, w.b);
-                bestWall = { point, angle: Math.atan2(w.b.y - w.a.y, w.b.x - w.a.x), dist };
-              }
-            }
-            if (bestWall) {
-              return { ...o, center: bestWall.point, rotation: bestWall.angle };
-            }
-          }
-          return { ...o, center };
-        }),
+      // Furniture seats flush against the nearest wall at its own angle; openings
+      // keep their straddle magnet; circles are position-only. All of it lives in
+      // the pure, node-tested `moveObjectTo` — this branch only supplies the
+      // gesture. Shift suppresses the magnet for a free move.
+      const { scene: next } = moveObjectTo(cur, drag.id, v.add(drag.c0, d), drag.rot0, {
+        snapOn: settings.snap,
+        seat: native.shiftKey ? null : DRAG_SEAT,
       });
+      onScene(next);
       return;
     }
 
