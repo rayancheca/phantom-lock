@@ -10,6 +10,7 @@ import { deriveVerdict, type VerdictView } from '../panels/verdict';
 import Icon from '../ui/Icon';
 import { directOnlyTrace } from './compute-scenario';
 import { MAX_COMPARE, MIN_COMPARE, compareSummary, type SummaryEntry } from './compare-summary';
+import { forgetColumn, initGate, observeCost, shouldCompute, type GateState } from './column-gate';
 import './compare.css';
 
 /** One thing to compare: a layout and which seat within it you're listening from. */
@@ -45,20 +46,6 @@ interface Computed {
    *  auto-computing the others. Never asserted in a test. */
   ms: number;
 }
-
-/**
- * Above this, a column is slow enough that computing the remaining ones
- * automatically would freeze the tab. The repo's own budget is INP < 200 ms.
- *
- * This is the real CPU control (`MAX_COMPARE` is a legibility bound, not a CPU
- * one). Measured per column in `docs/sessions/S20/bench/`: 0.02 ms on the seeded
- * demo, 62 ms on a 30-room house with four apex-blocked pairs, ~10.9 s on an
- * adversarial import-legal payload. No fixed N is safe by arithmetic, so instead
- * of guessing we MEASURE the columns we do compute and stop auto-computing when
- * the evidence says it is expensive — the user can still reveal any column
- * explicitly, one at a time, having been told what it will cost.
- */
-const SLOW_COLUMN_MS = 120;
 
 function computeScenario(layout: Layout, seatId: string): Computed {
   const t0 = performance.now();
@@ -289,7 +276,14 @@ export default function ScenarioCompare({ store, initial, onClose }: Props) {
   );
   /** What each computed column produced, keyed by column uid. The summary reads
    *  ONLY this, so a deferred column costs nothing anywhere. */
-  const [results, setResults] = useState<Record<string, { label: string; verdict: VerdictView; ms: number }>>({});
+  const [results, setResults] = useState<Record<string, { label: string; verdict: VerdictView }>>({});
+  /**
+   * The gate's evidence. Held SEPARATELY from `results` and monotonic — deriving
+   * it from `results` made it oscillate forever, because deferring a column
+   * deletes that column's entry and therefore the measurement that deferred it.
+   * See `column-gate.ts`.
+   */
+  const [gate, setGate] = useState<GateState>(initGate);
   /** Columns the user explicitly asked for despite the gate. */
   const [revealed, setRevealed] = useState<string[]>([]);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -310,6 +304,7 @@ export default function ScenarioCompare({ store, initial, onClose }: Props) {
 
   const noteResult = useCallback(
     (uid: string, r: { label: string; verdict: VerdictView; ms: number } | null) => {
+      if (r) setGate((g) => observeCost(g, uid, r.ms));
       setResults((prev) => {
         if (!r) {
           if (!(uid in prev)) return prev;
@@ -317,15 +312,22 @@ export default function ScenarioCompare({ store, initial, onClose }: Props) {
           return rest;
         }
         const was = prev[uid];
-        if (was && was.label === r.label && was.verdict === r.verdict) return prev;
-        return { ...prev, [uid]: r };
+        // Compare the FIELDS the summary reads. `deriveVerdict` returns a fresh
+        // object every call, so an identity check here would never dedupe.
+        if (
+          was &&
+          was.label === r.label &&
+          was.verdict.kind === r.verdict.kind &&
+          was.verdict.locked === r.verdict.locked &&
+          was.verdict.quality === r.verdict.quality
+        ) {
+          return prev;
+        }
+        return { ...prev, [uid]: { label: r.label, verdict: r.verdict } };
       });
     },
     [],
   );
-
-  const worstMs = Object.values(results).reduce((m, r) => (r.ms > m ? r.ms : m), 0);
-  const slow = worstMs > SLOW_COLUMN_MS;
 
   const addColumn = () => {
     if (cols.length >= MAX_COMPARE) return;
@@ -337,6 +339,14 @@ export default function ScenarioCompare({ store, initial, onClose }: Props) {
     if (cols.length <= MIN_COMPARE) return;
     setCols((c) => c.filter((x) => x.uid !== uid));
     setRevealed((r) => r.filter((x) => x !== uid));
+    setResults((r) => {
+      const { [uid]: _gone, ...rest } = r;
+      return rest;
+    });
+    // If this column is the one holding the gate shut, removing it must reopen the
+    // gate — otherwise every remaining column keeps offering to measure itself at a
+    // cost that belongs to a column no longer on screen.
+    setGate((g) => forgetColumn(g, uid));
     // Focus must land on something real. The Remove buttons may all have just been
     // disabled by this very removal (at MIN_COMPARE), and `.focus()` on a disabled
     // button is a no-op that drops focus to <body> — so aim at Add, which removing
@@ -347,9 +357,10 @@ export default function ScenarioCompare({ store, initial, onClose }: Props) {
   // Built from the columns that were actually measured — never by recomputing.
   const entries: SummaryEntry[] = cols
     .map((c) => results[c.uid])
-    .filter((r): r is { label: string; verdict: VerdictView; ms: number } => Boolean(r))
-    .map(({ label, verdict }) => ({ label, verdict }));
-  const summary = compareSummary(entries);
+    .filter((r): r is { label: string; verdict: VerdictView } => Boolean(r));
+  // The gate may be holding columns back; the sentence must say so rather than
+  // state a conclusion about three of the eight columns on screen.
+  const summary = compareSummary(entries, cols.length - entries.length);
 
   return (
     <div
@@ -398,8 +409,8 @@ export default function ScenarioCompare({ store, initial, onClose }: Props) {
             col={c}
             index={i}
             canRemove={cols.length > MIN_COMPARE}
-            compute={i === 0 || !slow || revealed.includes(c.uid)}
-            lastCost={worstMs}
+            compute={shouldCompute(gate, i, revealed.includes(c.uid))}
+            lastCost={gate.worstMs}
             onChange={(next) =>
               setCols((all) => all.map((x) => (x.uid === c.uid ? { ...x, ...next } : x)))
             }

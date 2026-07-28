@@ -1192,9 +1192,17 @@ export default function App() {
     // happy-path first run. The degraded fallback (2nd arg + the outer .catch) uses
     // the plain, NON-seeding `loadStore` so a synthetic demo is never injected over
     // records that are merely temporarily unreadable.
+    const noteProject = (reason: string) => {
+      noticesRef.current.push(reason);
+      console.warn(`[phantom-lock] folder repair on load: ${reason}`);
+    };
     bootstrapPersistence(
-      () => initialStoreForBoot(localStorage),
-      () => loadStore(localStorage),
+      // The localStorage paths get the SAME folder-notice channel as the IDB one:
+      // in degraded mode `loadStore` IS the persistence layer, and a folder list
+      // that sanitizes to nothing there was collapsing in total silence — then
+      // being written back over the original ~400 ms later.
+      () => initialStoreForBoot(localStorage, noteProject),
+      () => loadStore(localStorage, noteProject),
       // A record that cannot be reconstructed is dropped so the rest survive —
       // but never silently: a layout vanishing from the gallery with no
       // explanation is indistinguishable from the app losing the user's work.
@@ -1204,13 +1212,12 @@ export default function App() {
       },
       // Separate channel: a repaired folder loses NO layout, so it must never
       // reach the "your work may be gone" warning above.
-      (reason) => {
-        noticesRef.current.push(reason);
-        console.warn(`[phantom-lock] folder repair on load: ${reason}`);
-      },
+      noteProject,
     )
       .then(setBoot)
-      .catch(() => setBoot({ store: loadStore(localStorage), mode: 'localStorage', firstRun: false }));
+      .catch(() =>
+        setBoot({ store: loadStore(localStorage, noteProject), mode: 'localStorage', firstRun: false }),
+      );
   }, []);
 
   if (!boot) {

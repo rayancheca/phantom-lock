@@ -174,8 +174,11 @@ export function isPristineOrigin(storage: Pick<Storage, 'getItem'>): boolean {
  * returning IDB user short-circuits before it, so a stored layout can never gain
  * speakers or folders.
  */
-export function initialStoreForBoot(storage: Pick<Storage, 'getItem'>): LayoutStore {
-  return isPristineOrigin(storage) ? seededDefaultStore() : loadStore(storage);
+export function initialStoreForBoot(
+  storage: Pick<Storage, 'getItem'>,
+  onProjectNotice?: (reason: string) => void,
+): LayoutStore {
+  return isPristineOrigin(storage) ? seededDefaultStore() : loadStore(storage, onProjectNotice);
 }
 
 /** Re-exported for the seed test's readability. */

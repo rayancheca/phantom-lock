@@ -951,8 +951,20 @@ export function sanitizeLayoutIsolated(raw: unknown): Layout | null {
   }
 }
 
-/** Load the layout store, migrating a v1 single-scene save if present. */
-export function loadStore(storage: Pick<Storage, 'getItem'>): LayoutStore {
+/**
+ * Load the layout store, migrating a v1 single-scene save if present.
+ *
+ * `onProjectNotice` is the SAME channel `loadFromIDB` uses: folder-level repairs
+ * must be reported, and must never travel on the dropped-LAYOUT channel (a repair
+ * loses no layout, and saying otherwise raises a false "your work may be gone"
+ * alarm). Without it the localStorage mode — which is the whole persistence path
+ * when IndexedDB is unavailable — collapsed a corrupt folder list into one default
+ * folder in total silence, and autosave wrote the collapsed store back 400 ms later.
+ */
+export function loadStore(
+  storage: Pick<Storage, 'getItem'>,
+  onProjectNotice?: (reason: string) => void,
+): LayoutStore {
   try {
     const raw = storage.getItem(STORAGE_KEY);
     if (raw) {
@@ -965,7 +977,7 @@ export function loadStore(storage: Pick<Storage, 'getItem'>): LayoutStore {
           // `parsed.projects` is absent in every pre-S20 blob; `assembleStore`
           // then mints the default folder and homes every layout into it, so an
           // old save loads with all of its layouts intact and grouped.
-          return assembleStore(parsed.projects, layouts, parsed.activeId);
+          return assembleStore(parsed.projects, layouts, parsed.activeId, onProjectNotice);
         }
       }
     }

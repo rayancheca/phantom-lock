@@ -146,3 +146,27 @@ describe('the N bounds', () => {
     expect(MAX_COMPARE).toBeLessThanOrEqual(12);
   });
 });
+
+
+describe('the summary never states a conclusion about MORE than it measured', () => {
+  it('names the unmeasured columns rather than implying it covered them', () => {
+    const s = compareSummary([locked('A'), locked('B'), locked('C')], 5);
+    expect(s).toMatch(/all three lock/i);
+    // …and says out loud that five columns on screen were not part of that.
+    expect(s).toMatch(/5 more columns not measured/i);
+  });
+
+  it('says nothing extra when everything on screen was measured', () => {
+    expect(compareSummary([locked('A'), locked('B')], 0)).not.toMatch(/not measured/i);
+    expect(compareSummary([locked('A'), locked('B')])).not.toMatch(/not measured/i);
+  });
+
+  it('singularises one unmeasured column', () => {
+    expect(compareSummary([locked('A'), locked('B')], 1)).toMatch(/1 more column not measured/i);
+  });
+
+  it('handles the case where NOTHING has been measured yet', () => {
+    expect(compareSummary([], 4)).toMatch(/4 columns not measured/i);
+    expect(compareSummary([], 0)).toMatch(/nothing to compare/i);
+  });
+});

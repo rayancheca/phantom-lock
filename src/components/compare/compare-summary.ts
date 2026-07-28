@@ -58,8 +58,27 @@ const countWord = (n: number): string => COUNT_WORD[n] ?? String(n);
  * case reads exactly as it did, and generalizes the rest by COUNT rather than by
  * enumerating labels — eight names in one sentence is not a summary.
  */
-export function compareSummary(entries: SummaryEntry[]): string {
-  if (entries.length === 0) return 'Nothing to compare yet.';
+export function compareSummary(entries: SummaryEntry[], notMeasured = 0): string {
+  if (entries.length === 0) {
+    return notMeasured > 0
+      ? `${notMeasured} column${notMeasured === 1 ? '' : 's'} not measured yet.`
+      : 'Nothing to compare yet.';
+  }
+  return `${sentence(entries)}${trailer(notMeasured)}`;
+}
+
+/**
+ * A conclusion must not silently cover less than what is on screen. When the
+ * slow-column gate has deferred some columns, "All three lock — every one is
+ * cinema-ready" is a true statement about three entries and a FALSE impression
+ * about the eight the user is looking at.
+ */
+function trailer(notMeasured: number): string {
+  if (notMeasured <= 0) return '';
+  return ` (${notMeasured} more column${notMeasured === 1 ? '' : 's'} not measured yet.)`;
+}
+
+function sentence(entries: SummaryEntry[]): string {
 
   // "Has a pair" is the verdict's own kind — no second source of truth.
   const comparable = entries.filter((e) => e.verdict.kind === 'pair');
