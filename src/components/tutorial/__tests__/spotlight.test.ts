@@ -6,7 +6,7 @@
  * hand it over".
  */
 import { describe, expect, it } from 'vitest';
-import { cardPosition, spotlightBox, type Rect } from '../spotlight';
+import { cardPosition, positionsEqual, rectsEqual, spotlightBox, type Rect } from '../spotlight';
 
 const VIEW = { width: 1440, height: 900 };
 const CARD = { width: 320, height: 200 };
@@ -27,6 +27,36 @@ describe('spotlightBox', () => {
     const b = spotlightBox(r(0, 0, 0, 0), 8);
     expect(Number.isFinite(b.width) && Number.isFinite(b.height)).toBe(true);
     expect(b.width).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe('rectsEqual / positionsEqual — the anti-loop guard', () => {
+  // These exist so the coach-mark can re-measure after EVERY render. Without a
+  // reliable "nothing changed" answer, that re-measure is an infinite loop.
+  it('treats an identical rect as equal', () => {
+    expect(rectsEqual(r(1, 2, 3, 4), r(1, 2, 3, 4))).toBe(true);
+  });
+
+  it('absorbs sub-pixel jitter, which getBoundingClientRect really produces', () => {
+    expect(rectsEqual(r(10, 10, 100, 20), r(10.2, 9.9, 100.1, 20.05))).toBe(true);
+  });
+
+  it('still reports a real move', () => {
+    expect(rectsEqual(r(10, 10, 100, 20), r(10, 14, 100, 20))).toBe(false);
+    expect(rectsEqual(r(10, 10, 100, 20), r(10, 10, 140, 20))).toBe(false);
+  });
+
+  it('handles the anchor appearing and disappearing', () => {
+    expect(rectsEqual(null, null)).toBe(true);
+    expect(rectsEqual(null, r(0, 0, 1, 1))).toBe(false);
+    expect(rectsEqual(r(0, 0, 1, 1), null)).toBe(false);
+  });
+
+  it('positionsEqual compares placement as well as coordinates', () => {
+    const a = { top: 10, left: 20, placement: 'below' as const };
+    expect(positionsEqual(a, { top: 10.2, left: 20.1, placement: 'below' })).toBe(true);
+    expect(positionsEqual(a, { top: 10, left: 20, placement: 'above' })).toBe(false);
+    expect(positionsEqual(a, { top: 40, left: 20, placement: 'below' })).toBe(false);
   });
 });
 

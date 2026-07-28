@@ -41,6 +41,34 @@ const MARGIN = 12;
 
 const clamp = (v: number, lo: number, hi: number): number => Math.min(Math.max(v, lo), hi);
 
+/**
+ * Rect equality, to the nearest 0.5 px.
+ *
+ * This is what makes it safe to re-measure after EVERY render. The anchor can
+ * vanish or move without any event firing — the pair button unmounts the instant
+ * the pair exists, and the sidebar reflows under it — so a listener-only strategy
+ * leaves the ring highlighting whatever slid into the old coordinates, which in a
+ * tutorial is worse than no ring at all. Re-measuring unconditionally fixes that,
+ * but only if an unchanged measurement provably does NOT call setState: otherwise
+ * the effect re-renders, re-measures, and loops forever.
+ *
+ * The tolerance matters: `getBoundingClientRect` returns subpixel floats that can
+ * jitter in the last bits between identical layouts, and an exact `===` compare
+ * would then flip-flop forever.
+ */
+export function rectsEqual(a: Rect | null, b: Rect | null): boolean {
+  if (a === null || b === null) return a === b;
+  const near = (p: number, q: number) => Math.abs(p - q) < 0.5;
+  return near(a.x, b.x) && near(a.y, b.y) && near(a.width, b.width) && near(a.height, b.height);
+}
+
+/** Same idea for the computed card position. */
+export function positionsEqual(a: CardPosition, b: CardPosition): boolean {
+  return (
+    Math.abs(a.top - b.top) < 0.5 && Math.abs(a.left - b.left) < 0.5 && a.placement === b.placement
+  );
+}
+
 /** The highlight ring: the target rect grown by `pad`, clipped to the viewport origin. */
 export function spotlightBox(target: Rect, pad: number): Rect {
   const x = Math.max(0, target.x - pad);

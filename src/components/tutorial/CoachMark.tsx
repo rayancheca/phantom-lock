@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import Icon from '../ui/Icon';
-import { cardPosition, spotlightBox, type CardPosition, type Rect } from './spotlight';
+import {
+  cardPosition,
+  positionsEqual,
+  rectsEqual,
+  spotlightBox,
+  type CardPosition,
+  type Rect,
+} from './spotlight';
 import type { TutorialAnchor } from './types';
 
 interface CoachMarkProps {
@@ -89,24 +96,34 @@ export default function CoachMark({
       rect && (rect.width > 0 || rect.height > 0)
         ? { x: rect.left, y: rect.top, width: rect.width, height: rect.height }
         : null;
-    setTarget(next);
+    // Bail out when nothing moved. This is what makes the unconditional
+    // re-measure below safe — without it, setState on every render is an
+    // infinite loop.
+    setTarget((prev) => (rectsEqual(prev, next) ? prev : next));
     const card = cardRef.current;
     const size = card
       ? { width: card.offsetWidth || CARD_W, height: card.offsetHeight || CARD_H }
       : { width: CARD_W, height: CARD_H };
-    setPlace(
-      cardPosition(next, size, {
-        width: window.innerWidth || CARD_W,
-        height: window.innerHeight || CARD_H,
-      }),
-    );
+    const nextPlace = cardPosition(next, size, {
+      width: window.innerWidth || CARD_W,
+      height: window.innerHeight || CARD_H,
+    });
+    setPlace((prev) => (positionsEqual(prev, nextPlace) ? prev : nextPlace));
   }, [anchor]);
 
-  // Re-measure on step change and on anything that can move the anchor. Layout
-  // effect so the card never paints at a stale position for a frame.
+  // Re-measure after EVERY render, not just on step change.
+  //
+  // The anchor can disappear or move with no event to listen for: the pair
+  // button unmounts the moment the pair exists, and the sidebar reflows under
+  // it. Measuring only on step change left the ring sitting on the old
+  // coordinates, highlighting whatever had slid into them — observed live,
+  // pointing at "+ HomePod" immediately after the user paired. A tutorial that
+  // points at the wrong control is worse than one that points at nothing.
+  //
+  // Safe because `measure` no-ops when the rect is unchanged (see `rectsEqual`).
   useLayoutEffect(() => {
     measure();
-  }, [measure, stepId]);
+  });
 
   useEffect(() => {
     const onChange = () => measure();
