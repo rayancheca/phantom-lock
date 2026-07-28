@@ -1677,3 +1677,86 @@ acceptance as `docs/ideas.md` **§2d**.
   6. Gate green with all three tails pasted — **MET**.
   7. `security.md` §Worst-case CPU updated; `ideas.md` §2b marked done — **MET**, with §2d added for the
      remainder and the superseded S18 text left as a dated note in the house style.
+
+---
+
+### S20 — Projects (folders) + N-up compare, across layouts and projects (2026-07-28) ✅
+
+Owner-requested, verbatim mid-S19: *"create several layouts just to fill up the app and then make
+folders for projects so i can save projects and have multiple designs for one project and be able to
+compare multiple layouts at once. as many as needed. and be able to compare different projects as well."*
+
+Four things, and they are not the same feature: seed several layouts · projects-as-folders · compare
+N at once · compare across projects. All four landed.
+
+**The data model.** A layout belongs to a project. FLAT — `Layout.projectId` → `Project.id`, with
+`LayoutStore.projects` as the list — after a design pass weighed it against nesting the layouts inside
+the projects. The judge and the data-loss skeptic both came down on flat, decisively, on one axis:
+nesting's natural project-delete is a cascade that removes N layouts behind ONE auto-dismissing toast,
+against the owner's standing "never delete my layouts". Flat's `removeProject` re-homes and destroys
+nothing. Blast radius was the second argument: ~16 edit sites against ~65, and nesting's 65 concentrate
+in `db.ts` / `usePersistence.ts` / `useSceneHistory.ts` — the three modules S1 and S8 proved silent
+data loss lives in.
+
+**`DB_VERSION` stays at 1** and `onupgradeneeded` is byte-unchanged. The folder list rides the
+existing singleton meta row; membership rides the existing layout record. A fourth object store would
+have needed version 2, and that bump has a live user-visible failure: an old tab holds the v1
+connection (no `onversionchange` handler exists), the new tab's open fires `onblocked`, `openDB`
+**rejects**, `bootstrapPersistence` catches → localStorage mode → the frozen pre-migration snapshot on
+screen → autosave overwrites it. Adding a field to an existing record needs no migration at all.
+
+**Required in memory, optional on disk.** That split is the whole compile-time safety argument, and
+each half is load-bearing in the opposite direction. Required `Layout.projectId` / `LayoutStore.projects`
+turned the seven non-spreading `setStore` literals — duplicate, new, new-room, undo-delete, delete-last,
+delete-active, import, i.e. every layout CRUD action — into compile errors instead of silent folder
+resets. Optional `LayoutRecord.projectId` / `MetaRecord.projects` is simply the truth for every record
+written before S20; the skeptic's sharpest catch was that a *required* `MetaRecord.projects` compiles
+`meta.projects.map(...)` clean and throws for 100 % of returning users on first load.
+
+**`assembleStore`** (pure leaf `engine/projects.ts`) is the single seam: ≥1 folder · every `projectId`
+resolves (an orphan is RE-HOMED, never dropped, never rendered into no group) · project ids claim the
+shared id namespace BEFORE layout ids · layout ids dedup store-wide (a pre-existing bug: two layouts
+sharing an id made `updateLayout` write both and `persistNow` `put` both to one IDB key) · nothing
+throws. Its call in `loadFromIDB` is wrapped, because an assembly throw would otherwise reach
+`bootstrapPersistence`'s catch and destroy the rollback snapshot.
+
+**N-up compare.** N independent `(project, layout, seat)` columns. The perf story is the interesting
+part and it is half a win, stated as half: a column reads the trace ONLY through `.direct.blocked`, and
+`traceScene` builds `direct` with an independent `directPath` taking neither `rayCount` nor
+`maxBounces` — so `directOnlyTrace` is exact BY CONSTRUCTION and 255–1565× cheaper. It is also a ~1×
+no-op wherever `computeAudio` dominates (apex-blocked pairs → `bestPairSpot` sweeps), which is
+precisely the slow case: 62 ms/column on a 30-room house, ~10.9 s on an adversarial import-legal
+payload. So `MAX_COMPARE` = 8 is documented as a **legibility** bound and the CPU control is a measured
+slow-column gate.
+
+**Evidence.**
+- Agents: 4 understanding maps · 3 competing designs (flat / nested / N-up) · 1 judge · 2 adversarial
+  skeptics · 3 self-reviewers over the real diff. Verdicts: judge → **flat, conditionally**; data-loss
+  skeptic → **flat is safer, after five specific holes are closed** (all closed); N-up skeptic →
+  **the measurement is real but the conclusion drawn from it is not** (accepted — it is why the cap is
+  labelled legibility and the gate exists).
+- Tests **814 → 941**. New: `projects.test.ts` 35 · `projects-migration.test.ts` 22 (old-shape IDB
+  records and an old-shape localStorage blob seeded BY HAND) · `compute-scenario.test.ts` 17 ·
+  `compare-summary.test.ts` 20 · `column-gate.test.ts` 14 · `compare.a11y.test.tsx` 10 ·
+  `gallery.a11y.test.tsx` 7 · `seed.test.ts` +6.
+- Coverage on everything created: `ids.ts` 100 · `seed.ts` 100 · `compute-scenario.ts` 100 ·
+  `projects.ts` 98.6 · `compare-summary.ts` 97.7 · `scene.ts` 97.7 · `LayoutGallery.tsx` 94.4 ·
+  `ScenarioCompare.tsx` 92.4 · `db.ts` 88.8. The hooks it EDITS stay under 80 % — the pre-existing,
+  documented S10 gap, not made worse.
+- Live: fresh headless-Chrome profile, `docs/sessions/S20/shots/` — first run seeds 6 designs across
+  2 folders (read back out of IndexedDB, every layout carrying a `projectId`), both canvas themes, the
+  folder-grouped gallery, a 4-up cross-project compare, the scrolled track, 390 px mobile, and a reload
+  that keeps 6 layouts + 2 folders without re-seeding. 0 console errors.
+
+**The three defects the self-review caught that the suite could not.** The slow-column gate derived its
+threshold from the live results and a deferred column deleted its own measurement — it oscillated
+forever, doing more work than no gate at all; it is now a pure state machine driven to a fixed point by
+its own test. Folder repairs were reported on the dropped-LAYOUT channel, so a repair that loses nothing
+raised "your work may be gone" on every boot. And the summary described only the columns it had measured
+without saying so — "All three lock" while eight columns are on screen.
+
+**Honest residuals, none of them regressions:** the export-all BUNDLE still has no importer (pre-existing;
+the single-layout path now round-trips the folder by name) · a second tab's `saveMeta` overwrites the
+folder list wholesale, the same last-writer-wins the app has always had on `activeId` but with a larger
+blast radius · a downgrade discards folders (never layouts) · `App.tsx` is 1165 lines against the 800
+cap, already 1098 on main. All recorded in `docs/ideas.md` and `docs/database-plan.md` §6b.

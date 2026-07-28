@@ -197,11 +197,28 @@ export function assembleStore(
 // `historyPush`'s reference-dedup drops it and no spurious undo entry appears
 // (the S14 rotate-a-wall lesson).
 
+/**
+ * Make `name` unique among `taken`, appending " 2", " 3"… — because folder names
+ * are USER-FACING IDENTITY here, not decoration: `findOrCreateProject` matches an
+ * import on name, and two folders called "Ideas" would silently file the second
+ * one's exports into the first. It also mints two identical `aria-label`s in the
+ * gallery. Bounded by `MAX_PROJECTS`, so the loop always terminates.
+ */
+function uniqueName(taken: Project[], name: string): string {
+  const used = new Set(taken.map((p) => p.name.trim().toLowerCase()));
+  if (!used.has(name.trim().toLowerCase())) return name;
+  for (let n = 2; n <= MAX_PROJECTS + 1; n++) {
+    const candidate = `${name} ${n}`.slice(0, MAX_PROJECT_NAME_LEN);
+    if (!used.has(candidate.trim().toLowerCase())) return candidate;
+  }
+  return name;
+}
+
 export function addProject(store: LayoutStore, name: string): LayoutStore {
   if (store.projects.length >= MAX_PROJECTS) return store;
   const project: Project = {
     id: createId('project'),
-    name: cleanName(name, `Project ${store.projects.length + 1}`),
+    name: uniqueName(store.projects, cleanName(name, `Project ${store.projects.length + 1}`)),
     createdAt: Date.now(),
   };
   return { ...store, projects: [...store.projects, project] };
@@ -209,7 +226,10 @@ export function addProject(store: LayoutStore, name: string): LayoutStore {
 
 export function renameProject(store: LayoutStore, id: string, name: string): LayoutStore {
   if (!name.trim() || !store.projects.some((p) => p.id === id)) return store;
-  const next = name.trim().slice(0, MAX_PROJECT_NAME_LEN);
+  const next = uniqueName(
+    store.projects.filter((p) => p.id !== id),
+    name.trim().slice(0, MAX_PROJECT_NAME_LEN),
+  );
   return {
     ...store,
     projects: store.projects.map((p) => (p.id === id ? { ...p, name: next } : p)),

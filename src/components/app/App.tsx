@@ -1034,7 +1034,15 @@ function AppInner({ initialStore, persistMode, showFirstRun, droppedCount, proje
         canCompare={canCompare}
         onCloseDialog={() => setDialog(null)}
         onAddRoomLayout={(w, d) => {
-          addRoomLayout(w, d, pendingProjectId ?? undefined);
+          // Validate at CONSUME time: the folder could have been deleted between
+          // opening the dialog and submitting it, and filing a new design under a
+          // dangling `projectId` makes it invisible in the gallery until the next
+          // reload re-homes it. Safe today only by coincidence otherwise.
+          const target =
+            pendingProjectId && store.projects.some((p) => p.id === pendingProjectId)
+              ? pendingProjectId
+              : undefined;
+          addRoomLayout(w, d, target);
           setPendingProjectId(null);
         }}
         onAddRoom={(w, d, name) => addRoom(w, d, name)}

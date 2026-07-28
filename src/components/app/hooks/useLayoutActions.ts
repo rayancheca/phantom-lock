@@ -99,6 +99,12 @@ export function useLayoutActions(a: Args): LayoutActions {
   const undoDelete = () => {
     const deleted = a.lastDeletedRef.current;
     if (!deleted) return;
+    // A deleted FOLDER is restored by `useProjectActions` (it owns the projects
+    // state and the re-home bookkeeping). Check the type BEFORE consuming the
+    // single undo slot: nulling it first and returning later would destroy a
+    // folder snapshot with no restore and no message. Unreachable today only
+    // because `Toast` is single-slot — which is not a guarantee to rely on.
+    if (deleted.type === 'project') return;
     a.lastDeletedRef.current = null;
 
     if (deleted.type === 'layout') {
@@ -127,10 +133,6 @@ export function useLayoutActions(a: Args): LayoutActions {
       a.applyMode(initialMode(deleted.layout.scene), deleted.layout.scene);
       return;
     }
-
-    // A deleted FOLDER is restored by App (it owns the projects state and the
-    // re-home bookkeeping); this hook only handles scene-scoped snapshots.
-    if (deleted.type === 'project') return;
 
     // Scene-scoped snapshots go back to the layout they were deleted from,
     // which may no longer be the active one — or may no longer exist.

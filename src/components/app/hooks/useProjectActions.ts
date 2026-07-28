@@ -67,6 +67,8 @@ export function useProjectActions(a: Args): ProjectActions {
 
   const undoDeleteProject = () => {
     const d = a.lastDeletedRef.current;
+    // Type first, THEN consume — the slot is shared with the layout/scene undos
+    // and taking it for a snapshot this handler cannot restore loses that undo.
     if (!d || d.type !== 'project') return;
     a.lastDeletedRef.current = null;
     a.setStore((st) => {

@@ -325,3 +325,35 @@ describe('names are trimmed, not just capped', () => {
     expect(renameProject(st, st.projects[0].id, '  Tidy  ').projects[0].name).toBe('Tidy');
   });
 });
+
+
+describe('folder NAMES are unique — they are user-facing identity, not decoration', () => {
+  it('de-duplicates on create, because import matches on name', () => {
+    let st = assembleStore([P('p1', 'Ideas')], [], undefined);
+    st = addProject(st, 'Ideas');
+    st = addProject(st, 'Ideas');
+    expect(st.projects.map((p) => p.name)).toEqual(['Ideas', 'Ideas 2', 'Ideas 3']);
+  });
+
+  it('is case- and whitespace-insensitive about the clash', () => {
+    let st = assembleStore([P('p1', 'Ideas')], [], undefined);
+    st = addProject(st, '  ideas  ');
+    expect(st.projects[1].name).toBe('ideas 2');
+  });
+
+  it('de-duplicates on RENAME too, ignoring the folder being renamed', () => {
+    const st = assembleStore([P('p1', 'Ideas'), P('p2', 'Other')], [], undefined);
+    expect(renameProject(st, 'p2', 'Ideas').projects[1].name).toBe('Ideas 2');
+    // …renaming a folder to the name it already has is not a clash with itself
+    expect(renameProject(st, 'p1', 'Ideas').projects[0].name).toBe('Ideas');
+  });
+
+  it('so an exported layout re-imports into the folder it came from', () => {
+    let st = assembleStore([P('p1', 'Ideas')], [], undefined);
+    st = addProject(st, 'Ideas'); // becomes "Ideas 2"
+    const second = st.projects[1];
+    // A layout exported from "Ideas 2" carries that NAME and resolves back to it.
+    expect(findOrCreateProject(st, second.name, 'p1').projectId).toBe(second.id);
+    expect(findOrCreateProject(st, 'Ideas', 'p1').projectId).toBe('p1');
+  });
+});

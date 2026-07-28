@@ -2,7 +2,7 @@
  * The N-up compare's slow-column gate — S20.
  *
  * A compare column is one `computeAudio` pass, and that ranges over five orders of
- * magnitude depending on the scene: 0.02 ms on the seeded demo, ~62 ms on a
+ * magnitude depending on the scene: 0.03 ms on the seeded demo, ~58 ms on a
  * 30-room house with apex-blocked pairs (`bestPairSpot` sweeps once per blocked
  * pair), ~10.9 s on an adversarial import-legal payload. So no fixed column count
  * is safe by arithmetic, and a cap small enough to bound the slow case would fire

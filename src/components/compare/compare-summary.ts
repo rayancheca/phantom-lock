@@ -23,7 +23,7 @@ export const MIN_COMPARE = 2;
  *
  * This is a LEGIBILITY bound, not a CPU control, and it is important not to
  * mis-sell it. Measured per column (`docs/sessions/S20/bench/`), a column is
- * 0.02 ms on the seeded demo but 62 ms on a 30-room house with four apex-blocked
+ * 0.03 ms on the seeded demo but ~58 ms on a 30-room house with four apex-blocked
  * pairs and ~10.9 s on an adversarial import-legal payload — so no value of N is
  * "safe" by arithmetic, and a cap small enough to bound the slow cases would fire
  * on every ordinary one. The CPU answer is the slow-column gate in

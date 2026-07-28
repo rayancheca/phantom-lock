@@ -23,6 +23,7 @@ effort — a small high-value item beats a large one.
 | 10 | ✅ **Projects (folders) + N-up compare** (owner-requested) — **DONE S20** | ~~P1~~ done | — |
 | 10b | Bundle IMPORTER (read an export-all backup back in, folders included) | P2 | ½ session |
 | 10c | Layout ORDER within a folder (drag to reorder; today `getAll()` key order) | P3 | small |
+| 10d | Multi-tab: `saveMeta` overwrites the folder list wholesale (last-writer-wins) | P2 | ½ session |
 | 7 | Drag-release wall splitting | P3 | small |
 | 8 | Multi-select with a listener in it | P3 | small |
 | 9 | Window/door-leaf reflection materials | P3 | small |
@@ -372,3 +373,34 @@ additive marquee or ⌘-click. Pre-existing; only worth fixing if it ever bites.
 Image-source reflections currently approximate a window or closed door with the host wall's
 absorption instead of mirroring the leaf with its own material. Physically nicer; audibly marginal
 for a first-order model.
+
+
+---
+
+## 10b/10d — what S20 left open on folders
+
+**10b — the export-all BUNDLE has no importer.** This is pre-existing: `importLayout` handles a single
+layout file, and an "Export all" bundle has no `scene`, so it has never been importable at all. S20
+added `project` (a NAME, not an id) to the bundle so a future importer can restore the filing, and
+made the SINGLE-layout path round-trip properly today — `findOrCreateProject` matches an existing
+folder case-insensitively, creates it when the receiving store has never heard of it, and falls back
+rather than refusing the file at the folder cap. Until a bundle reader ships, the "storage-agnostic
+safety net" in `db.ts`'s header comment is write-only, and the handoff should keep saying so.
+
+**10d — multi-tab folder loss.** `saveMeta` rebuilds the whole meta row from one tab's in-memory
+`store.projects`, and `usePersistence` calls it on every autosave cycle AND on every
+`visibilitychange → hidden` / `pagehide` flush. Two tabs open: tab A creates a folder and files a design
+into it (both persisted), the user switches to tab B whose `store.projects` predates it, and merely
+switching away from B rewrites the meta row without that folder. On the next load it is gone, the design
+is an orphan, and `assembleStore` re-homes it somewhere the user never chose.
+
+Pre-S20 the meta row held only `activeId`, so a stale tab could clobber only which layout was active —
+one click to recover. The folder tree is the same last-writer-wins singleton with a much larger blast
+radius and no undo. `database-plan.md` §7 Q3 ("do you ever open the app in two tabs?") is still
+unanswered, which is why this is documented rather than guessed at: the fix is a merge policy, and
+which merge is correct depends on that answer. A `meta.updatedAt`/sequence guard that refuses to write a
+projects list older than the stored one is the cheapest sound option.
+
+S20 did reduce the exposure: `saveMeta` now runs FIRST in the persist cycle, so a torn write leaves a
+folder with no members (invisible, self-correcting) rather than layouts pointing at a folder the meta
+row has never heard of.

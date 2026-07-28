@@ -27,11 +27,11 @@
  * already imports together; NO file under `src/engine/` changes.
  *
  * MEASURED (S20, `docs/sessions/S20/bench/direct-only.mts`, median of 11,
- * DEFAULT_SETTINGS rayCount 360 / maxBounces 5):
- *     seeded Maple Court demo   24.78 ms → 0.016 ms  (1565×)
- *     bare room + one pair       1.29 ms → 0.003 ms   (435×)
- *     20-room chain, two pairs  27.14 ms → 0.049 ms   (558×)
- *     50-room chain, one pair   30.40 ms → 0.119 ms   (256×)
+ * DEFAULT_SETTINGS rayCount 360 / maxBounces 5, machine quiet):
+ *     seeded Maple Court demo   23.53 ms → 0.027 ms  (865×)
+ *     bare room + one pair       1.44 ms → 0.003 ms  (485×)
+ *     20-room chain, two pairs  25.46 ms → 0.049 ms  (517×)
+ *     50-room chain, one pair   29.86 ms → 0.121 ms  (247×)
  * with `direct[]`, `computeAudio(...)` and `deriveVerdict(...)` JSON-identical in
  * every case. That is what makes an arbitrary N affordable.
  *
@@ -40,13 +40,17 @@
  * guard is `__tests__/compute-scenario.test.ts`, whose corpus asserts the
  * enumeration above and carries a negative control.
  *
- * What this does NOT make cheap: `computeAudio` itself, whose `bestPairSpot` grid
- * sweep runs once per apex-BLOCKED pair. On real layouts that is fractions of a
- * millisecond; on an adversarial import-legal payload (64 speakers / 32 blocked
- * pairs) it is ~10.9 s per column — a PRE-EXISTING residual that the 2-up compare
- * already paid twice and `useSimulation` pays on every edit. N-up multiplies it
- * rather than introducing it; see `docs/sessions/S20/bench/RESULTS.md` and
- * `docs/ideas.md` §2d.
+ * What this does NOT make cheap — and this half matters just as much: `computeAudio`
+ * itself, whose `bestPairSpot` grid sweep runs once per apex-BLOCKED pair. Wherever
+ * that term dominates, the saving above collapses to ~1× and the column stays
+ * expensive: a 30-room house with four blocked pairs measures 120.10 ms full
+ * against 57.79 ms lean (2×), and an adversarial import-legal payload (64 speakers
+ * / 32 blocked pairs) is ~10.9 s per column either way. That last one is a
+ * PRE-EXISTING residual the 2-up compare already paid twice and `useSimulation`
+ * pays on every edit — N-up multiplies it rather than introducing it. It is why
+ * `MAX_COMPARE` is a legibility bound and the real CPU control is the measured
+ * slow-column gate in `column-gate.ts`. See `docs/sessions/S20/bench/RESULTS.md`
+ * and `docs/ideas.md` §2d.
  */
 import { collectSurfaces, directPath } from '../../engine/raytrace';
 import type { Scene, TraceResult } from '../../engine/types';
