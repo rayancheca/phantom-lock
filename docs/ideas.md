@@ -703,12 +703,23 @@ precisely why the fix uses spatial information the histogram discards.
 flat mass from thin strokes, so a large mid-tone mass that is TEXTURED would still vote. No such case
 is known in the corpus or in the owner's file. See §13c.
 
-### 13c. The adversarial case gradient weighting does not cover — **P3**
+### 13c. The adversarial case gradient weighting does not cover — **P3, and measured**
 
-The fix rests on "a thing that should be excluded is flat". A large mid-tone region that is heavily
-textured — halftone, dithering, dense hatching over a big area — would clear the gate and vote like
-ink. Nothing measured today exhibits it, and the corpus has no such fixture. Worth a fixture if a
-real image ever shows it; not worth pre-emptive machinery.
+The fix rests on "the thing that should be excluded is FLAT". A large mid-tone region that is
+textured — halftone, dithering, dense hatching — clears the gate and votes like ink, so the fix has
+no advantage there. Measured on one drawing with an identical 25.7 %-of-the-page band rendered three
+ways, reporting how much of the band each engine calls ink:
+
+| band | plain Otsu | S27 gradient | S27 result |
+|---|---|---|---|
+| flat 190 | **100.0 %** | **0.0 %** | 5 walls, structure 1.000, ok |
+| halftone (≈190 mean, hard dots) | 50.0 % | 50.0 % | 7 walls, structure 0.714, ok |
+| 45° hatching, 5 px pitch | 20.0 % | 20.0 % | 7 walls, structure 0.714, ok |
+
+So the honest statement is **"no advantage", not "a regression"**: on a textured mass the two engines
+behave identically and the plan still reads in both. The fix helps exactly where it claims to and is
+inert elsewhere. Nothing in the corpus or the owner's file is textured this way. Worth a fixture if a
+real image ever shows one; not worth pre-emptive machinery.
 
 ### What S26 left, for the record
 
