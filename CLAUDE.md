@@ -104,7 +104,7 @@ is unchanged. Do not re-tighten this without the owner saying so.
   - `vision/thin.ts` — Zhang-Suen, plus **`crossingNumber`**, which `classify` uses instead of a raw neighbour count. Not academic: thinning leaves staircases, a staircase pixel has three neighbours in the middle of an unbranched line, tracing stops at junctions — so the neighbour-count version shattered every non-axis-aligned wall and a plan photographed 8/20/22/24/26° off-square returned **zero walls**.
   - `vision/trace.ts` — skeleton → graph → polylines → RDP → segments, plus `looksLikeAnnotation` (door arcs and dimension text). The arc rule compares an **implied radius** against the plan's scale, because thinning chamfers a right-angle corner into two 45° bends and a turn-only rule dropped a whole room outline.
   - `vision/regularize.ts` — `dominantAngle` (length-weighted, folded mod 90°, so a photo shot off-square is straightened to the BUILDING) → `snapToAxes` (which deliberately leaves a genuine 30° wall alone) → `mergeCollinear` (one span per uninterrupted run: duplicates collapse, fragments rejoin, DOORWAYS survive) → `joinCorners` (L-corners to the exact line intersection, T-junctions projected without moving the through-wall) → `inkSupport`.
-  - `vision/quality.ts` — the refusal. Three independently-failing signals (support / structure / explained). `MIN_STRUCTURE` is **0.25**, lowered from 0.40 after that fired on a 22°-rotated photo (0.364) and on heavy-poché-with-thin-partitions (0.313) — each an 83–96 % correct read thrown away.
+  - `vision/quality.ts` — the refusal. Three independently-failing signals (support / structure / explained). `MIN_STRUCTURE` is **0.25**, lowered from 0.40 after that fired on a 22°-rotated photo (0.364) and on heavy-poché-with-thin-partitions (0.313) — each an 83–96 % correct read thrown away. **⚠️ IT IS STILL TOO HIGH, measured on REAL data (2026-07-29):** the owner's own floorplan scores **0.231** and is REFUSED at the default sensitivity, with support 1.000, explained 0.816 and an overlay that traces essentially every wall. The corpus cannot see it — nulls measure 0.000 and the lowest LEGIT fixture is 0.425, so the real photo lands in a gap no synthetic occupies. Do NOT just lower the constant: structure RISES with sensitivity (0.111 → 0.231 → 0.548), so the default is UNDER-reading and `joinCorners` is not closing the chamfered, annotation-buried corners. See `docs/ideas.md` §13.
 - `joints.ts` — wall snapping (`snapToWalls`) + `integrateWall` (crossings split BOTH walls into chunks)
 - `scene.ts` — presets, sanitize, `addRoomShell`, `loadStore` (legacy localStorage `phantom-lock:v2` reader — now only used as the migration source + IDB-unavailable fallback). **Multi-listener (Session 2):** the source of truth is `scene.listeners: NamedListener[]` (`{id,name,pos,z}`) + `scene.activeListenerId`; `scene.listener` is a **mirror** always kept equal to the active seat so every engine/UI read-site is unchanged. Write ONLY through the helpers — `updateActiveListener` / `setActiveListener` / `addListener` (no-op at `MAX_LISTENERS`=32) / `renameListener` / `removeListener` — each runs `syncActiveListener` (which clones the mirror `Vec2`, never aliases). `sanitizeScene` migrates v2 single `{pos,z}`, v1 `{x,y}`, and the new `listeners[]` shape, truncating to the cap **without dropping the active seat**. Constructors + `addRoomShell` seed the fields (`addRoomShell` recenters ALL seats on a first room). `sceneListeners`/`activeListener` are defensive readers for hand-built scenes.
 - `db.ts` — **IndexedDB persistence (Session 1)**: stores `layouts`/`underlays` (image Blobs)/`meta`; `bootstrapPersistence()` migrates the legacy localStorage blob on first run (keeps the old key as rollback), `saveLayout(layout, writeImage)` does per-record async writes, `loadFromIDB()` re-runs `sanitizeLayout`; hardened localStorage fallback when IDB is unavailable. In memory `Scene.underlay.src` stays a data URL so render/UI/export are unchanged. **(S20) folders ride the EXISTING stores — `DB_VERSION` stays 1 and `onupgradeneeded` is byte-unchanged:** `LayoutRecord.projectId?` (optional on disk, which is the truth for every pre-S20 row) and `MetaRecord.projects?`. A fourth object store would need a version bump, and `openDB` REJECTS on `onblocked` (an old tab holding v1) → `bootstrapPersistence`'s catch → localStorage mode → autosave overwrites the FROZEN pre-migration snapshot. Adding a field to an existing record needs no schema change at all (IDB stores structured clones). **`saveMeta(activeId, projects)` takes projects as a REQUIRED parameter** — it rebuilds the whole meta row and runs unconditionally every autosave cycle, so a 1-arg version was a 400 ms fuse on total folder loss. `saveLayout`'s record literal and `loadFromIDB`'s `raw` literal are built field-by-field and are therefore SILENT-DROP sites: any future per-layout field must be added to both. `loadFromIDB`'s call to `assembleStore` is WRAPPED — an assembly throw must never reach `bootstrapPersistence`'s catch, which puts a stale frozen snapshot on screen and then overwrites it. `buildExportBundle` is **version 2**: each layout carries its project's NAME (ids are meaningless in another store).
@@ -354,6 +354,33 @@ because its gate is *reachability*, not geometry. Follow-up: `docs/ideas.md` §2
 30+ minutes at the ceiling) is now the single worst unbounded path left — `docs/ideas.md` §2c.
 
 ## Hard-won lessons
+
+- **A synthetic corpus cannot calibrate a refusal — only real data can, and ours was three sessions
+  late (2026-07-29):** S22 built a 22-fixture corpus with exact ground truth, lowered `MIN_STRUCTURE`
+  0.40 → 0.25 against it, and recorded the margin as comfortable: nulls at **0.000**, lowest legit
+  fixture at **0.425**. The owner's actual floorplan measures **0.231** — inside the gap no synthetic
+  fixture occupies — so the app tells them their own plan "doesn't look like a floorplan" while
+  `support` is a perfect 1.000 and the overlay traces nearly every wall. Two rules follow. (1) A
+  refusal threshold is not calibrated until it has seen REAL input; get one artefact of the real thing
+  before shipping the cap, not after. (2) When the corpus and reality disagree, the corpus is the thing
+  that is wrong — the fix is a fixture that reproduces the real artefact's characteristics (here: dense
+  dimension-line annotation, thick poché, chamfered corners, a non-rectangular skewed envelope), not a
+  constant nudged until the one known failure passes.
+- **Score the metric's TREND, not just its value — it tells you which half is broken (2026-07-29):**
+  `structure` on the owner's plan reads 0.111 / 0.231 / 0.548 at sensitivity 0.6 / 1.0 / 1.5. A
+  threshold argument would stop at "0.231 < 0.25, lower the threshold". The trend says something more
+  useful: structure RISES with sensitivity because more segments means more endpoints that meet, so the
+  default is UNDER-reading (13 segments for a 20+-wall plan) and the refusal is firing on the
+  under-read. The root cause is upstream (`joinCorners` not closing chamfered corners buried in
+  annotation), and fixing it raises the metric legitimately instead of moving the goalposts.
+- **A personal artefact can be the only valid fixture AND unpublishable at the same time (2026-07-29):**
+  the regression guard for the above is the owner's own photo, but `src/engine/__tests__/fixtures/` is
+  committed to a PUBLIC repo while the photo is a picture of their home. `docs/sessions/` is gitignored,
+  so measurements can live there, but a committed test cannot reference them. The resolution is to
+  derive a SYNTHETIC fixture that reproduces the measured characteristics and pin the measured number
+  (≈0.23) as the target — the corpus was always meant to be code for exactly this reason. Also: a photo
+  dropped in the repo root is one `git add -A` from being published; it is now covered by an `IMG_*`
+  rule in `.gitignore`.
 
 - **A "proper intersection" predicate is a LEAK whenever your geometry manufactures zeros (S25):**
   `rooms.ts` `segsCross` required a strict `d1*d2 < 0 && d3*d4 < 0`, which is correct exactly when
@@ -839,8 +866,11 @@ efficiency only matters if the app gets slow.** It must be read-only and touch n
 
 ## Other known gaps (backlog)
 
-**Unscheduled ideas live in `docs/ideas.md`, prioritized.** As of S23 there is **no P0 left** and the P1
-drag-magnet has landed. The head of the queue is now **§4b** — the explicit seat COMMAND (`f`/⇧F with the
+**Unscheduled ideas live in `docs/ideas.md`, prioritized.** As of 2026-07-29 there IS a **P0** again:
+**§13 — detection REFUSES the owner's own floorplan at the default sensitivity** (measured: structure
+0.231 against `MIN_STRUCTURE` 0.25, while support is a perfect 1.000 and the overlay shows a good read).
+That is their primary use case failing with a message that is factually wrong about their image. After
+that, the P1s below. The head of the queue is now **§4b** — the explicit seat COMMAND (`f`/⇧F with the
 quarter turn applied AFTER the snap, plus the Inspector and touch-HUD buttons and the on-canvas snap
 guide) — then creation-time alignment (`App.tsx:446` and `SimCanvas.tsx:1015` both hardcode `rotation: 0`,
 so on a skewed plan every new rect arrives crooked before any drag), the export-all bundle IMPORTER,

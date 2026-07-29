@@ -4,3 +4,8 @@ dist
 .DS_Store
 coverage
 docs/sessions/
+
+# Personal floorplan photos dropped in the repo root (S25) — never publish these.
+IMG_*.jpeg
+IMG_*.jpg
+IMG_*.png

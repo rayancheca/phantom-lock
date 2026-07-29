@@ -10,6 +10,7 @@ effort — a small high-value item beats a large one.
 
 | # | Idea | Priority | Effort |
 |---|---|---|---|
+| 13 | **Detection REFUSES the owner's own floorplan at default sensitivity** | **P0** | 1 session |
 | 1 | ✅ **Auto-detect walls accuracy overhaul** — **DONE S22** (52.1 % → 95.6 %, and it refuses) | ~~P0~~ done | — |
 | 2 | ✅ **Grid-loop iteration cap** — **DONE S18** (safety half; slowness half → 2b) | ~~P0~~ done | — |
 | 2b | ✅ **Bound the reflection search** (`bestReflectionDb`) — **DONE S19** (50-room 13.7 s → ~0.5 s) | ~~P1~~ done | — |
@@ -593,3 +594,56 @@ door), which means `walkable.area` is not floor area. Benign today: 0 of 3192 pl
 outside the envelope across 480 designs, because `openSlots` is bounded by `sceneBounds ± 0.6`. But do
 not read `walkable.area` as floor area, and bound the fill by the exterior wall loop if it ever needs
 to be exact.
+
+---
+
+## 13. Detection refuses the owner's own floorplan — **P0**
+
+**Measured 2026-07-29 on `IMG_7421.jpeg` (1320×1734), the owner's real plan, through the REAL app path
+(`detectWalls`, which includes the refusal — not `detectSegments`, which does not):**
+
+| sensitivity | walls | confidence | support | structure | explained | verdict |
+|---|---|---|---|---|---|---|
+| 0.6 | 9 | 62.2 % | 1.000 | 0.111 | 0.645 | **REFUSED** |
+| **1.0 (default)** | **13** | **71.5 %** | **1.000** | **0.231** | **0.816** | **REFUSED** |
+| 1.5 | 21 | 87.4 % | 1.000 | 0.548 | 0.866 | ok |
+
+At the default the user is told: *"The lines in this image don't join up into rooms, so it doesn't look
+like a floorplan."* **The overlay shows that is false.** `bench/owner-plan-default.png` traces the left
+exterior wall, both angled top walls, the long right diagonal, the kitchen partition, the small-room
+partitions and the bathroom. `support` is a perfect **1.000** and `explained` is **0.816** — the ink it
+claims is wall really is wall, and it explains 82 % of the wall ink. Only `structure` fails, at **0.231**
+against `MIN_STRUCTURE = 0.25` — by 0.019.
+
+**Why the corpus could not see this.** Structure across the whole corpus, measured:
+
+- null fixtures (`no-plan`, `no-plan-lines`): **0.000**
+- lowest LEGIT fixture (`apartment-cluttered`): **0.425**
+- every other legit fixture: 0.50 – 1.00
+- **the owner's real plan: 0.231**
+
+The threshold sits at 0.25 with an apparently huge margin — 0.000 below, 0.425 above. The owner's photo
+lands in the gap that no synthetic fixture occupies. This is the S22 lesson firing for the third time
+("calibrate a refusal against MEASURED legitimate lows"), except the measured lows were all synthetic.
+
+**Do NOT just lower the constant.** The interesting datum is that `structure` RISES with sensitivity —
+0.111 → 0.231 → 0.548 — because more segments means more endpoints that meet. So the default is
+UNDER-reading this plan (13 segments for a plan with 20+ walls), and the refusal then fires on the
+under-read. The root causes to investigate, in order:
+
+1. **`joinCorners` is not closing these corners.** The plan's corners are chamfered and sit under dense
+   dimension-line annotation, so traced segments stop short of meeting. Closing them raises `structure`
+   *legitimately* and improves the output at the same time.
+2. Only then reconsider `MIN_STRUCTURE`, with the null margin (0.000) as headroom.
+
+**The fixture problem, which is structural and must be solved first.** The obvious regression guard is
+the owner's photo — but it is a personal photo of their home and `src/engine/__tests__/fixtures/` is
+COMMITTED to a public repo (`docs/sessions/` is gitignored; the photo is now gitignored too, see
+`.gitignore`). So the guard has to be a SYNTHETIC corpus fixture that reproduces this plan's
+characteristics: heavy dimension-line annotation on every wall, thick filled poché, chamfered corners,
+a non-rectangular envelope, and ~10° of skew. Build that fixture first, confirm it measures ≈0.23, and
+only then change anything.
+
+**Artifacts (gitignored, local):** `docs/sessions/S25/bench/owner-floorplan.txt` (the three-sensitivity
+run), `owner-plan-default.png` and `owner-plan-sens15.png` (overlays). The photo itself is at the repo
+root as `IMG_7421.jpeg` and is gitignored — do not commit it.
