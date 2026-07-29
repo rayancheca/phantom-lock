@@ -26,7 +26,7 @@ effort — a small high-value item beats a large one.
 | 10b | Bundle IMPORTER (read an export-all backup back in, folders included) | P2 | ½ session |
 | 10c | Layout ORDER within a folder (drag to reorder; today `getAll()` key order) | P3 | small |
 | 10d | Multi-tab: `saveMeta` overwrites the folder list wholesale (last-writer-wins) | P2 | ½ session |
-| 12b | `rooms.ts` flood fill walks THROUGH a wall when a cell centre lands exactly on it | **P1 — high** | small |
+| 12b | ✅ **`rooms.ts` flood fill walked THROUGH walls** — **DONE S25** (19 → 0 unsealed) | ~~P1~~ done | — |
 | 7 | Drag-release wall splitting | P3 | small |
 | 8 | Multi-select with a listener in it | P3 | small |
 | 9 | Window/door-leaf reflection materials | P3 | small |
@@ -543,35 +543,49 @@ corpus fixtures rather than asserted.
 
 ---
 
-## 12b. `regionOf` leaks through a wall when a cell centre lands exactly on it — **P1 (high)**
+## 12b. `regionOf` leaked through walls — ✅ **DONE (S25)**
 
-Surfaced by S24's adversarial pass, as a pre-existing degeneracy the unit fix made *more visible*.
+`segsCross` implemented **proper** segment intersection only (`d1*d2 < 0 && d3*d4 < 0`), which is
+correct exactly when all four determinants are non-zero. Every **improper** (touching) intersection
+leaked — and zero is not a rare accident here, it is manufactured by the app's own geometry: the grid
+origin is `sceneBounds().min − cell`, `sceneBounds` reads door rect CORNERS, and an ordinary door's
+`h = 0.1` puts `min.y` at −0.05, which lands a whole cell-centre ROW on a wall 5.5 m away.
 
-`rooms.ts` `segsCross` tests `d3 * d4 < 0` — a STRICT inequality — so a flood-fill step that lands
-exactly on a wall line scores `d4 = 0` and is **not** blocked. The step after it is not blocked either,
-so the region walks straight through the wall. Whether this fires depends on the grid ORIGIN, which is
-`sceneBounds().min − cell`, and `sceneBounds` includes door/window rect CORNERS — so anything that moves
-an opening's geometry re-rolls the dice for every design.
+**Three degenerate shapes, and the taxonomy is complete:**
 
-**Measured** over 8 archetypes × seeds 0–59 (300 multi-room designs), before vs after the S24 fix:
+1. `d3`/`d4` zero — a step ENDPOINT on the blocker. The whole-ROW case: every step across that row is
+   free. Catastrophic and global.
+2. `d1`/`d2` zero — a blocker ENDPOINT on the step. A pinhole at a wall end or a doorway jamb.
+3. all four zero — the step runs collinear inside the wall.
 
-| | pre-fix | post-fix |
+**The second one is why the obvious fix is not enough**, and the first cut of this work got it wrong.
+It is tempting to handle only (1) and argue that going around a wall's TIP is legitimate. That fails
+on the shape the generator actually builds: at an entry door the exterior wall splits into two stubs
+and the door rect's edges START at exactly the stub ends, so on that cell row THREE blockers each
+merely touch the step — none blocks alone, together they seal the wall, and the fill threads the seam.
+The partial fix left **4 of 300** designs still fully unsealed while passing every other test in the
+file. `THE SEAM` fixture (distilled from `one-bed`/seed 6) exists specifically to discriminate them.
+
+**Measured**, 8 archetypes × seeds 0–59 = 300 multi-room designs:
+
+| | before | after |
 |---|---|---|
-| fully unsealed (zoning ratio ≤ 1.0001) | 6 | **19** |
-| below 1.4× | 138 | **28** |
+| fully unsealed (walkable/zoning ≤ 1.0001) | 19 | **0** |
+| below 1.4× | 28 | **0** |
+| minimal 8×5.5 room with one door | 54.81 m² | **43.74 m²** (true 44.00) |
+| 45° hypotenuse, 40.05 m² triangle | 92.16 m² | within 5 % |
 
-So the average improved a great deal and the worst bucket tripled. Worked example, `one-bed`/seed 2
-post-fix: `min.y = −0.05` (a door corner) → grid origin `−0.35`, `cell = 0.3`, so cell centres include
-exactly `5.5000` — which is the top wall `(0,5.5)→(8,5.5)`. `regionOf(…, {doorsBlock:true}).area` reads
-**56.70 m²** for a 44 m² home and `.contains()` returns true for the far bedroom.
+**Skewed walls were not exempt and were worse** — a 45° hypotenuse can hold an entire anti-diagonal of
+cell centres. That is the case that matters for the owner's real floorplan, which is almost entirely
+non-axis-aligned.
 
-**Consequence:** `optimize.ts`'s "This room" target silently becomes the whole house for ~6 % of
-generated multi-room designs.
+**Over-blocking was the real risk and was measured, not argued.** Blocking a graze could seal a narrow
+doorway, and `arrange.ts:599` builds its hard walkable-containment constraint from this region. The
+cell grows as `span/158` past ~47 m, so a 0.9 m doorway spans 3.0 cells at 8 m, 2.4 at 60 m, 1.6 at
+90 m and 1.0 at 140 m — it connects at every one.
 
-**The repair belongs in `rooms.ts`, not in the generator** — either make `segsCross` treat a touching
-endpoint as a crossing for the blocker side (`d3 * d4 <= 0`, with its own collinearity guard), or offset
-the flood-fill grid by half a cell so a centre can never land on an axis-aligned wall line. Either is an
-engine change and needs its own golden; it was deliberately NOT smuggled into the S24 unit-fix commit.
+**Negative-control ladder** (pinned): strict → 5 of 23 fail · partial (`d3`/`d4` only) → 1 fails ·
+full → 23 pass.
 
 **Related, same pass, lower priority:** `regionOf(…, {doorsBlock:false})` escapes the wall envelope on
 300 of 300 generated multi-room designs (expected — no door blockers, so it flows out through the entry

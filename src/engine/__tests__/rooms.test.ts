@@ -240,6 +240,25 @@ describe('regionOf — the repair must NOT over-block', () => {
     }
   });
 
+  it('A SEAT AGAINST A WALL still gets its room, not a single cell', () => {
+    // The repair blocks the step OUT of a cell as well as the step in, so a seed
+    // whose own cell centre sits on a wall had all four exits removed and the
+    // fill returned ONE cell (0.09 m2). Not exotic: the cell spans +/-cell/2, so
+    // any seat within 0.15 m of a grid-aligned wall lands in it — measured, 640
+    // of 17 600 interior positions on the app's 0.05 m snap grid. `optimize.ts`'s
+    // listener target has no area guard, so it surfaced as "Suggest placement"
+    // returning ZERO speakers and blaming the user's furniture.
+    const scene = roomWithGridOnTopWall();
+    const mid = regionOf(scene, { x: 4, y: 2.75 }, { doorsBlock: true });
+    // 5.35..5.50 are the seats inside the cell whose centre is ON the top wall.
+    for (const y of [5.35, 5.4, 5.45, 5.5]) {
+      const r = regionOf(scene, { x: 4, y }, { doorsBlock: true });
+      expect(r.area, `seat y=${y} collapsed to a single cell`).toBeGreaterThan(mid.area * 0.9);
+      // ...and it must still be the ROOM, not a leak the nudge re-opened.
+      expect(r.contains({ x: 4, y: 5.7 }), `seat y=${y} leaked past the wall`).toBe(false);
+    }
+  });
+
   it('an open-plan room is still one region', () => {
     const scene = sceneOf(
       [

@@ -87,17 +87,21 @@ function withinSeg(b1: Vec2, b2: Vec2, p: Vec2): boolean {
  * `span/158` past ~47 m, so a 0.9 m doorway spans 3.0 cells at an 8 m envelope,
  * 2.4 at 60 m, 1.6 at 90 m and 1.0 at 140 m — it connects at every one.
  *
- * **What `d3`/`d4` versus `d1`/`d2` actually mean.** `d3`/`d4` zero means a
- * cell CENTRE lies on the blocker — that cell is inside the wall, so the step
- * into it must be blocked. `d1`/`d2` zero means a blocker ENDPOINT lies on the
- * step, i.e. the step grazes the wall's TIP, and going around a wall's end is
- * legitimate: blocking it would seal the 0.9 m gap the generator emits between
- * two collinear jamb stubs, and `arrange.ts:599` builds its hard
- * walkable-containment constraint from exactly that region. Over-blocking there
- * would trap every piece of furniture in the seat's room.
+ * **What `d3`/`d4` versus `d1`/`d2` actually mean.** `d3`/`d4` zero means a cell
+ * CENTRE lies on the blocker — that cell is inside the wall, so the step into it
+ * must be blocked. `d1`/`d2` zero means a blocker ENDPOINT lies on the step —
+ * the step grazes the wall's TIP. BOTH block. The doorway is not protected by
+ * declining to block a graze (the first cut tried that and left 4 of 300 designs
+ * unsealed); it is protected by arithmetic: a gap of width `G` leaves
+ * `ceil(G/cell) − 1` free lanes through it, so at `cell` 0.3 any doorway ≥ 0.6 m
+ * keeps at least one. Measured over 1 000 jamb alignments × 5 gap widths: zero
+ * sealed.
  *
- * The asymmetry is also what makes the repair safe by construction rather than
- * by luck: it can only ever REMOVE a step that crosses a wall, never add one.
+ * The repair only ever REMOVES steps, never adds one — which is precisely why
+ * over-blocking was the risk worth measuring, and it is also why the SEED needs
+ * its own handling in `regionOf` (a seed cell sitting on a blocker would have
+ * every exit removed and collapse the region to one cell — see the seed nudge in
+ * `regionOf`).
  */
 function segsCross(a1: Vec2, a2: Vec2, b1: Vec2, b2: Vec2): boolean {
   const d = (o: Vec2, p: Vec2, q: Vec2) => (p.x - o.x) * (q.y - o.y) - (p.y - o.y) * (q.x - o.x);
@@ -156,50 +160,105 @@ export function regionOf(scene: Scene, seed: Vec2, opts?: { doorsBlock?: boolean
     cy: Math.floor((p.y - minY) / cell),
   });
 
-  const seedCell = cellOf(seed);
+  const raw = cellOf(seed);
   const inGrid = (cx: number, cy: number) => cx >= 0 && cy >= 0 && cx < cols && cy < rows;
-  const filled = new Uint8Array(cols * rows);
-  if (!inGrid(seedCell.cx, seedCell.cy)) {
+  if (!inGrid(raw.cx, raw.cy)) {
     return { contains: () => false, centroid: seed, area: 0 };
   }
 
-  const stack = [seedCell.cx + seedCell.cy * cols];
-  filled[stack[0]] = 1;
-  let sumX = 0;
-  let sumY = 0;
-  let count = 0;
-  while (stack.length > 0) {
-    const idx = stack.pop()!;
-    const cx = idx % cols;
-    const cy = (idx / cols) | 0;
-    const here = cellCenter(cx, cy);
-    sumX += here.x;
-    sumY += here.y;
-    count += 1;
-    for (const [dx, dy] of [
-      [1, 0],
-      [-1, 0],
-      [0, 1],
-      [0, -1],
-    ] as const) {
-      const nx = cx + dx;
-      const ny = cy + dy;
-      if (!inGrid(nx, ny)) continue;
-      const nIdx = nx + ny * cols;
-      if (filled[nIdx]) continue;
-      const there = cellCenter(nx, ny);
-      let crossed = false;
-      for (const bl of blockers) {
-        if (segsCross(here, there, bl.a, bl.b)) {
-          crossed = true;
-          break;
+  /**
+   * NUDGE THE SEED OFF A WALL.
+   *
+   * `segsCross` blocks any step whose endpoint lies exactly on a blocker, which
+   * is what closes the leak — but it applies to the step OUT of a cell as well
+   * as the step in. So a seed whose own cell centre sits on a wall has all four
+   * exits removed and the fill terminates immediately, returning one cell.
+   *
+   * That is not exotic: the cell spans ±cell/2, so ANY seat within 0.15 m of a
+   * grid-aligned wall lands in it — measured, 640 of 17 600 interior positions on
+   * the app's 0.05 m snap grid, and a seat pushed against a wall is ordinary.
+   * `optimize.ts`'s listener target has no `area > 2` guard, so the collapse
+   * surfaced as "Suggest placement" returning ZERO speakers with a note blaming
+   * the user's furniture.
+   *
+   * The raw seed POINT is off the wall (by up to cell/2) even when its cell
+   * centre is not, so its own position picks the side: prefer the neighbour whose
+   * centre is nearest the real seed. Falling back to the original cell keeps the
+   * old answer when every neighbour is walled too.
+   */
+  const onBlocker = (p: Vec2): boolean =>
+    blockers.some((bl) => {
+      const dd =
+        (bl.b.x - bl.a.x) * (p.y - bl.a.y) - (bl.b.y - bl.a.y) * (p.x - bl.a.x);
+      return dd === 0 && withinSeg(bl.a, bl.b, p);
+    });
+
+  /** Flood-fill from one start cell. Returns a fresh grid, so it can be run twice. */
+  const fillFrom = (start: { cx: number; cy: number }) => {
+    const grid = new Uint8Array(cols * rows);
+    const stack = [start.cx + start.cy * cols];
+    grid[stack[0]] = 1;
+    let sumX = 0;
+    let sumY = 0;
+    let count = 0;
+    while (stack.length > 0) {
+      const idx = stack.pop()!;
+      const cx = idx % cols;
+      const cy = (idx / cols) | 0;
+      const here = cellCenter(cx, cy);
+      sumX += here.x;
+      sumY += here.y;
+      count += 1;
+      for (const [dx, dy] of [
+        [1, 0],
+        [-1, 0],
+        [0, 1],
+        [0, -1],
+      ] as const) {
+        const nx = cx + dx;
+        const ny = cy + dy;
+        if (!inGrid(nx, ny)) continue;
+        const nIdx = nx + ny * cols;
+        if (grid[nIdx]) continue;
+        const there = cellCenter(nx, ny);
+        let crossed = false;
+        for (const bl of blockers) {
+          if (segsCross(here, there, bl.a, bl.b)) {
+            crossed = true;
+            break;
+          }
         }
+        if (crossed) continue;
+        grid[nIdx] = 1;
+        stack.push(nIdx);
       }
-      if (crossed) continue;
-      filled[nIdx] = 1;
-      stack.push(nIdx);
+    }
+    return { grid, sumX, sumY, count };
+  };
+
+  // Candidate start cells: the seed's own cell, unless its centre is ON a wall.
+  let starts: Array<{ cx: number; cy: number }> = [raw];
+  if (onBlocker(cellCenter(raw.cx, raw.cy))) {
+    const free = ([[1, 0], [-1, 0], [0, 1], [0, -1]] as const)
+      .map(([dx, dy]) => ({ cx: raw.cx + dx, cy: raw.cy + dy }))
+      .filter((c) => inGrid(c.cx, c.cy) && !onBlocker(cellCenter(c.cx, c.cy)))
+      .map((c) => ({ c, d: v.dist(cellCenter(c.cx, c.cy), seed) }))
+      .sort((a, b) => a.d - b.d);
+    if (free.length > 0) {
+      // The nearest free neighbour wins. On an EXACT tie the seed sits precisely
+      // on the wall centreline and its position carries no side information, so
+      // fall back to the larger region — "the room you are in" rather than the
+      // strip outside the building, which a stable sort would otherwise pick at
+      // random. Measured: a seat dragged exactly onto a wall read 8.64 m2 (the
+      // outside strip) instead of 43.74.
+      const tied = free.filter((f) => Math.abs(f.d - free[0].d) < EPS).map((f) => f.c);
+      starts = tied.length > 0 ? tied : [free[0].c];
     }
   }
+
+  const runs = starts.map(fillFrom);
+  const best = runs.reduce((a, b) => (b.count > a.count ? b : a));
+  const { grid: filled, sumX, sumY, count } = best;
 
   return {
     contains: (p: Vec2) => {
