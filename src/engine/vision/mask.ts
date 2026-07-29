@@ -111,6 +111,21 @@ const MIN_EDGE_FRACTION = 0.02;
  * margin, a shadow, a letterbox bar. Big enough, and it drags the threshold
  * across itself and is admitted as ink.
  *
+ * Which tone changes actually trigger it is worth knowing, because the obvious
+ * word for it is the wrong one. Measured on the owner's plan through the app's
+ * real chain, sweeping each axis independently:
+ *
+ *   nonlinear tone curve (gamma 0.90-1.30)   26 of 41 REFUSED
+ *   linear gain (+/-0.3 EV, the thing a re-shoot changes)   0 of 46
+ *   additive lift (+/-40 levels)                            0 of 41
+ *
+ * So this is NOT an exposure bug: gain preserves tone ratios and lift preserves
+ * tone differences, and neither can reorder the two rival optima. A tone CURVE
+ * can, because it moves the grey mass and the paper by different amounts — and
+ * a tone curve is what every phone pipeline, auto-enhance and contrast slider
+ * applies. The refused band is wide rather than a knife edge: continuous from
+ * gamma 1.046 to about 1.31.
+ *
  * The blur is not cosmetic. Photographic noise puts a gradient on every pixel,
  * so without it the gate admits nearly everything and the weighting decays back
  * into the plain histogram — measured, `apartment-photo` fell from 96.5 % to
@@ -167,10 +182,10 @@ export function edgeWeightedHistogram(img: GrayImage, gray: Uint8Array): Uint32A
  * [142, 219] — and where that band spans blank paper the choice inside it does
  * not matter, but where it spans an 11 %-of-the-page grey margin, one end of the
  * band gives 4.6 % ink and the other 17.4 %. Two rival optima within 2 % of each
- * other, and a 5 % exposure change swapping their order, is a coin toss deciding
- * whether a floorplan is read or refused. Measured: the owner's plan went from
- * REFUSED at 5 of 11 exposures to accepted at all 11, and the corpus mean rose
- * 94.57 % -> 95.65 %.
+ * other, and a 5 % tone-curve change swapping their order, is a coin toss
+ * deciding whether a floorplan is read or refused. Measured: the owner's plan
+ * went from REFUSED at 26 of 41 gamma steps to accepted at ALL 41, and the
+ * corpus mean rose 94.57 % -> 95.26 % over the same 21 fixtures.
  *
  * Two rules that did NOT work, recorded so they are not retried: breaking the
  * near-tie toward the smaller minority class moved 13 of 24 corpus masks (on a

@@ -196,7 +196,7 @@ const FLOORS: Record<string, number> = {
   'apartment-rotated': 0.8,
   'heavy-poche': 0.95,
   'oblique-survey': 0.7,
-  'annotated-margins': 0.95,
+  'scan-letterbox': 0.95,
 };
 
 /**
@@ -213,11 +213,14 @@ const FLOORS: Record<string, number> = {
  * `apartment-photo` (0.965 -> 1.000), `apartment-skewed` (0.898 -> 0.975),
  * `apartment-rotated` (0.849 -> 0.866) and `oblique-survey` (0.747 -> 0.766)
  * while costing `apartment-cluttered` 0.001, taking the 21 to 0.9526; the new
- * `annotated-margins` scores 1.000 and takes the 22 to **0.9548**. Headroom is
- * back to 0.0348 — room for about three more ~0.75 fixtures. Note that
- * `annotated-margins` is NOT held by this floor in any meaningful way (it scores
- * 100 % on the pre-S27 engine too); what holds it is the ink-mask assertion
- * below, and the reason is written there.
+ * `scan-letterbox` scores 1.000 and takes the 22 to **0.9548**. Headroom is back
+ * to 0.0348 — room for about three more ~0.75 fixtures.
+ *
+ * Note what this floor does NOT hold: `scan-letterbox` scores 1.000 on the
+ * PRE-S27 engine too (the same 22 mean 0.9482 there), because at its unperturbed
+ * exposure both engines read it perfectly. A fixture whose only guard is a floor
+ * it always clears would be decoration. What holds it is the tone-curve sweep
+ * below, where the pre-S27 engine scores 0 % from gamma 1.03 onward.
  */
 const MEAN_FLOOR = 0.92;
 
@@ -288,35 +291,41 @@ describe('the corpus — accuracy', () => {
   });
 
   /**
-   * The S27 defect, asserted where it actually shows.
+   * THE S27 GUARANTEE: a small tone change must not decide whether a plan is
+   * read at all.
    *
-   * `annotated-margins` scores 100 % on BOTH the pre-S27 and post-S27 engines,
-   * because the flat margins are fat and `removeThickRegions` deletes them
-   * either way — so the accuracy floor above cannot see this at all, and a
-   * fixture whose only guard is a floor it always clears is decoration.
+   * A page carrying a third tone mass puts two near-tied maxima in Otsu's
+   * criterion — `scan-letterbox` measures 169 at 100.00 % against 210 at
+   * 98.86 %, a 1.14 % gap — and which one wins then decides everything
+   * downstream. Measured on the pre-S27 engine, this same fixture reads
+   * perfectly at gamma 1.00 and 1.02 (10 walls, structure 0.750, score 100 %)
+   * and is REFUSED from gamma 1.03 onward (24 walls, structure 0.125,
+   * score 0 %). The owner's real plan does the same thing at 1.05.
    *
-   * What differs is the INK mask, one stage earlier. Measured on this exact
-   * fixture: with the plain intensity histogram the threshold lands at 187 and
-   * **97.1 %** of the margin band is called ink; with the gradient-weighted
-   * histogram it lands below the margin tone and **0.0 %** is. The margin only
-   * fails to matter here because a later stage happens to clean up after it —
-   * on the owner's real photo the same admission cost them the plan.
+   * Note the axis. This is deliberately a gamma curve and NOT a brightness
+   * offset or a gain, because those provably cannot cause it: over the owner's
+   * file, gain across +/-0.3 EV refuses 0 of 46 and an additive lift refuses
+   * 0 of 41, while gamma refuses 26 of 41. A test that perturbed brightness
+   * would pass on the broken engine.
    */
-  it('does not call a flat margin band ink, which is what the accuracy score cannot see', () => {
-    const f = fixtureByName('annotated-margins');
-    const mask = inkMask(f.img);
-    const BAND = 43;
-    let band = 0;
-    let inked = 0;
-    for (let y = 0; y < f.img.height; y++) {
-      for (let x = 0; x < f.img.width; x++) {
-        if (x >= BAND && x < f.img.width - BAND) continue;
-        band++;
-        inked += mask[y * f.img.width + x];
+  it('reads the same plan the same way when the tone curve moves', () => {
+    const f = fixtureByName('scan-letterbox');
+    const gamma = (g: number): GrayImage => {
+      const out = new Uint8ClampedArray(f.img.data.length);
+      for (let i = 0; i < out.length; i += 4) {
+        for (let k = 0; k < 3; k++) out[i + k] = 255 * Math.pow(f.img.data[i + k] / 255, g);
+        out[i + 3] = 255;
       }
+      return { data: out, width: f.img.width, height: f.img.height };
+    };
+    for (const g of [0.9, 0.95, 0.97, 1, 1.02, 1.03, 1.05, 1.08, 1.1]) {
+      const res = detectWalls(g === 1 ? f.img : gamma(g));
+      const d = scoreDetection(res.quality.refusal ? [] : res.segments, f.truth, {
+        tolerance: Math.max(6, f.strokeWidth),
+      });
+      expect(`g=${g}: ${res.quality.refusal ?? 'ok'}`).toBe(`g=${g}: ok`);
+      expect(`g=${g}: score ${d.score >= 0.9}`).toBe(`g=${g}: score true`);
     }
-    expect(band).toBeGreaterThan(30000);
-    expect(inked / band).toBeLessThan(0.02);
   });
 
   it('makes corners meet', () => {

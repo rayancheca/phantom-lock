@@ -141,7 +141,7 @@ export interface PlanSpec {
    * it: a THIRD tone mass, neither ink nor paper, large enough to compete for
    * the threshold. The owner's own plan has one (flat grey letterbox bars at
    * ~198 over 11 % of the page), and it is what made their verdict flip under a
-   * 5 % exposure change. See `annotated-margins`.
+   * 5 % exposure change. See the `scan-letterbox` fixture.
    */
   ink?: number;
   /** Default wall thickness, px. */

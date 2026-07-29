@@ -23,7 +23,7 @@
  * score is), but it makes each fixture's intent legible.
  */
 
-import { rasterize, type Fixture, type PlanSpec } from './floorplan-raster';
+import { rasterize, type Fixture, type PlanSpec, type WallSpec } from './floorplan-raster';
 
 /** A fixture plus what a human reading the image would call the right answer. */
 export interface CorpusEntry {
@@ -179,6 +179,131 @@ function obDimensions(walls: typeof OB_WALLS, offset: number) {
   }
   return out;
 }
+
+// ---------------------------------------------------------------------------
+// `scan-letterbox` — the THIRD TONE MASS (S27)
+// ---------------------------------------------------------------------------
+
+const SL_W = 700;
+const SL_H = 520;
+const SL_WALL = 9;
+/** Everything ANNOTATIVE — dimension lines, strings — is drawn at this weight. */
+const SL_ANN = 5;
+const SL_PAPER = 246;
+/**
+ * Three tones, not two.
+ *
+ * `SL_INK` is a mid grey rather than the corpus default 26 because that is what
+ * the owner's scan measures — its ink mode sits at ~99 — and because the
+ * near-tie this fixture exists to carry is ARITHMETICALLY IMPOSSIBLE without it:
+ * with ink 26 the low cut beats the high one 2287 to 1457 and no second mode
+ * forms at any stroke width from 1 to 14. That is worth stating plainly, because
+ * a first attempt at this fixture held ink at 26 and swept 540 other
+ * combinations without ever reproducing the effect.
+ */
+const SL_INK = 86;
+const SL_GREY = 190;
+const SL_BAR = 198;
+/** Each bar is this wide, so the pair covers 78/700 = 11.14 % of the page. */
+const SL_BARW = 39;
+
+const SL_WALLS: WallSpec[] = [
+  { a: { x: 118, y: 50 }, b: { x: 582, y: 50 }, thickness: SL_WALL },
+  { a: { x: 582, y: 50 }, b: { x: 582, y: 470 }, thickness: SL_WALL },
+  { a: { x: 582, y: 470 }, b: { x: 118, y: 470 }, thickness: SL_WALL },
+  { a: { x: 118, y: 470 }, b: { x: 118, y: 50 }, thickness: SL_WALL },
+  { a: { x: 370, y: 50 }, b: { x: 370, y: 240 }, thickness: SL_WALL },
+  { a: { x: 370, y: 310 }, b: { x: 370, y: 470 }, thickness: SL_WALL },
+  { a: { x: 118, y: 270 }, b: { x: 200, y: 270 }, thickness: SL_WALL },
+  { a: { x: 270, y: 270 }, b: { x: 370, y: 270 }, thickness: SL_WALL },
+  { a: { x: 480, y: 350 }, b: { x: 582, y: 350 }, thickness: SL_WALL },
+  { a: { x: 480, y: 350 }, b: { x: 480, y: 470 }, thickness: SL_WALL },
+];
+
+/**
+ * A light dimension line parallel to each wall, `off` px along its normal.
+ *
+ * This is the FRAGMENTATION mechanism, copied from the owner's plan rather than
+ * invented: when the threshold jumps these become ink, `closeMask` merges each
+ * one into its wall, the merged band exceeds `maxHalfWidth`, and
+ * `removeThickRegions` then punches holes in the wall itself. Measured on the
+ * owner's file, one 663 px envelope run comes back as 165 + 160 + 132.
+ */
+function slDim(off: number, span: number): WallSpec[] {
+  const out: WallSpec[] = [];
+  for (const wl of SL_WALLS) {
+    const dx = wl.b.x - wl.a.x;
+    const dy = wl.b.y - wl.a.y;
+    const len = Math.hypot(dx, dy);
+    if (len < 60) continue;
+    const nx = (-dy / len) * off;
+    const ny = (dx / len) * off;
+    const mx = (wl.a.x + wl.b.x) / 2;
+    const my = (wl.a.y + wl.b.y) / 2;
+    const hx = ((dx / len) * (len * span)) / 2;
+    const hy = ((dy / len) * (len * span)) / 2;
+    out.push({
+      a: { x: mx - hx + nx, y: my - hy + ny },
+      b: { x: mx + hx + nx, y: my + hy + ny },
+      thickness: SL_ANN,
+      ink: SL_GREY,
+      decoy: true,
+    });
+  }
+  return out;
+}
+
+/** Free-standing dimension strings in the margins — they join nothing. */
+const SL_STRINGS: WallSpec[] = (
+  [
+    [72, 60, 72, 460],
+    [96, 96, 96, 300],
+    [628, 60, 628, 460],
+    [604, 300, 604, 440],
+    [150, 22, 550, 22],
+    [150, 498, 550, 498],
+    [170, 40, 350, 40],
+    [400, 484, 560, 484],
+  ] as number[][]
+).map(([ax, ay, bx, by]) => ({
+  a: { x: ax, y: ay },
+  b: { x: bx, y: by },
+  thickness: SL_ANN,
+  ink: SL_GREY,
+  decoy: true,
+}));
+
+const SCAN_LETTERBOX: PlanSpec = {
+  name: 'scan-letterbox',
+  width: SL_W,
+  height: SL_H,
+  paper: SL_PAPER,
+  ink: SL_INK,
+  strokeWidth: SL_WALL,
+  walls: [...SL_WALLS, ...SL_STRINGS, ...slDim(20, 0.7), ...slDim(-20, 0.56)],
+  blobs: [
+    // THE POINT OF THIS FIXTURE: two flat mid-grey scanner bars, 11.14 % of the
+    // page at luminance 198 — the third tone mass, which is what puts two
+    // near-tied peaks in Otsu's criterion.
+    { kind: 'rect', x: SL_BARW / 2, y: SL_H / 2, w: SL_BARW, h: SL_H, ink: SL_BAR },
+    { kind: 'rect', x: SL_W - SL_BARW / 2, y: SL_H / 2, w: SL_BARW, h: SL_H, ink: SL_BAR },
+    { kind: 'rect', x: 250, y: 150, w: 120, h: 66, ink: SL_GREY + 4 },
+    { kind: 'rect', x: 496, y: 140, w: 128, h: 80, ink: SL_GREY + 4 },
+    { kind: 'rect', x: 190, y: 404, w: 96, h: 66, ink: SL_GREY + 4 },
+    { kind: 'circle', x: 300, y: 402, w: 56, h: 56, ink: SL_GREY + 4 },
+  ],
+  speckles: [
+    { x: 200, y: 150, len: 90, size: 6, ink: SL_GREY },
+    { x: 430, y: 130, len: 96, size: 6, ink: SL_GREY },
+    { x: 190, y: 350, len: 84, size: 6, ink: SL_GREY },
+    { x: 420, y: 300, len: 90, size: 6, ink: SL_GREY },
+    { x: 500, y: 420, len: 70, size: 6, ink: SL_GREY },
+    { x: 60, y: 240, len: 100, size: 6, vertical: true, ink: SL_GREY },
+    { x: 646, y: 240, len: 100, size: 6, vertical: true, ink: SL_GREY },
+  ],
+  photo: { blur: 1, noise: 4, gradient: 10 },
+  seed: 27,
+};
 
 const OBLIQUE_SURVEY = {
   name: 'oblique-survey',
@@ -585,70 +710,27 @@ export const CORPUS: CorpusEntry[] = [
     spec: OBLIQUE_SURVEY,
   },
   {
-    // Added in S27. Until now EVERY fixture here was drawn with one page tone and
-    // one ink tone, which makes the page bimodal by construction — and a bimodal
-    // page is precisely the case Otsu is built for. So the corpus could not
-    // express the shape that breaks it, and did not: a THIRD tone mass, neither
-    // ink nor paper, large enough to compete for the threshold.
+    // Added in S27. Every fixture above draws ONE ink tone on ONE paper tone, so
+    // every page in the corpus is bimodal — which is precisely the case Otsu is
+    // built for, and precisely why nothing here could express the shape that
+    // breaks it.
     //
-    // The owner's own plan has one. Flat grey letterbox bars run down both edges
-    // of their file at luminance ~198 over 11.1 % of the page (verified in the
-    // original 1320x1734 image, not introduced by any resampling), and they made
-    // Otsu's criterion near-tied between a cut BELOW the grey (4.6 % ink) and one
-    // ABOVE it (17.4 % ink) — 175 at 100.00 % against 209 at 98.07 %. A 5 %
-    // exposure change swapped the order, and the plan was refused as "not a
-    // floorplan". See `docs/ideas.md` Section 13b.
+    // The owner's own scan has a THIRD tone mass: flat grey letterbox bars down
+    // both side edges, 11.1 % of the page at luminance ~198, verified present in
+    // the original 1320x1734 PNG and not introduced by any resampling. With ink,
+    // bars and paper the between-class variance has two near-tied maxima, and a
+    // small NONLINEAR tone change flips which one wins — 175 -> 208 on their
+    // file, taking structure 0.500 -> 0.077 and refusing the plan.
     //
-    // Faithful to the measured tone structure rather than to the guess that
-    // preceded it: poche darkest, dimension annotation LIGHTER than the walls
-    // (the owner's measures 120-173 against walls at 96-103), and the flat margin
-    // between the annotation and the paper.
-    //
-    // Honest about what it does NOT do: this fixture does not reproduce the
-    // VERDICT flip. 540 parameter combinations were swept and none did — a clean
-    // synthetic page survives the flood that a noisy JPEG does not, because its
-    // tone modes are narrow and gamma slides the threshold smoothly instead of
-    // making it jump. What it does pin is the shape, so the corpus can never
-    // again be blind to a page with three tone masses. The flip itself is pinned
-    // in `vision/__tests__/mask.test.ts`, at the level where it actually lives.
-    why: 'A THIRD TONE MASS: a plan with flat grey margins that compete with the ink for the Otsu threshold — the shape that made the owner\'s verdict flip on a 5 % exposure change',
+    // Not an exposure bug, and the distinction is measured rather than pedantic:
+    // over the owner's file, linear gain (+/-0.3 EV) refuses 0 of 46 and an
+    // additive lift refuses 0 of 41, while a gamma curve refuses 26 of 41. Gain
+    // preserves tone ratios and lift preserves differences; only a curve moves
+    // the grey mass and the paper by different amounts. Tone curves are what
+    // phone pipelines, auto-enhance and contrast sliders apply.
+    why: 'A THIRD TONE MASS: flat grey scanner bars over 11 % of the page put two near-tied maxima in Otsu\'s criterion — the shape that made the owner\'s plan flip from read to refused',
     expectWalls: 10,
-    spec: {
-      name: 'annotated-margins',
-      width: W,
-      height: H,
-      paper: 246,
-      ink: 26,
-      strokeWidth: 9,
-      walls: [
-        { a: { x: 130, y: 50 }, b: { x: 570, y: 50 }, thickness: 9 },
-        { a: { x: 570, y: 50 }, b: { x: 570, y: 470 }, thickness: 9 },
-        { a: { x: 570, y: 470 }, b: { x: 130, y: 470 }, thickness: 9 },
-        { a: { x: 130, y: 470 }, b: { x: 130, y: 50 }, thickness: 9 },
-        { a: { x: 350, y: 50 }, b: { x: 350, y: 250 }, thickness: 6 },
-        { a: { x: 350, y: 320 }, b: { x: 350, y: 470 }, thickness: 6 },
-        { a: { x: 130, y: 270 }, b: { x: 220, y: 270 }, thickness: 6 },
-        { a: { x: 280, y: 270 }, b: { x: 350, y: 270 }, thickness: 6 },
-        { a: { x: 460, y: 350 }, b: { x: 570, y: 350 }, thickness: 6 },
-        { a: { x: 460, y: 350 }, b: { x: 460, y: 470 }, thickness: 6 },
-      ],
-      blobs: [
-        // the margins: flat, featureless, and 12.3 % of the page between them
-        { kind: 'rect', x: 21, y: 260, w: 43, h: 520, ink: 165 },
-        { kind: 'rect', x: 679, y: 260, w: 43, h: 520, ink: 165 },
-      ],
-      // dimension runs, drawn lighter than the walls they measure
-      speckles: [
-        { x: 150, y: 30, len: 400, size: 7, ink: 150 },
-        { x: 150, y: 492, len: 400, size: 7, ink: 150 },
-        { x: 108, y: 90, len: 340, vertical: true, size: 7, ink: 150 },
-        { x: 592, y: 90, len: 340, vertical: true, size: 7, ink: 150 },
-        { x: 220, y: 210, len: 90, size: 8, ink: 150 },
-        { x: 400, y: 410, len: 90, size: 8, ink: 150 },
-      ],
-      photo: { blur: 1, noise: 4, gradient: 14 },
-      seed: 7,
-    },
+    spec: SCAN_LETTERBOX,
   },
   {
     why: 'THE NULL CASE: a photo of a table and some text, no floorplan at all. Detection must REFUSE.',
