@@ -94,7 +94,62 @@ partial fix passed 22 of 23. A test that only distinguishes "old" from "new" is 
 
 ---
 
-## 2. YOUR TASK — take §4b unless the owner says otherwise
+## 2. YOUR TASK — §13 FIRST. It is a P0 and it breaks the owner's primary use case.
+
+The owner was asked to choose between §4b and creation-time alignment and answered *"idk both. or you
+pick idrc."* Both are scheduled below — but a P0 landed after that question was asked, and it outranks
+them.
+
+### 2a. §13 — detection REFUSES the owner's own floorplan (**P0**, ~1 session)
+
+Measured 2026-07-29 on their real plan (`IMG_7421.jpeg`, repo root, **gitignored — never commit it**),
+through the REAL app path `detectWalls` (which includes the refusal), NOT `detectSegments`:
+
+| sensitivity | walls | confidence | support | structure | explained | verdict |
+|---|---|---|---|---|---|---|
+| 0.6 | 9 | 62.2 % | 1.000 | 0.111 | 0.645 | REFUSED |
+| **1.0 (default)** | **13** | **71.5 %** | **1.000** | **0.231** | **0.816** | **REFUSED** |
+| 1.5 | 21 | 87.4 % | 1.000 | 0.548 | 0.866 | ok |
+
+At the default the app says *"The lines in this image don't join up into rooms, so it doesn't look like
+a floorplan."* **Look at `docs/sessions/S25/bench/owner-plan-default.png` before you touch anything —
+that message is false.** The trace covers the left exterior wall, both angled top walls, the long right
+diagonal, the kitchen partition, the small-room partitions and the bathroom.
+
+**The corpus is the thing that is wrong**, and this is the whole difficulty: nulls measure **0.000**,
+the lowest LEGIT fixture is **0.425**, and the real photo sits at **0.231** in a gap no synthetic
+occupies. Full per-fixture table in `docs/ideas.md` §13.
+
+**Order of work, and do not skip step 1:**
+
+1. **Build a synthetic corpus fixture that reproduces the real plan's characteristics** — dense
+   dimension-line annotation on every wall, thick filled poché, chamfered corners, a non-rectangular
+   envelope, ~10° skew — and confirm it measures ≈0.23. Without it there is no regression guard, because
+   the only real artefact is a photo of the owner's home and
+   `src/engine/__tests__/fixtures/` is COMMITTED to a public repo.
+2. **Fix the ROOT CAUSE, not the constant.** `structure` RISES with sensitivity (0.111 → 0.231 → 0.548)
+   because more segments means more endpoints that meet — so the default is UNDER-reading (13 segments
+   for a 20+-wall plan) and `joinCorners` is not closing corners that are chamfered and buried in
+   annotation. Fixing that raises the metric legitimately.
+3. **Only then** reconsider `MIN_STRUCTURE`, with the null margin (0.000) as headroom.
+4. Re-run the owner's photo at every step. The harness's `--image` flag uses `detectSegments` and
+   therefore CANNOT see a refusal — that is the S22 "score what the USER gets" lesson, still unfixed in
+   that file. Use `detectWalls`; a working runner is `docs/sessions/S25/bench/` (see `owner-floorplan.txt`
+   for the output shape) and the JPEG needs `sips -s format png IMG_7421.jpeg --out /tmp/floorplan.png`
+   first, since the reader is PNG-only.
+
+**Acceptance:** the owner's plan is ACCEPTED at the default sensitivity with a confidence readout that
+is not a lie · the two null fixtures still REFUSE · every existing corpus fixture keeps its score floor
+· the new annotated fixture is in the committed corpus and pins ≈0.23.
+
+### 2b. Creation-time alignment (P1, small — do this second)
+
+`App.tsx:446` (palette drop) and `SimCanvas.tsx:1015` (rubber-band draw) both hardcode `rotation: 0`, so
+on the owner's skewed plan **every new rect arrives crooked** before any drag. Same helper as S23's
+magnet, ~2 call sites. Smallest change with the biggest everyday effect — which is why it goes ahead of
+§4b now that the owner has said "both".
+
+### 2c. §4b — the explicit seat COMMAND (P1, ~½ session — third)
 
 ### 2a. §4b — the explicit seat COMMAND (`docs/ideas.md` §4b, P1, ~½ session)
 
@@ -120,13 +175,7 @@ Four parts, each with a trap already found and paid for:
 `ideas.md` §4's *"a no-op must not be silent"* belongs to this block: the button must be **disabled with
 a reason**, not inert.
 
-### 2b. Creation-time alignment (P1, small)
-
-`App.tsx:446` (palette drop) and `SimCanvas.tsx:1015` (rubber-band draw) both hardcode `rotation: 0`, so
-on the owner's skewed plan **every new rect arrives crooked** before any drag. Same helper, ~2 call
-sites. Probably the biggest remaining everyday win.
-
-### 2c. Others
+### 2d. Others
 
 Export-all bundle IMPORTER (P2 — `db.ts` calls it a "safety net" and it is still write-only) · detection's
 worst case (P2, measure before capping) · `App.tsx` decomposition (1290 lines vs an 800 cap) · the
@@ -137,12 +186,10 @@ test fails until `public/_headers` and `vercel.json` match).
 
 ## 3. THINGS S25 LEFT ON THE TABLE
 
-- **Detection has STILL never been run against the owner's own floorplan.** They supplied it as a chat
-  IMAGE, which the harness cannot read — it needs a **file path**. Ask, and run it FIRST:
-  `npx esbuild docs/sessions/S22/bench/score-corpus.ts --bundle --platform=node --format=esm
-  --outfile=/tmp/b.mjs && node /tmp/b.mjs --image <file.png>`. It is the only measurement left that can
-  falsify the 95.6 % claim, and their plan resembles the two corpus fixtures that score worst
-  (`hatched` 91.6 %, `apartment-cluttered` 82.3 %).
+- **Detection HAS now been run against the owner's own floorplan (2026-07-29) and it FAILED** — see §2a
+  above and `docs/ideas.md` §13. It is the new P0. The 95.6 % corpus figure is not falsified (that
+  measures accuracy on synthetic fixtures, and the trace on the real plan is genuinely good); what is
+  falsified is the REFUSAL's calibration.
 - **`sameRegion` has NO production caller** — the definition plus two test assertions, nothing else. Any
   "consumers verified" claim about it is vacuous. Its `dist(p, q) < CELL` short-circuit also hardcodes
   `CELL` while `regionOf` grows the cell past ~47 m spans, so it would be inconsistent with the region it
