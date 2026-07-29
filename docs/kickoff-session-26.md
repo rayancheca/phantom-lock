@@ -149,9 +149,7 @@ on the owner's skewed plan **every new rect arrives crooked** before any drag. S
 magnet, ~2 call sites. Smallest change with the biggest everyday effect — which is why it goes ahead of
 §4b now that the owner has said "both".
 
-### 2c. §4b — the explicit seat COMMAND (P1, ~½ session — third)
-
-### 2a. §4b — the explicit seat COMMAND (`docs/ideas.md` §4b, P1, ~½ session)
+### 2c. §4b — the explicit seat COMMAND (`docs/ideas.md` §4b, P1, ~½ session — third)
 
 Completes S23 and makes the feature discoverable. Fully designed and adversarially reviewed already —
 read `docs/sessions/S23/spec-v1-REFUTED.md` §7 for the API and `spec-v2-CORRECTED.md` for corrections.
