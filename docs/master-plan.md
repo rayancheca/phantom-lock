@@ -2352,13 +2352,21 @@ scored at the user's corner radius was a no-op by corpus coincidence, which a th
 catches. Four accuracy corrections were also applied — `expectWalls` 13 → 25, the clamp boundary
 1333 → 1361 (the `round`), a mis-stitched gamma figure, and `scalePlan`'s overclaim about what scales.
 
-**Test count 1365 → 1387** (+22). Nothing skipped, `.only`'d or weakened. Corpus mean 95.6 % → **94.6 %**
+**Test count 1365 → 1388** (+23). Nothing skipped, `.only`'d or weakened. Corpus mean 95.6 % → **94.6 %**
 against a `MEAN_FLOOR` of 0.92 — the new `oblique-survey` scores 74.7 % by design, so the headroom is
 2.6 points and worth watching.
 
 **Gate (literal tails).** `npm run lint` → 0 problems. `npm test` → `Test Files 67 passed (67) / Tests
-1387 passed (1387)`. `npm run build` → `dist/assets/index-BB6XWN7z.js 479.80 kB │ gzip: 156.27 kB`, CSS
-`51.55 kB │ gzip: 9.56 kB` unchanged, HTML `1.31 kB`.
+1388 passed (1388)`. `npm run build` → `dist/assets/index-BB6XWN7z.js 479.80 kB │ gzip: 156.27 kB`, CSS
+`51.55 kB │ gzip: 9.56 kB` unchanged, HTML `1.31 kB`. **`npm run test:coverage` also green — and that
+one mattered**: a review lane BLOCKED the diff because three new tests hard-timed-out under v8
+instrumentation at the 5 000 ms default, re-introducing the exact failure this file's own comment
+documents from S18. Measured multiplier 7.0-7.3x. Fixed the way the file already knew how — hoist the 69
+per-level `detectWalls` calls and the four 2.5x rasterisations to module scope — not by raising a
+timeout. Worst test now 3 366 ms. Coverage on the touched engine files: `detect.ts` 72.84 % stmts /
+**100 % branch** / 87.5 % funcs (uncovered 397-439 is `detectWallsFromUnderlay`, DOM-only and unreachable
+from node), `quality.ts` **100 %** stmts / 95.12 % branch / 100 % funcs, `components/app/hooks` 61.98 % /
+85.88 %.
 
 **Behaviour-preserving, proven against the pre-session engine.** `git show main:` the two changed engine
 files into /tmp, point them at the live siblings, and run both on the REAL app-chain bytes: segments,

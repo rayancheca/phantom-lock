@@ -197,6 +197,17 @@ const FLOORS: Record<string, number> = {
   'oblique-survey': 0.7,
 };
 
+/**
+ * The aggregate floor, and a warning about it.
+ *
+ * This number structurally penalises adding exactly the fixtures the corpus
+ * exists to accumulate: a hard case scores low BY DESIGN, so each one spends
+ * headroom. Measured — the 20 pre-S26 legit fixtures mean 0.9556; adding
+ * `oblique-survey` (0.7470) takes the 21 to 0.9457. Headroom over 0.92 went
+ * 0.0356 -> 0.0257, i.e. room for FOUR more ~0.75 fixtures before S26, THREE
+ * now. `docs/ideas.md` Section 13b schedules another low-scoring one, so the
+ * next session should expect to re-derive this rather than assume it holds.
+ */
 const MEAN_FLOOR = 0.92;
 
 /**
@@ -216,6 +227,22 @@ const RESULTS = corpusFixtures().map((f) => {
   const segs = res.quality.refusal ? [] : res.segments;
   return { f, res, d: scoreDetection(segs, f.truth, { tolerance: Math.max(6, f.strokeWidth) }) };
 });
+
+/**
+ * Every fixture read at all three UI levels, also computed ONCE — and for the
+ * same reason `RESULTS` is. Detection under `npm run test:coverage` is ~7x
+ * slower than under `npm test` (measured), so 69 `detectWalls` calls inside an
+ * `it` blow vitest's 5 000 ms default timeout while passing plainly. That is the
+ * S18 lesson, and it had already been learned in this exact file.
+ *
+ * The levels are the three `useWallDetection.SENSITIVITY` can actually send. A
+ * test at 0.6 would guard a value no control produces.
+ */
+const UI_LEVELS = [0.7, 1, 1.5];
+const BY_LEVEL = corpusFixtures().map((f) => ({
+  f,
+  reads: UI_LEVELS.map((s) => detectWalls(f.img, { sensitivity: s })),
+}));
 
 describe('the corpus — accuracy', () => {
   const results = RESULTS;
@@ -325,16 +352,14 @@ describe('sensitivity', () => {
    * The levels swept here are the three `useWallDetection.SENSITIVITY` can
    * actually send. A test at 0.6 would guard a value no control produces.
    */
-  const UI_LEVELS = [0.7, 1, 1.5];
-
   it('never lets the KNOB alone turn an accepted plan into a refusal', () => {
-    for (const f of corpusFixtures()) {
+    for (const { f, reads } of BY_LEVEL) {
       if (f.entry.refuse) continue;
-      if (detectWalls(f.img, { sensitivity: 1 }).quality.refusal) continue;
-      for (const s of UI_LEVELS) {
-        const res = detectWalls(f.img, { sensitivity: s });
-        expect(`${f.name}@${s}: ${res.quality.refusal ?? 'ok'}`).toBe(`${f.name}@${s}: ok`);
-      }
+      if (reads[UI_LEVELS.indexOf(1)].quality.refusal) continue;
+      reads.forEach((res, i) => {
+        const at = `${f.name}@${UI_LEVELS[i]}`;
+        expect(`${at}: ${res.quality.refusal ?? 'ok'}`).toBe(`${at}: ok`);
+      });
     }
   });
 
@@ -347,10 +372,10 @@ describe('sensitivity', () => {
     // (apartment-annotated 12<13, apartment-photo 11<12, apartment-skewed 9<12,
     // hatched 12<14, apartment-cluttered 16<20, oblique-survey 9<13).
     let strictlyFewer = 0;
-    for (const f of corpusFixtures()) {
+    for (const { f, reads } of BY_LEVEL) {
       if (f.entry.refuse) continue;
-      const careful = detectWalls(f.img, { sensitivity: 0.7 }).segments.length;
-      const balanced = detectWalls(f.img, { sensitivity: 1 }).segments.length;
+      const careful = reads[UI_LEVELS.indexOf(0.7)].segments.length;
+      const balanced = reads[UI_LEVELS.indexOf(1)].segments.length;
       if (careful < balanced) strictlyFewer++;
     }
     expect(strictlyFewer).toBeGreaterThanOrEqual(4);
@@ -400,6 +425,25 @@ describe('sensitivity', () => {
     expect(detectWalls(heavier.img, { sensitivity: 0.7 }).quality.refusal).toBeNull();
   });
 
+  it('...and the SUPPORT half of that guard is a real implication, not a coincidence', () => {
+    // `detect.ts` gates the second reading on segment COUNT alone, and justifies
+    // omitting a support check by arguing that `filterBySupport` has already
+    // dropped anything under `MIN_INK_SUPPORT / 1`, so the weighted mean cannot
+    // fall below it. That argument has two silent dependencies — the same
+    // `supportRadius` reaching both `filterBySupport` and `assessDetection`, and
+    // `filterBySupport` using `>=` — and neither was executable. This makes the
+    // conclusion one: every reference-eligible reading clears MIN_SUPPORT.
+    for (const { f, reads } of BY_LEVEL) {
+      const atDefault = reads[UI_LEVELS.indexOf(1)];
+      if (atDefault.segments.length < 3) continue;
+      expect(`${f.name}: support ${atDefault.quality.support.toFixed(3)}`).toBe(
+        atDefault.quality.support >= 0.55
+          ? `${f.name}: support ${atDefault.quality.support.toFixed(3)}`
+          : `${f.name}: support >= MIN_SUPPORT`,
+      );
+    }
+  });
+
   it('...and the guarantee does NOT smuggle a null through, at any level', () => {
     // The negative control for the rule above, and it is NOT decorative: the
     // first cut of that rule failed this test. `no-plan-shelf` exists because
@@ -413,14 +457,12 @@ describe('sensitivity', () => {
     // a mile" look like a law. `no-plan-shelf` scores 0.500 on the arm that
     // matters, so the safety has to come from the guard, not from the numbers
     // happening to be small.
-    for (const f of corpusFixtures()) {
+    for (const { f, reads } of BY_LEVEL) {
       if (!f.entry.refuse) continue;
-      for (const s of UI_LEVELS) {
-        const res = detectWalls(f.img, { sensitivity: s });
-        expect(`${f.name}@${s}: ${res.quality.refusal ? 'refused' : 'ACCEPTED'}`).toBe(
-          `${f.name}@${s}: refused`,
-        );
-      }
+      reads.forEach((res, i) => {
+        const at = `${f.name}@${UI_LEVELS[i]}`;
+        expect(`${at}: ${res.quality.refusal ? 'refused' : 'ACCEPTED'}`).toBe(`${at}: refused`);
+      });
     }
   });
 });
@@ -462,6 +504,32 @@ describe('negative controls — the score must be able to FALL', () => {
 });
 
 /**
+ * The four phone-resolution reads, rasterised and detected ONCE.
+ *
+ * `oblique-survey` at 2.5x is 1550x1900 and takes ~15x longer to PAINT than its
+ * siblings, so doing this per-`it` cost ~750 ms twice in plain node and ~5 s
+ * under coverage — which is what put these tests against the 5 000 ms ceiling.
+ * Same fix, same reason, as `RESULTS` and `BY_LEVEL` above.
+ */
+const PHOTO_SCALE = 2.5; // 700x520 -> 1750x1300, an ordinary phone photo
+const PHOTOS = ['apartment-bare', 'apartment-annotated', 'tiny-rooms', 'oblique-survey'].map((name) => {
+  const entry = CORPUS.find((e) => e.spec.name === name)!;
+  const big = rasterize(scalePlan(entry.spec, PHOTO_SCALE));
+  // buildUnderlay caps at 1600, then detectWallsFromUnderlay caps at 900.
+  const work = downscale(downscale(big.img, 1600), 900);
+  const k = work.width / big.img.width;
+  const truth = big.truth.map((s) => ({
+    a: { x: s.a.x * k, y: s.a.y * k },
+    b: { x: s.b.x * k, y: s.b.y * k },
+  }));
+  const res = detectWalls(work);
+  const d = scoreDetection(res.quality.refusal ? [] : res.segments, truth, {
+    tolerance: Math.max(6, big.strokeWidth * k),
+  });
+  return { name, work, res, d };
+});
+
+/**
  * THE REGIME NO FIXTURE REACHED (S26).
  *
  * Every corpus fixture rasterises at 700x520 or 900x700 — at or under
@@ -477,17 +545,9 @@ describe('negative controls — the score must be able to FALL', () => {
  * plan photographed at phone resolution still reads once the app has shrunk it.
  */
 describe('resolution — the app downscales before the pipeline ever runs', () => {
-  const PHOTO_SCALE = 2.5; // 700x520 -> 1750x1300, an ordinary phone photo
-  const NAMES = ['apartment-bare', 'apartment-annotated', 'tiny-rooms', 'oblique-survey'];
-
   it('still reads a plan photographed at phone resolution, after the downscale to WORK_MAX', () => {
-    for (const name of NAMES) {
-      const entry = CORPUS.find((e) => e.spec.name === name)!;
-      const big = rasterize(scalePlan(entry.spec, PHOTO_SCALE));
-      // buildUnderlay caps at 1600, then detectWallsFromUnderlay caps at 900.
-      const work = downscale(downscale(big.img, 1600), 900);
+    for (const { name, work, res } of PHOTOS) {
       expect(Math.max(work.width, work.height)).toBeLessThanOrEqual(900);
-      const res = detectWalls(work);
       expect(`${name}: ${res.quality.refusal ?? 'ok'}`).toBe(`${name}: ok`);
       expect(res.segments.length).toBeGreaterThanOrEqual(4);
     }
@@ -496,19 +556,7 @@ describe('resolution — the app downscales before the pipeline ever runs', () =
   it('...and the walls it finds still describe the same plan', () => {
     // Not just "did not refuse": the ground truth rides the same downscales, so
     // this is an accuracy claim at photo resolution, not a liveness one.
-    for (const name of NAMES) {
-      const entry = CORPUS.find((e) => e.spec.name === name)!;
-      const big = rasterize(scalePlan(entry.spec, PHOTO_SCALE));
-      const work = downscale(downscale(big.img, 1600), 900);
-      const k = work.width / big.img.width;
-      const truth = big.truth.map((s) => ({
-        a: { x: s.a.x * k, y: s.a.y * k },
-        b: { x: s.b.x * k, y: s.b.y * k },
-      }));
-      const res = detectWalls(work);
-      const d = scoreDetection(res.quality.refusal ? [] : res.segments, truth, {
-        tolerance: Math.max(6, big.strokeWidth * k),
-      });
+    for (const { name, d } of PHOTOS) {
       // A floor rather than a pin: the two downscales are an area average here
       // and Skia in the browser, so the exact figure is not reproducible across
       // them. What IS reproducible is that the read stays good.
