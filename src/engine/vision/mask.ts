@@ -93,11 +93,21 @@ const EDGE_GATE = 16;
  * Below this fraction of the page clearing `EDGE_GATE`, the gradient weighting
  * has too little to work with and the plain histogram is used instead.
  *
- * Measured separation, not a guess: the LOWEST any corpus fixture puts through
- * the gate is 4.167 % of the page (`no-plan`), the lowest legitimate plan is
- * 5.059 % (`clean-rect`), and a 20-levels-of-contrast page — the one case where
- * gradient weighting would otherwise refuse a plan the old code accepted —
- * measures 0.668 %. 2 % sits between them with better than 2x margin either way.
+ * ⚠️ THE FIGURES BELOW WERE RE-MEASURED AFTER THE BORDER-CLAMP FIX, because the
+ * first set was taken before it and every one of them was inflated by exactly
+ * the false border ring — 2*(w-2 + h-2) - 4 votes, which is 0.667 pp on a
+ * 700x520 page. Corrected: the LOWEST any corpus fixture puts through the gate
+ * is **3.500 %** (`no-plan`), the lowest legitimate plan is **4.392 %**
+ * (`clean-rect`), and a 20-levels-of-contrast page measures **0.016 %**. So the
+ * real low-side margin is **1.75x**, not the "better than 2x" first claimed.
+ *
+ * ⚠️ AND THE GUARD IS THE WRONG SHAPE, which is recorded rather than fixed here.
+ * It compares a count that scales as PERIMETER against a fraction of AREA, so
+ * the edge fraction falls as 1/k and the guard becomes MORE likely to fire the
+ * larger the image: measured, `clean-rect` and `thick-rect` already starve at 3x
+ * (an ordinary phone photo), and 12 of 22 fixtures starve at 4x. The product is
+ * protected today only because `detectWallsFromUnderlay` downscales to
+ * `WORK_MAX` 900 first — `detectWalls` itself is public and pure.
  */
 const MIN_EDGE_FRACTION = 0.02;
 
@@ -153,7 +163,7 @@ export function edgeWeightedHistogram(img: GrayImage, gray: Uint8Array): Uint32A
           s += gray[yy * w + xx];
         }
       }
-      blur[y * w + x] = (s / 9) | 0;
+      blur[y * w + x] = Math.round(s / 9);
     }
   }
   for (let y = 0; y < h; y++) {
@@ -201,8 +211,16 @@ export function inkMaskOf(img: GrayImage): Mask {
   let edgeVotes = 0;
   for (let t = 0; t < 256; t++) edgeVotes += edges[t];
   // Starved: a page too faint or too small for the gradient to say anything.
-  // Fall back to the plain histogram, which is exactly the pre-S27 behaviour —
-  // so this can only ever decline to a decision already known to be acceptable.
+  // Fall back to the plain histogram.
+  //
+  // ⚠️ This is NOT a safe default, and an earlier version of this comment said it
+  // was. The plain histogram is exactly the pre-S27 engine, which is known broken
+  // on a page carrying a third tone mass — so on that class of image the fallback
+  // re-arms the defect this whole change exists to remove, silently, with nothing
+  // in `DetectionQuality` recording which rule decided the ink. Measured: forcing
+  // `scan-letterbox` down this path reproduces the pre-fix numbers bit for bit
+  // (4 of 9 tone steps refused), and a plan photographed on a grey desk filling
+  // less than ~40 % of the frame reaches it. See docs/ideas.md Section 13d.
   const thresh =
     edgeVotes < n * MIN_EDGE_FRACTION
       ? otsuThreshold(hist, n)

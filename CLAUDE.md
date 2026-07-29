@@ -943,7 +943,16 @@ unconditional lossy stages in front of that (`buildUnderlay` 1600 + JPEG q0.72, 
 with the owner's actual file, the plan is **accepted at all three levels** — Careful 9 walls / 74 % /
 structure 0.278 · Balanced 15 / 85 % / 0.500 · Thorough 24 / 92 % / 0.646.
 
-**§13b is DONE (S27)** — the verdict was unstable not under *exposure* but under a nonlinear TONE CURVE
+**⚠️ S27 DID NOT LAND.** Its fix is real and measured — see below — but the self-review found a
+MIRROR regression and the main thread reproduced it: gradient weighting scales a tone's weight by
+~1/thickness, so on a plan with **light poché walls and thin dark dimension lines** the linework
+captures the threshold and every wall is deleted. A 10-wall plan goes from 100 % to **REFUSED** with
+as little as ONE 3 px dark line (0.33 % of the page), silently, telling the user their image
+"doesn't have enough clear straight lines". That is `docs/ideas.md` **§13d, the new P0**, and the
+remedy is already designed: make the gradient threshold an additional CANDIDATE rather than a
+replacement, and let `assessDetection` choose. Work is on branch `session-27-detect-exposure`.
+
+**§13b (on that branch, not on main)** — the verdict was unstable not under *exposure* but under a nonlinear TONE CURVE
 (measured: gamma refuses 26 of 41, linear gain across ±0.3 EV refuses 0 of 46, an additive lift 0 of 41),
 because flat grey letterbox bars over 11.1 % of the owner's page put two near-tied maxima in Otsu's
 criterion. The threshold is now chosen on a gradient-weighted histogram: owner **38/138 refusals → 0/138**

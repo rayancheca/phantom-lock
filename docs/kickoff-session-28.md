@@ -14,10 +14,13 @@ Five sessions landed in a row on `main`:
 - **S26** — the S25 P0 was **REFUTED**; the monotonic-knob guarantee shipped instead.
 - **S27** — detection's threshold was **decided by flat area**. See §3.
 
-**Baseline as of 2026-07-29 (`main` @ S27):** `npm run lint` 0 · `npm test` **1393** (67 files) ·
-`npm run build` **480.36 kB / 156.51 kB gz** JS + **51.55 kB / 9.56 kB gz** CSS + **1.31 kB** HTML.
+**Baseline — READ THIS CAREFULLY.** `main` is still at S26: `npm test` **1388**, JS **479.80 kB /
+156.27 kB gz**. The S27 work is on branch `session-27-detect-exposure` (1393 tests, 480.37 kB /
+156.51 kB gz, all three gates green) and was deliberately NOT landed — see §2a. Start by deciding
+whether to fix that branch forward or rebuild the fix on the candidate design; the branch's tests,
+fixtures and measurement harnesses are worth keeping either way.
 
-**TEST COUNT IS A RATCHET** (…1365 → 1388 → **1393**). Never let it drop; no test may be newly
+**TEST COUNT IS A RATCHET** (…1365 → **1388** on main; the unlanded branch is at 1393). Never let it drop; no test may be newly
 skipped / `.only`'d / weakened.
 
 ⚠️ **`npm run test:coverage` is NOT clean and has not been for some time.** `main` fails 5 tests
@@ -102,7 +105,48 @@ behaviour caught. The code looked right.
 
 ## 2. YOUR TASK
 
-### 2a. §4b — the explicit seat COMMAND (`docs/ideas.md` §4b, P1, ~½ session) — **head of the queue**
+### 2a. §13d — **P0. Land S27's fix without its mirror regression.**
+
+**S27 did not land.** Its work is committed on branch `session-27-detect-exposure` (7 commits, all
+three gates green, live-verified) and `main` is untouched. The reason is in `docs/ideas.md` §13d and
+it was found by S27's own self-review and then reproduced by the main thread.
+
+Gradient weighting scales a tone's weight in the histogram by its perimeter-to-area ratio — by
+**1/thickness**. It suppresses flat masses as designed, but it equally AMPLIFIES thin ink and DEMOTES
+thick ink. On a plan drawn with **light poché walls and thin dark dimension lines** — an ordinary
+architectural convention — the linework captures the threshold and every wall is dropped:
+
+| thin dark dimension lines | pre-S27 | S27 branch |
+|---|---|---|
+| 0 | ok, 92–100 % | ok, 92–100 % |
+| 1 | ok | **REFUSED, 0 %** |
+| 2 | ok, 80 % | **REFUSED, 0 %** |
+| 4 | ok, 68 % | **REFUSED, 0 %** |
+
+One 3 px dark line — 0.33 % of the page — is enough, on 5 of 5 seeds, at every scale through the app's
+real chain. And it is silent in the worst way: `support` and `explained` both read 1.000 (they are
+measured against the mask the pipeline itself produced), and the user is told *"This image doesn't
+have enough clear straight lines to read as a floorplan"* about ten perfectly clear straight walls.
+
+**The remedy is already designed and measured — do not re-derive it.** Make the gradient-weighted
+threshold an additional CANDIDATE rather than a replacement: `otsuCandidates` returns the argmax plus
+the near-tied rival, `detectWalls` reads at each, and `assessDetection` picks the winner. An S27
+design agent measured that shape **byte-identical on all 24 corpus fixtures at all three UI levels**,
+and it took the owner's plan from 38/138 refusals to 0/138. Because it never REMOVES a candidate it
+cannot produce this regression. Its full patch is in the S27 workflow journal (run
+`wf_6af6103b-100`, the `threshold-rule` agent).
+
+**Acceptance:** the polarity fixture above reads on BOTH engines · the owner's plan still 0/138 ·
+corpus mean holds (≥ 95.48 % is achievable; ≥ 92 % is the floor) · all three nulls refused · the
+polarity case becomes a corpus fixture, because the corpus is single-ink-tone by construction and
+cannot express it (that is exactly how this got shipped past the first review).
+
+Take the smaller S27 findings with it — they are all recorded in `mask.ts` and were left as comments
+rather than fixes: `MIN_EDGE_FRACTION` is a fraction of AREA while what it counts scales as PERIMETER
+(so `clean-rect` starves at 3×, and 12 of 22 fixtures at 4×), and the starvation fallback silently
+re-arms the pre-S27 bug with nothing in `DetectionQuality` recording that it happened.
+
+### 2b. §4b — the explicit seat COMMAND (`docs/ideas.md` §4b, P1, ~½ session)
 
 Completes S23. Fully designed and adversarially reviewed already — read
 `docs/sessions/S23/spec-v1-REFUTED.md` §7 and `spec-v2-CORRECTED.md`. Four parts, each with a trap
@@ -117,13 +161,13 @@ already found and paid for:
 3. **The touch-HUD button** — both surfaces or neither.
 4. **The on-canvas snap guide.** ⚠️ Do NOT stroke it with `wallKeptSpans`.
 
-### 2b. Creation-time alignment (P1, small — do this second)
+### 2c. Creation-time alignment (P1, small)
 
 `App.tsx:446` (palette drop) and `SimCanvas.tsx:1015` (rubber-band draw) both hardcode `rotation: 0`,
 so on the owner's skewed plan **every new rect arrives crooked** before any drag. Same helper as S23's
 magnet, ~2 call sites. Smallest change with the biggest everyday effect.
 
-### 2c. The `scalePlan` annotation-stroke gap (P2, small — and S27 deliberately did NOT bundle it)
+### 2d. The `scalePlan` annotation-stroke gap (P2, small — and S27 deliberately did NOT bundle it)
 
 `drawSpeckle` hardcodes a 1.2 px mark stroke and `ArcSpec.thickness` defaults to 1.4, and `scalePlan`
 cannot carry either because no spec field exists — so the resolution tests run on a slightly EASIER
@@ -134,13 +178,13 @@ ride along silently inside a change whose whole claim is byte-identity. Its own 
 `scalePlan` doc comment rewritten (its "21 / 0.310 / 63.6 %" figure for `oblique-survey` is not
 reproducible — an agent measured 17 / 0.471 / 79.1 %).
 
-### 2d. Make `npm run test:coverage` green (P2, small)
+### 2e. Make `npm run test:coverage` green (P2, small)
 
 Five timeouts on `main`, all the same shape: expensive work inside an `it`. Hoist each to module
 scope the way `RESULTS`, `BY_LEVEL` and now `TONE_SWEEP` already are. Do NOT raise `testTimeout` —
 the file comments explain at length why that is the wrong fix.
 
-### 2e. Others
+### 2f. Others
 
 Export-all bundle IMPORTER (P2 — still write-only) · detection's worst case (P2) · §13c, the one case
 gradient weighting does not cover (P3) · `App.tsx` decomposition (**1290** lines vs an 800 cap) · the

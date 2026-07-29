@@ -11,7 +11,8 @@ effort — a small high-value item beats a large one.
 | # | Idea | Priority | Effort |
 |---|---|---|---|
 | 13 | ✅ **Detection refuses the owner's floorplan** — **REFUTED S26** (measured at a resolution the app never uses) | ~~P0~~ done | — |
-| 13b | ✅ **Detection's verdict was unstable under a tone curve** — **DONE S27** (owner 38/138 refusals → 0/138; corpus mean 94.82 % → 95.48 %) | ~~P1~~ done | — |
+| 13d | **S27's fix has a MIRROR regression** — thin dark linework deletes thick light walls; a 10-wall plan goes 100 % → REFUSED. **S27 did NOT land because of this.** | **P0** | ½ session |
+| 13b | ⏸ **Detection's verdict was unstable under a tone curve** — fixed on branch `session-27-detect-exposure` (owner 38/138 → 0/138; corpus 94.82 % → 95.48 %) but **UNLANDED**, see §13d | P1 | — |
 | 1 | ✅ **Auto-detect walls accuracy overhaul** — **DONE S22** (52.1 % → 95.6 %, and it refuses) | ~~P0~~ done | — |
 | 2 | ✅ **Grid-loop iteration cap** — **DONE S18** (safety half; slowness half → 2b) | ~~P0~~ done | — |
 | 2b | ✅ **Bound the reflection search** (`bestReflectionDb`) — **DONE S19** (50-room 13.7 s → ~0.5 s) | ~~P1~~ done | — |
@@ -702,6 +703,46 @@ precisely why the fix uses spatial information the histogram discards.
 **Still open, honestly.** Gradient weighting is not universally correct either: it distinguishes a
 flat mass from thin strokes, so a large mid-tone mass that is TEXTURED would still vote. No such case
 is known in the corpus or in the owner's file. See §13c.
+
+### 13d. S27's fix has a MIRROR regression — **P0, and it is why S27 did not land**
+
+**Confirmed by the S27 self-review and independently reproduced by the main thread.** Gradient
+weighting scales a tone's weight in the histogram by its perimeter-to-area ratio — i.e. by
+**1/thickness**. That suppresses flat masses as intended, but it equally AMPLIFIES thin ink and
+DEMOTES thick ink. On a plan drawn to an ordinary architectural convention — walls poché'd in a
+lighter grey, dimension and leader lines in thin black — the thin dark linework wins the vote, the
+threshold lands BELOW the wall tone, and every wall is dropped from the ink mask before any
+downstream stage sees it.
+
+Measured on 700×520, paper 246, ten walls at 14 px / ink 175, plus N thin 3 px ink-26 dimension
+lines, over five seeds:
+
+| dimension lines | pre-S27 | S27 |
+|---|---|---|
+| 0 | ok, 92–100 % | ok, 92–100 % |
+| 1 | ok | **REFUSED, 0 %** |
+| 2 | ok, 80 % | **REFUSED, 0 %** |
+| 4 | ok, 68 % | **REFUSED, 0 %** |
+
+At two lines the dark ink is **0.33 % of the page**. The amplification is 13.9× for the 3 px dark
+lines against 3.87× for the 14 px grey walls, and Otsu's (mB−mF)² term then rewards splitting off the
+distant dark mode: the threshold moves 210 → 150. It survives the app's real chain at 1×/1.5×/2×/2.5×.
+
+**The failure is silent in the worst way.** `support` and `explained` both read 1.000 — they are
+measured against the mask the pipeline itself produced, which is the S26 lesson — and the user is told
+*"This image doesn't have enough clear straight lines to read as a floorplan"* about an image
+containing ten perfectly clear straight walls. `detectWallsFromUnderlay` returns zero walls on a
+refusal, so they get nothing plus a false explanation blaming their drawing. S26's lazy second reading
+cannot rescue it, because the threshold does not depend on `sensitivity` at all.
+
+**The remedy is already designed and measured.** Do not replace the plain threshold — make the
+gradient-weighted one an additional CANDIDATE. `otsuCandidates` returns the argmax plus the near-tied
+rival; `detectWalls` reads at each and keeps the reading `assessDetection` prefers. An S27 design
+agent measured that shape as byte-identical on all 24 corpus fixtures at all three UI levels, and it
+took the owner's plan from 38/138 refusals to 0/138. Because it never *removes* a candidate it cannot
+produce this regression. Its full patch is in the S27 workflow journal.
+
+Reproduction: `docs/sessions/S27/bench/CRITICAL-polarity.txt`.
 
 ### 13c. The adversarial case gradient weighting does not cover — **P3, and measured**
 
