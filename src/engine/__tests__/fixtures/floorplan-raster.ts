@@ -412,6 +412,109 @@ function warp(q: Vec2, spec: PlanSpec): Vec2 {
 }
 
 /**
+ * Redraw a plan at `k` times its size — a phone photo of the same drawing.
+ *
+ * Every corpus fixture rasterises at 700x520 or 900x700, i.e. at or under
+ * `detect.ts`'s `WORK_MAX = 900`. So `detectWallsFromUnderlay`'s downscale is a
+ * NO-OP on all of them and the corpus has never exercised it, by construction
+ * rather than by oversight. A real user's photo is 2-4k px and is downscaled
+ * twice before the pipeline sees it, which is precisely where S25 measured a
+ * P0 that the product could not produce.
+ *
+ * Every length the SPEC can express scales together — coordinates, wall and
+ * outline thicknesses, blob sizes, arc radii, glyph sizes, hatch pitch, blur.
+ *
+ * Two annotation stroke widths do NOT, because no spec field exists for them:
+ * `drawSpeckle` draws every glyph mark at a hardcoded 1.2 px, and `rasterize`
+ * defaults `ArcSpec.thickness` to 1.4. So a scaled-up fixture carries annotation
+ * that is relatively THINNER than the original — measured, `oblique-survey`
+ * through the 2.5x chain reads 14 walls / structure 0.393 / score 77.8 %, where
+ * carrying the annotation widths up too gives 21 / 0.310 / 63.6 % (native
+ * 13 / 0.346 / 74.7 %). The resolution tests are therefore a slightly EASIER
+ * drawing than the fixture they name; their floors are set with that in mind.
+ */
+export function scalePlan(spec: PlanSpec, k: number): PlanSpec {
+  const s = (v: number | undefined) => (v === undefined ? undefined : v * k);
+  return {
+    ...spec,
+    width: Math.round(spec.width * k),
+    height: Math.round(spec.height * k),
+    strokeWidth: s(spec.strokeWidth),
+    walls: spec.walls.map((w) => ({
+      ...w,
+      a: { x: w.a.x * k, y: w.a.y * k },
+      b: { x: w.b.x * k, y: w.b.y * k },
+      thickness: s(w.thickness),
+    })),
+    blobs: spec.blobs?.map((b) => ({
+      ...b,
+      x: b.x * k,
+      y: b.y * k,
+      w: b.w * k,
+      h: b.h * k,
+      outline: s(b.outline),
+    })),
+    arcs: spec.arcs?.map((a) => ({ ...a, x: a.x * k, y: a.y * k, r: a.r * k, thickness: s(a.thickness) })),
+    speckles: spec.speckles?.map((p) => ({ ...p, x: p.x * k, y: p.y * k, len: p.len * k, size: s(p.size) })),
+    hatches: spec.hatches?.map((h) => ({
+      ...h,
+      x: h.x * k,
+      y: h.y * k,
+      w: h.w * k,
+      h: h.h * k,
+      pitch: s(h.pitch),
+    })),
+    photo: spec.photo ? { ...spec.photo, blur: s(spec.photo.blur) } : spec.photo,
+  };
+}
+
+/**
+ * Area-average downscale to a maximum dimension — the honest node stand-in for
+ * the `ctx.drawImage` the app runs in `buildUnderlay` and again in
+ * `detectWallsFromUnderlay`.
+ *
+ * It is NOT bit-identical to Skia, and it must not pretend to be: what it
+ * exercises is the RESOLUTION regime, which is what no fixture reached before.
+ * Any claim about a specific pixel value still has to come from a browser.
+ */
+export function downscale(img: GrayImage, maxDim: number): GrayImage {
+  const k = Math.min(1, maxDim / Math.max(img.width, img.height));
+  if (k >= 1) return img;
+  const w = Math.max(1, Math.round(img.width * k));
+  const h = Math.max(1, Math.round(img.height * k));
+  const out = new Uint8ClampedArray(w * h * 4);
+  const sx = img.width / w;
+  const sy = img.height / h;
+  for (let y = 0; y < h; y++) {
+    const y0 = Math.floor(y * sy);
+    const y1 = Math.min(img.height, Math.max(y0 + 1, Math.floor((y + 1) * sy)));
+    for (let x = 0; x < w; x++) {
+      const x0 = Math.floor(x * sx);
+      const x1 = Math.min(img.width, Math.max(x0 + 1, Math.floor((x + 1) * sx)));
+      let r = 0;
+      let g = 0;
+      let b = 0;
+      let n = 0;
+      for (let yy = y0; yy < y1; yy++) {
+        for (let xx = x0; xx < x1; xx++) {
+          const i = (yy * img.width + xx) * 4;
+          r += img.data[i];
+          g += img.data[i + 1];
+          b += img.data[i + 2];
+          n++;
+        }
+      }
+      const d = (y * w + x) * 4;
+      out[d] = r / n;
+      out[d + 1] = g / n;
+      out[d + 2] = b / n;
+      out[d + 3] = 255;
+    }
+  }
+  return { data: out, width: w, height: h };
+}
+
+/**
  * Paint a plan and return it together with the wall centrelines that were
  * painted. `truth` is the ANSWER KEY: everything `detect-score.ts` measures is
  * measured against it, so it must contain exactly the segments a human would

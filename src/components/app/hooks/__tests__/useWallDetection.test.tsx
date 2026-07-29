@@ -19,7 +19,7 @@ vi.mock('../../../../engine/detect', () => ({
   detectWallsFromUnderlay: (...args: unknown[]) => detectMock(...args),
 }));
 
-const { useWallDetection, SENSITIVITY } = await import('../useWallDetection');
+const { useWallDetection, SENSITIVITY, nextLevelHint } = await import('../useWallDetection');
 
 function wall(id: string, x: number): WallObj {
   return { id, kind: 'wall', a: { x, y: 0 }, b: { x, y: 3 }, absorption: 0.1, height: 2.7, label: 'Wall' };
@@ -28,6 +28,7 @@ function wall(id: string, x: number): WallObj {
 const QUALITY: DetectionQuality = {
   confidence: 0.9,
   refusal: null,
+  cause: null,
   wallCount: 3,
   support: 1,
   structure: 0.9,
@@ -74,6 +75,33 @@ function harness(initial?: Partial<Scene>) {
 
 beforeEach(() => detectMock.mockReset());
 
+describe('nextLevelHint', () => {
+  // Driven directly as well as through the toast, because the toast tests can
+  // only reach the level they dispatch and the middle case is the interesting
+  // one: 'balanced' + a structure refusal must still advance to 'thorough'.
+  it('advances one level for a non-structural cause', () => {
+    expect(nextLevelHint('careful', 'too-few-lines')).toContain('Balanced');
+    expect(nextLevelHint('balanced', 'broken-lines')).toContain('Thorough');
+  });
+
+  it('skips the level the engine already consulted, for a structural one', () => {
+    expect(nextLevelHint('careful', 'unstructured')).toContain('Thorough');
+    expect(nextLevelHint('balanced', 'unstructured')).toContain('Thorough');
+  });
+
+  it('offers nothing at the top, and nothing when there is no refusal to explain', () => {
+    expect(nextLevelHint('thorough', 'unstructured')).toBe('');
+    expect(nextLevelHint('thorough', 'too-few-lines')).toBe('');
+    expect(nextLevelHint('careful', null)).toBe('');
+  });
+
+  it('never blames the knob for a browser failure', () => {
+    for (const level of ['careful', 'balanced', 'thorough'] as const) {
+      expect(nextLevelHint(level, 'unreadable')).toBe('');
+    }
+  });
+});
+
 describe('useWallDetection', () => {
   it('does nothing without an underlay — no call, no toast', async () => {
     const h = harness({ underlay: undefined });
@@ -107,6 +135,68 @@ describe('useWallDetection', () => {
     expect(h.showToast.mock.calls[0][1]).toMatchObject({ tone: 'bad' });
     expect(h.view.result.current.proposal).toBeNull();
     expect(h.setScene).not.toHaveBeenCalled();
+  });
+
+  it('...and POINTS AT THE KNOB, skipping the level the engine already tried', async () => {
+    // S26: a gamma-1.08 capture of a real floorplan is REFUSED at 'Careful'
+    // (structure 0.000) and reads 42 walls at 'Thorough' (0.607) — so the
+    // refusal has to name a control, or the user is told their floorplan is not
+    // a floorplan while the fix sits one click away.
+    //
+    // But it must name the RIGHT one. A `unstructured` refusal has already
+    // consulted the Balanced reading inside the same call (that is what
+    // `referenceStructure` is) and found it short too, so suggesting Balanced
+    // is provably futile — measured, 5 of 5 such suggestions would have failed.
+    detectMock.mockResolvedValue({
+      walls: [],
+      quality: { ...QUALITY, refusal: 'No rooms.', cause: 'unstructured' as const },
+    });
+    const h = harness();
+    act(() => h.view.result.current.run('careful'));
+    await waitFor(() => expect(h.showToast).toHaveBeenCalled());
+    expect(h.showToast.mock.calls[0][0]).toBe('No rooms. Try “Thorough” to look harder.');
+  });
+
+  it('...suggests the very next level when the cause is NOT structural', async () => {
+    // `too-few-lines` never consults a second reading, so Balanced is a genuine
+    // untried option from Careful.
+    detectMock.mockResolvedValue({
+      walls: [],
+      quality: { ...QUALITY, refusal: 'Not enough lines.', cause: 'too-few-lines' as const },
+    });
+    const h = harness();
+    act(() => h.view.result.current.run('careful'));
+    await waitFor(() => expect(h.showToast).toHaveBeenCalled());
+    expect(h.showToast.mock.calls[0][0]).toBe('Not enough lines. Try “Balanced” to look harder.');
+  });
+
+  it('...offers no false hope at the most thorough level', async () => {
+    detectMock.mockResolvedValue({
+      walls: [],
+      quality: { ...QUALITY, refusal: 'No rooms.', cause: 'unstructured' as const },
+    });
+    const h = harness();
+    act(() => h.view.result.current.run('thorough'));
+    await waitFor(() => expect(h.showToast).toHaveBeenCalled());
+    expect(h.showToast.mock.calls[0][0]).toBe('No rooms.');
+  });
+
+  it('...and NEVER blames a knob for a browser failure', async () => {
+    // "This browser could not read the image. Try Thorough to look harder." is
+    // the exact misdirection the refusal sentences were split up to remove — a
+    // sensitivity knob cannot supply a 2D context.
+    detectMock.mockResolvedValue({
+      walls: [],
+      quality: {
+        ...QUALITY,
+        refusal: 'This browser could not read the image.',
+        cause: 'unreadable' as const,
+      },
+    });
+    const h = harness();
+    act(() => h.view.result.current.run('careful'));
+    await waitFor(() => expect(h.showToast).toHaveBeenCalled());
+    expect(h.showToast.mock.calls[0][0]).toBe('This browser could not read the image.');
   });
 
   it('REPORTS a rejected promise rather than failing silently, and recovers', async () => {

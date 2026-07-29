@@ -28,11 +28,25 @@ import type { Mask, PxSegment } from './types';
 import { segLength } from './types';
 import { inkSupport } from './regularize';
 
+/**
+ * WHICH gate refused, as data rather than a sentence to string-match.
+ *
+ * The UI needs this to say something true about what to do next. A refusal for
+ * `unstructured` has ALREADY consulted the default reading (that is what
+ * `referenceStructure` is), so suggesting the default level back to a 'Careful'
+ * user is provably futile — measured over the corpus plus four darkened captures
+ * of a real plan, 5 of 5 such suggestions would have failed. `unreadable` is not
+ * a claim about the image at all and must carry no suggestion.
+ */
+export type RefusalCause = 'too-few-lines' | 'broken-lines' | 'unstructured' | 'unreadable';
+
 export interface DetectionQuality {
   /** Overall confidence in [0,1] — what the UI shows. */
   confidence: number;
   /** Set when the result should NOT be offered; a sentence for the user. */
   refusal: string | null;
+  /** Which gate produced `refusal`, or null when there is none. */
+  cause: RefusalCause | null;
   wallCount: number;
   /** Mean fraction of each segment's length that sits on ink. */
   support: number;
@@ -51,6 +65,21 @@ export interface QualityOptions {
   supportRadius: number;
   /** How near a segment an ink pixel must be to count as explained, px. */
   explainRadius: number;
+  /**
+   * `structure` measured on a SECOND reading of the same image, at the default
+   * sensitivity — see `detect.ts` for who supplies it and why.
+   *
+   * The structure gate below is satisfied if EITHER reading clears it, because
+   * the refusal is a claim about the image ("this does not look like a
+   * floorplan") while `structure` is measured on whichever segments survived
+   * the user's own length cut. An image that reads as a plan under any setting
+   * IS a plan. Reported `structure` stays the caller's own reading, so the
+   * number always describes what is on screen.
+   *
+   * Omitted means "no second reading" — the gate then sees only the one value,
+   * which is the pre-S26 behaviour exactly.
+   */
+  referenceStructure?: number;
 }
 
 /** Minimum walls before a result is worth offering at all. */
@@ -177,13 +206,30 @@ export function assessDetection(
   const structure = structureScore(segs, opts.junctionRadius);
   const explained = explainedFraction(segs, wallMask, opts.explainRadius);
 
+  // What makes pooling safe is NOT that a null scores near zero. That looked
+  // like a law — `no-plan` and `no-plan-lines` both measure exactly 0.000 at
+  // every sensitivity — and it is false. `no-plan-shelf` exists to prove it: a
+  // shelf edge meeting an upright is a clean two-segment corner scoring a
+  // PERFECT structure, and the first cut of this rule pooled that number into a
+  // 'Thorough' reading of loose sticks and offered 11 walls for an image with no
+  // floorplan in it.
+  //
+  // Safety comes from the CALLER instead: `detect.ts` supplies
+  // `referenceStructure` only when the reading it came from is itself a
+  // detection (>= MIN_WALLS segments). See the derivation there.
+  const effectiveStructure = Math.max(structure, opts.referenceStructure ?? structure);
+
   let refusal: string | null = null;
+  let cause: RefusalCause | null = null;
   if (segs.length < MIN_WALLS) {
     refusal = "This image doesn't have enough clear straight lines to read as a floorplan.";
+    cause = 'too-few-lines';
   } else if (support < MIN_SUPPORT) {
     refusal = "The lines in this image are too broken up to trace as walls.";
-  } else if (structure < MIN_STRUCTURE) {
+    cause = 'broken-lines';
+  } else if (effectiveStructure < MIN_STRUCTURE) {
     refusal = "The lines in this image don't join up into rooms, so it doesn't look like a floorplan.";
+    cause = 'unstructured';
   }
 
   // A blend for the two signals that saturate — a plan with one open wall must
@@ -204,6 +250,7 @@ export function assessDetection(
   return {
     confidence,
     refusal,
+    cause,
     wallCount: segs.length,
     support,
     structure,

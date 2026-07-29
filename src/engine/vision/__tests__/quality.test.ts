@@ -127,8 +127,64 @@ describe('assessDetection', () => {
   it('reports every component, so a caller can explain itself', () => {
     const q = assessDetection(RECT, mask, { junctionRadius: 8, supportRadius: 4, explainRadius: 4 });
     expect(Object.keys(q).sort()).toEqual(
-      ['confidence', 'explained', 'refusal', 'structure', 'support', 'totalLength', 'wallCount'].sort(),
+      ['cause', 'confidence', 'explained', 'refusal', 'structure', 'support', 'totalLength', 'wallCount'].sort(),
     );
+  });
+
+  it('names WHICH gate refused, so the UI never has to string-match a sentence', () => {
+    const opts = { junctionRadius: 8, supportRadius: 4, explainRadius: 4 };
+    expect(assessDetection(RECT, mask, opts).cause).toBeNull();
+    expect(assessDetection([RECT[0]], mask, opts).cause).toBe('too-few-lines');
+    // Four parallel bars in open space: enough of them, well supported, joining
+    // nothing.
+    const bars = [0, 40, 80, 120].map((y) => seg(20, y + 20, 280, y + 20));
+    const barMask = inkFor(300, 200, bars);
+    expect(assessDetection(bars, barMask, opts).cause).toBe('unstructured');
+  });
+});
+
+/**
+ * `referenceStructure` — the second reading `detect.ts` pools in.
+ *
+ * Covered here directly rather than only through a corpus fixture, because two
+ * WRONG contracts passed the whole suite when this option had no unit tests:
+ * letting the pooled value waive a SUPPORT refusal, and reporting the pooled
+ * value as the caller's own `structure`.
+ */
+describe('assessDetection — referenceStructure', () => {
+  const opts = { junctionRadius: 8, supportRadius: 4, explainRadius: 4 };
+  /** Four parallel bars: plenty of walls, well supported, structure 0. */
+  const BARS = [0, 40, 80, 120].map((y) => seg(20, y + 20, 280, y + 20));
+  const barMask = inkFor(300, 200, BARS);
+
+  it('omitting it reproduces the pre-S26 verdict exactly', () => {
+    const withOut = assessDetection(BARS, barMask, opts);
+    const withSelf = assessDetection(BARS, barMask, { ...opts, referenceStructure: undefined });
+    expect(withSelf).toEqual(withOut);
+    expect(withOut.cause).toBe('unstructured');
+  });
+
+  it('a high reference clears the STRUCTURE gate', () => {
+    const q = assessDetection(BARS, barMask, { ...opts, referenceStructure: 0.9 });
+    expect(q.refusal).toBeNull();
+    expect(q.cause).toBeNull();
+  });
+
+  it('...but NEVER waives a support refusal — pooling touches one gate only', () => {
+    // Geometry drawn where there is no ink at all: support 0, which no second
+    // reading can speak to.
+    const empty = emptyMask(300, 200);
+    const q = assessDetection(RECT, empty, { ...opts, referenceStructure: 1 });
+    expect(q.cause).toBe('broken-lines');
+    expect(q.refusal).not.toBeNull();
+  });
+
+  it('...and reports the CALLER\'s own structure, not the pooled one', () => {
+    // The number on screen must describe the walls on screen. Reporting the
+    // pooled value would print a structure the offered segments do not have.
+    const q = assessDetection(BARS, barMask, { ...opts, referenceStructure: 0.9 });
+    expect(q.structure).toBe(structureScore(BARS, opts.junctionRadius));
+    expect(q.structure).toBeLessThan(MIN_STRUCTURE);
   });
 
   it('pins the refusal thresholds, so loosening one is visible in the diff', () => {

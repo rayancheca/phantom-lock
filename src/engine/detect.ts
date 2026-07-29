@@ -61,19 +61,40 @@ import {
 import { thin } from './vision/thin';
 import { skeletonToSegments } from './vision/trace';
 import { filterBySupport, regularize, type RegularizeOptions } from './vision/regularize';
-import { assessDetection, type DetectionQuality } from './vision/quality';
+import { assessDetection, structureScore, MIN_WALLS, type DetectionQuality } from './vision/quality';
 
 export type { GrayImage, PxSegment } from './vision/types';
-export type { DetectionQuality } from './vision/quality';
+export type { DetectionQuality, RefusalCause } from './vision/quality';
 
 // ---------------------------------------------------------------------------
 // tuning
 //
 // Every constant below is a FRACTION of the image's larger dimension, or is
-// derived from the measured stroke width, so the pipeline behaves the same at
-// any resolution. They are calibrated against the enumerated corpus in
-// `__tests__/fixtures/floorplan-corpus.ts` — re-derive them against that list
-// if you change one, the same discipline `grid.ts` follows for its cell budget.
+// derived from the measured stroke width. They are calibrated against the
+// enumerated corpus in `__tests__/fixtures/floorplan-corpus.ts` — re-derive them
+// against that list if you change one, the same discipline `grid.ts` follows for
+// its cell budget.
+//
+// That scaling was once described here as making the pipeline "behave the same
+// at any resolution". It does NOT, and S26 measured it: the fraction-derived
+// constants scale, but the stroke-derived ones ride `meanStrokeWidth`, which is
+// not scale-invariant — anti-aliasing makes a thin stroke relatively FATTER
+// after a downscale. `heavy-poche` structure moves 0.850 -> 0.450 across a 2x
+// downscale, and a real plan moves 0.231 (native 1734 px) -> 0.500 (the 900 px
+// the app actually uses). Two consequences, both load-bearing:
+//
+//   - a measurement is only meaningful WITH the resolution it was taken at, and
+//     the only resolution that describes the product is the one
+//     `detectWallsFromUnderlay` produces (see `WORK_MAX`);
+//   - several constants are ABSOLUTE pixels, not fractions, and they are what
+//     breaks the scaling: `WALL_HALF_WIDTH_MIN/MAX`, `CLOSE_MIN/MAX`,
+//     `MIN_SEGMENT_PX`, the `epsilon` clamp, the 4-6 px floors below — and
+//     `MIN_COMPONENT_PIXELS`, which is a pixel COUNT and therefore scales as k^2
+//     rather than k;
+//   - `WALL_HALF_WIDTH_MAX` stops being a no-op past maxDim 1362 (the `round`
+//     puts the boundary at 24.5/0.018, not 24/0.018), where it starts deleting
+//     real poche rather than furniture. `WORK_MAX` keeps the pipeline under
+//     that, and a test pins the relationship.
 // ---------------------------------------------------------------------------
 
 /**
@@ -81,9 +102,9 @@ export type { DetectionQuality } from './vision/quality';
  * dimension admits walls up to ~3.6 % thick — heavier than any plan draws them
  * — while a sofa, a bath or a kitchen island is far fatter.
  */
-const WALL_HALF_WIDTH_FRAC = 0.018;
+export const WALL_HALF_WIDTH_FRAC = 0.018;
 const WALL_HALF_WIDTH_MIN = 3;
-const WALL_HALF_WIDTH_MAX = 24;
+export const WALL_HALF_WIDTH_MAX = 24;
 
 /**
  * Closing radius: fills gaps up to twice this. It must exceed half the widest
@@ -141,6 +162,9 @@ function clamp(v: number, lo: number, hi: number): number {
   return v < lo ? lo : v > hi ? hi : v;
 }
 
+/** The default sensitivity — the reading every other reading is judged beside. */
+const DEFAULT_SENSITIVITY = 1;
+
 /**
  * The pure pipeline, with everything it learned along the way.
  *
@@ -150,9 +174,12 @@ function clamp(v: number, lo: number, hi: number): number {
  * deliberately does NOT scale the furniture threshold or the closing radius:
  * those encode what a wall physically IS, and a user turning a slider should
  * not be able to reclassify their sofa.
+ *
+ * Stages 1-5 do not depend on `sensitivity` at all, which is what makes the
+ * second reading below nearly free: only stages 6-8 are re-run.
  */
 export function detectWalls(img: GrayImage, opts: DetectOptions = {}): DetectionResult {
-  const sensitivity = clamp(opts.sensitivity ?? 1, 0.4, 2);
+  const sensitivity = clamp(opts.sensitivity ?? DEFAULT_SENSITIVITY, 0.4, 2);
   const maxDim = Math.max(img.width, img.height);
 
   const maxHalfWidth = clamp(
@@ -162,7 +189,6 @@ export function detectWalls(img: GrayImage, opts: DetectOptions = {}): Detection
   );
   const closeRadius = clamp(Math.round(CLOSE_FRAC * maxDim), CLOSE_MIN, CLOSE_MAX);
   const minComponentSpan = Math.max(8, MIN_COMPONENT_SPAN_FRAC * maxDim);
-  const minSegment = Math.max(MIN_SEGMENT_PX, (MIN_SEGMENT_FRAC * maxDim) / sensitivity);
 
   // 1-4: page -> wall ink.
   //
@@ -185,48 +211,121 @@ export function detectWalls(img: GrayImage, opts: DetectOptions = {}): Detection
   // staircase amplitude of a rasterised diagonal (about half a pixel) but stay
   // under the smallest real bend, so it is tied to the stroke, not the image.
   const epsilon = clamp(strokeWidth * 0.5, 1.2, 6);
-  const raw = skeletonToSegments(skeleton, epsilon, Math.max(4, minSegment * 0.35), minSegment);
-
-  // 7: make the pieces agree with each other.
-  //
-  // `cornerRadius` deliberately has a floor tied to the PLAN's scale, not only
-  // to the stroke. How far a traced endpoint lands from its true corner is
-  // governed by thinning and by the simplification epsilon, and on a hairline
-  // drawing both still leave a 6-8 px shortfall while `strokeWidth * 2` has
-  // collapsed to 4. Measured: with a stroke-only radius the `hairline` fixture
-  // joined 21 % of its corners and was then REFUSED as "not a floorplan" — a
-  // perfectly good plan rejected because one constant scaled off the wrong
-  // quantity.
-  const cornerRadius = Math.max(6, strokeWidth * 2, minSegment * CORNER_RADIUS_FRAC);
-  const regOpts: RegularizeOptions = {
-    snapAngle: (SNAP_ANGLE_DEG * Math.PI) / 180,
-    parallelAngle: (PARALLEL_ANGLE_DEG * Math.PI) / 180,
-    mergeDistance: Math.max(4, strokeWidth * 1.1),
-    joinGap: Math.max(4, strokeWidth * 1.5),
-    cornerRadius,
-    minLength: minSegment,
-  };
-  const tidy = regularize(raw, regOpts);
-
-  // 8: nothing survives that the image does not support.
   const supportRadius = Math.max(2, strokeWidth * 0.8);
-  const minSupport = clamp(MIN_INK_SUPPORT / sensitivity, 0.25, 0.95);
-  const segments = filterBySupport(tidy, wallMask, supportRadius, minSupport).filter(
-    (s) => segLength(s) >= minSegment,
-  );
+
+  /** Stages 6-8 at one sensitivity: the part of the answer the knob moves. */
+  const read = (s: number) => {
+    const minSegment = Math.max(MIN_SEGMENT_PX, (MIN_SEGMENT_FRAC * maxDim) / s);
+    const raw = skeletonToSegments(skeleton, epsilon, Math.max(4, minSegment * 0.35), minSegment);
+
+    // 7: make the pieces agree with each other.
+    //
+    // `cornerRadius` deliberately has a floor tied to the PLAN's scale, not only
+    // to the stroke. How far a traced endpoint lands from its true corner is
+    // governed by thinning and by the simplification epsilon, and on a hairline
+    // drawing both still leave a 6-8 px shortfall while `strokeWidth * 2` has
+    // collapsed to 4. Measured: with a stroke-only radius the `hairline` fixture
+    // joined 21 % of its corners and was then REFUSED as "not a floorplan" — a
+    // perfectly good plan rejected because one constant scaled off the wrong
+    // quantity.
+    const cornerRadius = Math.max(6, strokeWidth * 2, minSegment * CORNER_RADIUS_FRAC);
+    const regOpts: RegularizeOptions = {
+      snapAngle: (SNAP_ANGLE_DEG * Math.PI) / 180,
+      parallelAngle: (PARALLEL_ANGLE_DEG * Math.PI) / 180,
+      mergeDistance: Math.max(4, strokeWidth * 1.1),
+      joinGap: Math.max(4, strokeWidth * 1.5),
+      cornerRadius,
+      minLength: minSegment,
+    };
+    const tidy = regularize(raw, regOpts);
+
+    // 8: nothing survives that the image does not support.
+    const minSupport = clamp(MIN_INK_SUPPORT / s, 0.25, 0.95);
+    const segments = filterBySupport(tidy, wallMask, supportRadius, minSupport).filter(
+      (seg) => segLength(seg) >= minSegment,
+    );
+    return { segments, cornerRadius };
+  };
+
+  const user = read(sensitivity);
 
   // 9: is this worth showing?
-  // The junction radius must be the SAME quantity `joinCorners` was given: the
-  // structure signal asks "did the corners meet?", so measuring it at a tighter
-  // radius than the joiner was allowed to work at would report a failure the
-  // joiner was never given the chance to avoid.
-  const quality = assessDetection(segments, wallMask, {
-    junctionRadius: cornerRadius,
+  //
+  // THE MONOTONIC-KNOB GUARANTEE. `structure` is measured on the segments that
+  // survived `minSegment`, and `minSegment` is exactly what `sensitivity`
+  // scales — so asking for FEWER walls mechanically lowers it, and the user's
+  // own pickiness is then reported back to them as evidence about their image.
+  // Measured on the `oblique-survey` fixture: 0.346 at the default, 0.222 at
+  // 'Careful', the same plan refused only because the knob moved.
+  //
+  // So a structure refusal is only final if the DEFAULT reading fails too. The
+  // knob may change WHICH walls are offered; it must never, by itself, turn an
+  // accepted image into "this doesn't look like a floorplan".
+  //
+  // The second reading is LAZY — it costs nothing unless the first would have
+  // been refused for structure, which is the rare case — and it re-runs only
+  // stages 6-8, since 1-5 do not depend on `sensitivity`. `confidence` and the
+  // reported `structure` still come from the user's own reading, so the numbers
+  // on screen always describe the walls on screen.
+  const explainRadius = Math.max(3, strokeWidth * 0.9);
+  const first = assessDetection(user.segments, wallMask, {
+    junctionRadius: user.cornerRadius,
     supportRadius,
-    explainRadius: Math.max(3, strokeWidth * 0.9),
+    explainRadius,
   });
+  // Three conditions, and each one closes a hole the others do not:
+  //
+  //   cause === 'unstructured'   the ONLY gate a second reading can clear. A
+  //                              too-few-lines or broken-lines refusal scores
+  //                              structure 0 as well, and its branch precedes
+  //                              the structure branch, so running the second
+  //                              reading for it is pure dead work on every null.
+  //   sensitivity !== default    at the default the second reading IS the first.
+  //   structure > 0              the user's own reading must show SOME structure
+  //                              to be worth offering. Without this the rescue is
+  //                              unconditional on what is actually on screen:
+  //                              measured, `oblique-survey` redrawn at 0.7x and
+  //                              read at 'Careful' offers 12 segments of which
+  //                              NOT ONE of the 24 endpoints meets another —
+  //                              a scatter by the metric's own definition, and
+  //                              46.4 % accurate against ground truth. This is a
+  //                              bright line rather than a tuned constant, and
+  //                              the corpus shows why one is enough: across 22
+  //                              fixtures x 6 scales x both off-default levels
+  //                              only THREE readings reach this branch, at
+  //                              0.000 (score 46.4 %) and 0.222 twice (67.6 and
+  //                              69.1 %). Residual, recorded rather than hidden:
+  //                              a reading with a single joined endpoint would
+  //                              still be pooled.
+  const needsSecondOpinion =
+    first.cause === 'unstructured' && sensitivity !== DEFAULT_SENSITIVITY && first.structure > 0;
+  const quality = needsSecondOpinion
+    ? (() => {
+        const ref = read(DEFAULT_SENSITIVITY);
+        // The default reading is EVIDENCE only if it is itself a detection.
+        // Without this guard the rule accepts nulls, and the shape is not
+        // exotic: a shelf edge meeting an upright is a clean 2-segment corner
+        // scoring a PERFECT structure 1.000/0.500 while being refused for
+        // `MIN_WALLS`, and pooling that number licensed 11 unrelated sticks at
+        // 'Thorough' (measured, 9 of 9 variants — the `no-plan-shelf` fixture).
+        //
+        // Segment COUNT is the whole guard, and that is provable rather than
+        // lucky: `filterBySupport` has already dropped anything under
+        // `MIN_INK_SUPPORT / 1 = 0.6`, so every segment reaching here supports
+        // at least 0.6 and the length-weighted mean `assessDetection` computes
+        // cannot fall below it — comfortably over `MIN_SUPPORT` 0.55. So the
+        // support gate can never be the one the reference reading fails.
+        const usable = ref.segments.length >= MIN_WALLS;
+        return assessDetection(user.segments, wallMask, {
+          junctionRadius: user.cornerRadius,
+          supportRadius,
+          explainRadius,
+          referenceStructure: usable ? structureScore(ref.segments, ref.cornerRadius) : undefined,
+        });
+      })()
+    : first;
 
-  return { segments, quality, wallMask, strokeWidth };
+  return { segments: user.segments, quality, wallMask, strokeWidth };
 }
 
 /**
@@ -280,7 +379,7 @@ export function segmentsToWalls(segs: PxSegment[], u: Underlay, workScale: numbe
  * resolution the way the accumulator sweep did. More pixels also means thinner
  * strokes relative to the plan, which is the regime every stage here prefers.
  */
-const WORK_MAX = 900;
+export const WORK_MAX = 900;
 
 export interface UnderlayDetection {
   walls: WallObj[];
@@ -318,6 +417,8 @@ export async function detectWallsFromUnderlay(
       quality: {
         confidence: 0,
         refusal: 'This browser could not read the image.',
+        // NOT a claim about the image, so the UI must not suggest a knob.
+        cause: 'unreadable',
         wallCount: 0,
         support: 0,
         structure: 0,

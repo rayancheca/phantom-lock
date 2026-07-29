@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import type { SceneObject, Scene, Underlay, WallObj } from '../../../engine/types';
-import { detectWallsFromUnderlay, type DetectionQuality } from '../../../engine/detect';
+import { detectWallsFromUnderlay, type DetectionQuality, type RefusalCause } from '../../../engine/detect';
 
 /**
  * The "Auto-detect walls" seam.
@@ -34,6 +34,39 @@ export const SENSITIVITY: Record<Sensitivity, { value: number; label: string; hi
   balanced: { value: 1, label: 'Balanced', hint: 'The usual choice' },
   thorough: { value: 1.5, label: 'Thorough', hint: 'Short walls too — expect a few extras' },
 };
+
+/** The levels in order, so "is there a harder one?" is a lookup, not a guess. */
+const LEVEL_ORDER: Sensitivity[] = ['careful', 'balanced', 'thorough'];
+
+/**
+ * " Try Thorough." — or nothing, when nothing above would help.
+ *
+ * A hint has to be TRUE, and two of the four refusal causes make the obvious
+ * hint false:
+ *
+ *   `unstructured`  the engine has already consulted the DEFAULT reading (that
+ *                   is exactly what `referenceStructure` is) and found it short
+ *                   too. So telling a 'Careful' user to try 'Balanced' suggests
+ *                   a run whose outcome is already known — measured over the
+ *                   corpus plus four darkened captures of a real plan, 5 of 5
+ *                   such suggestions would have failed and 0 would have helped.
+ *                   The useful suggestion is the level ABOVE the default.
+ *   `unreadable`    the browser could not get a 2D context. A sensitivity knob
+ *                   cannot supply one, and blaming the user's image for it is
+ *                   the exact misdirection the refusal sentences were split up
+ *                   to remove.
+ *
+ * Exported so a test can pin every branch.
+ */
+export function nextLevelHint(level: Sensitivity, cause: RefusalCause | null): string {
+  if (cause === null || cause === 'unreadable') return '';
+  const from =
+    cause === 'unstructured'
+      ? Math.max(LEVEL_ORDER.indexOf(level), LEVEL_ORDER.indexOf('balanced'))
+      : LEVEL_ORDER.indexOf(level);
+  const next = LEVEL_ORDER[from + 1];
+  return next ? ` Try “${SENSITIVITY[next].label}” to look harder.` : '';
+}
 
 export interface DetectionProposal {
   /** Every wall found, in the order the detector returned them. */
@@ -99,8 +132,24 @@ export function useWallDetection(a: Args): WallDetection {
           // emitted for four distinct causes including a browser failure to
           // get a 2D context, which told the user their floorplan was the
           // problem when it was not.
+          //
+          // ...and when a harder level would genuinely help, SAY SO. The
+          // engine's monotonic-knob guarantee covers the levels BELOW the
+          // default; nothing can rescue an image whose DEFAULT reading fails
+          // except looking harder. S26 measured exactly that case on a real
+          // plan: a gamma-1.08 capture of the owner's own floorplan (5.4 %
+          // darker at the midtone) is REFUSED at both 'Careful' and 'Balanced'
+          // — structure 0.000 and 0.077 — and reads 42 walls at 'Thorough',
+          // structure 0.607. Telling someone their floorplan is not a floorplan
+          // while a control one click away would have read it is the same
+          // failure as the refusal itself, just quieter.
+          //
+          // `nextLevelHint` takes the CAUSE, not just the level, because the
+          // obvious hint is false for two of the four causes — see its comment.
           setProposal(null);
-          argsRef.current.showToast(quality.refusal, { tone: 'bad' });
+          argsRef.current.showToast(`${quality.refusal}${nextLevelHint(level, quality.cause)}`, {
+            tone: 'bad',
+          });
           return;
         }
         setProposal({ walls, rejected: new Set(), quality, sensitivity: level });

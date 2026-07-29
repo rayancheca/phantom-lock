@@ -84,6 +84,126 @@ const ANNOTATION = {
   ],
 };
 
+// ---------------------------------------------------------------------------
+// `oblique-survey` — the surveyed-flat fixture (S26)
+// ---------------------------------------------------------------------------
+
+const OB_W = 620;
+const OB_H = 760;
+/** Exterior poche against thin interior partitions, as a survey draws them. */
+const OB_SHELL = 10;
+const OB_PART = 6;
+
+type Pt = { x: number; y: number };
+const obWall = (a: Pt, b: Pt, thickness: number) => ({ a, b, thickness });
+
+/**
+ * The envelope. Read the SHORT entries as the point of the fixture: the 37-57 px
+ * steps and notches are what tie the long oblique runs together, and they sit
+ * either side of `minSegment`.
+ */
+const OB_ENV: Pt[] = [
+  { x: 96, y: 168 }, // left wall, top
+  { x: 286, y: 96 }, // long oblique top-left run
+  { x: 322, y: 88 }, // SHORT step (37 px)
+  { x: 336, y: 132 }, // SHORT notch (46 px)
+  { x: 372, y: 124 }, // SHORT step (37 px)
+  { x: 520, y: 560 }, // the long right oblique
+  { x: 484, y: 604 }, // SHORT chamfer (57 px)
+  { x: 470, y: 646 }, // SHORT (44 px)
+  { x: 250, y: 700 }, // oblique bottom
+  { x: 150, y: 672 },
+  { x: 120, y: 596 }, // SHORT return (82 px)
+];
+
+const obLerp = (a: Pt, b: Pt, t: number): Pt => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+
+function obEnvelope() {
+  const out = [];
+  for (let i = 0; i < OB_ENV.length; i++) {
+    const a = OB_ENV[i];
+    const b = OB_ENV[(i + 1) % OB_ENV.length];
+    if (i === 8) {
+      // The entry door. Openings are what leave endpoints with nothing to meet.
+      out.push(obWall(a, obLerp(a, b, 0.34), OB_SHELL));
+      out.push(obWall(obLerp(a, b, 0.58), b, OB_SHELL));
+    } else {
+      out.push(obWall(a, b, OB_SHELL));
+    }
+  }
+  return out;
+}
+
+/** Kitchen return, a spine with a door gap, and the closet-scale warren. */
+const OB_INTERIOR = [
+  obWall({ x: 232, y: 268 }, { x: 288, y: 430 }, OB_PART),
+  obWall({ x: 300, y: 466 }, { x: 330, y: 552 }, OB_PART),
+  obWall({ x: 150, y: 560 }, { x: 236, y: 536 }, OB_PART),
+  obWall({ x: 330, y: 552 }, { x: 404, y: 528 }, OB_PART),
+  obWall({ x: 404, y: 528 }, { x: 418, y: 568 }, OB_PART),
+  obWall({ x: 424, y: 585 }, { x: 428, y: 596 }, OB_PART),
+  obWall({ x: 352, y: 616 }, { x: 428, y: 596 }, OB_PART),
+  obWall({ x: 352, y: 616 }, { x: 342, y: 588 }, OB_PART),
+  obWall({ x: 404, y: 528 }, { x: 462, y: 512 }, OB_PART),
+  obWall({ x: 428, y: 596 }, { x: 486, y: 578 }, OB_PART),
+  obWall({ x: 352, y: 616 }, { x: 372, y: 674 }, OB_PART),
+  obWall({ x: 462, y: 512 }, { x: 478, y: 556 }, OB_PART),
+  obWall({ x: 372, y: 674 }, { x: 430, y: 658 }, OB_PART),
+];
+
+const OB_WALLS = [...obEnvelope(), ...OB_INTERIOR];
+
+/**
+ * A dimension line beside a wall: glyph-sized marks laid along its own normal.
+ * `apartment-annotated` puts four such runs on an otherwise clean plan; a survey
+ * drawing dimensions every wall, which is what buries the corners.
+ */
+function obDimensions(walls: typeof OB_WALLS, offset: number) {
+  const out = [];
+  for (const wl of walls) {
+    const dx = wl.b.x - wl.a.x;
+    const dy = wl.b.y - wl.a.y;
+    const len = Math.hypot(dx, dy);
+    if (len < 40) continue;
+    const mx = (wl.a.x + wl.b.x) / 2 + (-dy / len) * offset;
+    const my = (wl.a.y + wl.b.y) / 2 + (dx / len) * offset;
+    const run = Math.min(len * 0.55, 90);
+    const vertical = Math.abs(dy) > Math.abs(dx);
+    out.push({
+      x: mx - (vertical ? 0 : run / 2),
+      y: my - (vertical ? run / 2 : 0),
+      len: run,
+      size: 5,
+      vertical,
+    });
+  }
+  return out;
+}
+
+const OBLIQUE_SURVEY = {
+  name: 'oblique-survey',
+  width: OB_W,
+  height: OB_H,
+  strokeWidth: OB_PART,
+  walls: OB_WALLS,
+  // Solid fixtures only. A thin OUTLINE of a kitchen run is a thin stroke
+  // enclosing floor, which no local rule distinguishes from a wall — including
+  // one would make this fixture's score a measure of that ambiguity rather than
+  // of the thing it exists to hold.
+  blobs: [
+    { kind: 'rect' as const, x: 200, y: 300, w: 108, h: 62, rotation: -20 },
+    { kind: 'rect' as const, x: 175, y: 618, w: 96, h: 40, rotation: -14 },
+    { kind: 'circle' as const, x: 300, y: 620, w: 40, h: 40 },
+  ],
+  arcs: [
+    { x: 288, y: 430, r: 34, from: 100, to: 165 },
+    { x: 236, y: 536, r: 30, from: 200, to: 265 },
+  ],
+  speckles: [...obDimensions(OB_WALLS, 26), ...obDimensions(OB_WALLS.slice(0, 9), -30)],
+  photo: { rotate: 11, blur: 0.6, noise: 2.5, gradient: 8 },
+  seed: 26,
+};
+
 export const CORPUS: CorpusEntry[] = [
   {
     why: 'the simplest possible plan — if this is wrong nothing else matters',
@@ -429,6 +549,42 @@ export const CORPUS: CorpusEntry[] = [
     },
   },
   {
+    // Added in S26, after the owner's OWN floorplan was measured for the first
+    // time and landed in a band no synthetic fixture occupied.
+    //
+    // Every other entry here is a Manhattan rectangle, or a Manhattan rectangle
+    // rotated (which leaves every corner square), or has one oblique wall in an
+    // otherwise square room. A real surveyed flat is none of those, and the
+    // combination is what makes it hard:
+    //
+    //   - a NON-ORTHOGONAL envelope: three long oblique runs, no two adjacent
+    //     walls at a right angle
+    //   - CORNERS BUILT FROM SUB-THRESHOLD JOGS. The steps and notches between
+    //     the long runs are 37-57 px against a `minSegment` of 38 px at the
+    //     default and 54 px at 'Careful'. They are what HOLDS the long walls
+    //     together, so as soon as the length cut removes them the survivors have
+    //     nothing to meet — which is the entire mechanism behind this fixture's
+    //     low structure, and behind the owner's plan's.
+    //   - dimension lines beside every wall over 40 px (20 of the 25), and on
+    //     both faces of the first nine envelope runs
+    //   - heavy poche outside (10) against thin partitions (6)
+    //   - a warren of closet-scale rooms, each with its own doorway
+    //
+    // Measured: structure 0.222 at 'Careful' (REFUSED before S26's monotonic-knob
+    // guarantee, which is what made that guarantee's test fail first) / 0.346 at
+    // 'Balanced' / 0.658 at 'Thorough'. The 0.346 is the LOWEST of any legitimate fixture at the
+    // default (next is `apartment-cluttered` at 0.425), so this entry is what
+    // holds the bottom of the corpus's structure range — the gap the owner's
+    // real plan sits in, which nothing synthetic occupied before.
+    why: 'A SURVEYED FLAT: oblique envelope, sub-threshold corner jogs, dimensioned walls — the lowest structure margin in the corpus',
+    // 25 centrelines are painted; the detector finds 13 at the default, which is
+    // why this fixture scores 74.7 % — the lowest in the corpus. `expectWalls` is
+    // what a HUMAN would draw, so it is the painted count, not the found count:
+    // setting it to 13 would make a partial read look like a complete answer.
+    expectWalls: 25,
+    spec: OBLIQUE_SURVEY,
+  },
+  {
     why: 'THE NULL CASE: a photo of a table and some text, no floorplan at all. Detection must REFUSE.',
     expectWalls: 0,
     refuse: true,
@@ -472,6 +628,44 @@ export const CORPUS: CorpusEntry[] = [
         thickness: 6,
         decoy: true,
       })),
+      photo: { blur: 1, noise: 6, gradient: 22 },
+      seed: 31,
+    },
+  },
+  {
+    // The null that S26's own fix let through, before the fix was fixed.
+    //
+    // Pooling a second reading into the structure gate is safe only if that
+    // reading is itself a DETECTION. This image is built to break exactly that:
+    // two long shelf edges meeting in an L, plus a scatter of isolated sticks.
+    // At the default the length cut keeps only the L, which scores a perfect
+    // structure 0.500 while being refused for `MIN_WALLS` — and that 0.500,
+    // pooled into the 'Thorough' reading, accepted 11 unrelated sticks at 69 %
+    // confidence. Measured, before the guard: OFFERED at 1.5 in 9 of 9 variants
+    // over stick lengths 32/34/36 and 7/9/12 sticks.
+    //
+    // It is also the fixture that RETIRES a comfortable-sounding claim: the two
+    // older nulls score structure exactly 0.000, which made "a null fails both
+    // arms by a mile" look like a law. It is not one. This one scores 0.500 on
+    // the arm that matters.
+    why: 'THE NULL THAT BEAT THE POOLED GATE: a shelf L plus loose sticks, whose DEFAULT reading is a perfect 2-segment corner. Must REFUSE.',
+    expectWalls: 0,
+    refuse: true,
+    spec: {
+      name: 'no-plan-shelf',
+      width: W,
+      height: H,
+      strokeWidth: 6,
+      walls: [
+        { a: { x: 90, y: 90 }, b: { x: 600, y: 90 }, thickness: 6, decoy: true },
+        { a: { x: 600, y: 90 }, b: { x: 600, y: 430 }, thickness: 6, decoy: true },
+        ...Array.from({ length: 9 }, (_, i) => ({
+          a: { x: 110 + (i % 3) * 160, y: 170 + Math.floor(i / 3) * 90 },
+          b: { x: 110 + (i % 3) * 160 + 34, y: 170 + Math.floor(i / 3) * 90 + 8 },
+          thickness: 5,
+          decoy: true,
+        })),
+      ],
       photo: { blur: 1, noise: 6, gradient: 22 },
       seed: 31,
     },

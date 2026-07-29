@@ -10,7 +10,8 @@ effort — a small high-value item beats a large one.
 
 | # | Idea | Priority | Effort |
 |---|---|---|---|
-| 13 | **Detection REFUSES the owner's own floorplan at default sensitivity** | **P0** | 1 session |
+| 13 | ✅ **Detection refuses the owner's floorplan** — **REFUTED S26** (measured at a resolution the app never uses) | ~~P0~~ done | — |
+| 13b | **Detection's verdict is unstable under exposure** — a 5 % darkening triples the ink via an Otsu jump | **P1 — high** | 1 session |
 | 1 | ✅ **Auto-detect walls accuracy overhaul** — **DONE S22** (52.1 % → 95.6 %, and it refuses) | ~~P0~~ done | — |
 | 2 | ✅ **Grid-loop iteration cap** — **DONE S18** (safety half; slowness half → 2b) | ~~P0~~ done | — |
 | 2b | ✅ **Bound the reflection search** (`bestReflectionDb`) — **DONE S19** (50-room 13.7 s → ~0.5 s) | ~~P1~~ done | — |
@@ -597,7 +598,103 @@ to be exact.
 
 ---
 
-## 13. Detection refuses the owner's own floorplan — **P0**
+## 13. Detection refuses the owner's own floorplan — ~~P0~~ **REFUTED (S26)**, and what was really there
+
+**The P0 as written is FALSE, and the reason is a measurement chain no user can reach.** The S25 table
+below fed the ORIGINAL 1320×1734 file straight to `detectWalls`. The app never does that. There are
+**two** lossy stages in front of the pipeline, and both are unconditional:
+
+1. `buildUnderlay` (`components/panels/underlay-import.ts:3,11-13,28`) caps the import at
+   `MAX_DIM = 1600` and re-encodes it as **JPEG q0.72**. It is the ONLY origin of underlay bytes.
+2. `detectWallsFromUnderlay` (`engine/detect.ts:308`) then caps THAT at `WORK_MAX = 900`.
+
+`detectWallsFromUnderlay` is the only non-test caller of `detectWalls`, `useWallDetection.ts:94` is its
+only caller, and the downscale has no branch — so the pipeline cannot see more than 900 px on any
+route, including a JSON layout import.
+
+**Measured 2026-07-29 through the real chain, and confirmed end to end by driving the real UI in
+headless Chrome with the owner's actual file** (`docs/sessions/S26/shots/02-proposal-default.jpg`):
+
+| UI level | sensitivity | walls | confidence | support | structure | explained | verdict |
+|---|---|---|---|---|---|---|---|
+| Careful | 0.7 | 9 | 73.9 % | 1.000 | **0.278** | 0.737 | **accepted** |
+| **Balanced (default)** | **1.0** | **15** | **85.0 %** | **1.000** | **0.500** | **0.832** | **accepted** |
+| Thorough | 1.5 | 24 | 91.8 % | 0.992 | 0.646 | 0.894 | **accepted** |
+
+The live UI matches wall-for-wall: *"Found 15 walls — 34.5 m · Read confidence 85 %"*, with `Add 15
+walls`, and no refusal toast at any level. The three numbers S25 reported (9/13/21 walls at
+0.111/0.231/0.548) reproduce EXACTLY at full resolution, which is how the chain was identified.
+
+Two further corrections to the S25 write-up: **sensitivity 0.6 is not a value the UI can send** —
+`SENSITIVITY` holds careful 0.7 / balanced 1 / thorough 1.5, so that row was unreachable twice over;
+and the first S26 harness fixed stage 2 while forgetting stage 1, reading 0.588 instead of 0.500. The
+same error, three times, at three different depths.
+
+### What was actually wrong — and what S26 fixed
+
+**(a) The knob could refuse a plan the default accepts. FIXED.** `sensitivity` scales `minSegment`, and
+`structure` is measured on the segments that survive it — so asking for FEWER walls mechanically lowers
+structure, and the user's own pickiness is reported back to them as evidence about their image. It is
+not hypothetical: the new `oblique-survey` fixture measures **0.346 accepted at the default and 0.222
+REFUSED at Careful**, the same plan, refused only because the knob moved. `detectWalls` now takes a
+second, lazy reading at the default sensitivity and refuses for structure only if BOTH fall short.
+The guarantee, stated and tested: *the knob may change WHICH walls are offered; it can never, by
+itself, turn an accepted image into "this doesn't look like a floorplan."* Both nulls still refuse at
+every level with structure exactly 0.000 on both arms, which is what makes pooling safe.
+
+**(b) The corpus was blind to resolution BY CONSTRUCTION. FIXED.** Every fixture rasterises at 700×520
+or 900×700 — at or under `WORK_MAX` — so the downscale was a no-op on all 22 and no test had ever run
+at the resolution a phone photo arrives at. That is exactly the hole S25 fell into. `detect.test.ts`
+now has a `resolution` block that rasterises fixtures at 2.5× (an ordinary phone photo), pushes them
+through both of the app's downscales, and asserts the read survives.
+
+**(c) The refusal, when it does fire, never named the one control that would help. FIXED.** The toast
+now appends *"Try 'Thorough' to look harder."* when a harder level exists, and says nothing at the top
+level.
+
+### What is still there — the new P1, and it is a better bug than the old one
+
+**The verdict is unstable under invisible capture detail, and the cause is the Otsu threshold.**
+Measured on the owner's real plan through the app chain, applying a gamma curve as a stand-in for a
+slightly different exposure of the same drawing:
+
+| gamma | Otsu cut | raw ink px | strokeWidth | walls @1.0 | structure | verdict |
+|---|---|---|---|---|---|---|
+| 1.00 | 175 | 32 376 | 14.0 | 15 | 0.500 | ok |
+| 1.02 | 174 | 32 376 | 14.0 | 15 | 0.500 | ok |
+| **1.05** | **208** | **107 365** | 10.7 | 13 | **0.077** | **REFUSED** |
+| 1.15 | 205 | 107 931 | 10.4 | 12 | 0.083 | REFUSED |
+| 1.50 | 195 | 109 927 | 12.0 | 17 | 0.353 | ok |
+
+A **5 % darkening triples the ink**, because the Otsu cut jumps 175 → 208 and swallows the whole
+annotation layer. The owner's plan is unusually exposed to this: its dimension lines are drawn in a
+LIGHTER TONE than its walls (measured tones — poché ≈96–103, annotation 120–173, paper ≈203), so the
+cut sits right at the top of the annotation band. An independent skeptic reproduced the same
+discontinuity along a different axis (JPEG quality 0.49–0.51) and, by controlled substitution, showed
+the mechanism is NOT the one it first looked like: forcing `strokeWidth` back to its correct value
+leaves structure at 0.000, and injecting the correct dominant angle does too. Stroke width and the
+69° dominant-axis flip are both **symptoms of the Otsu jump**, not causes.
+
+Do not chase this by moving `MIN_STRUCTURE`. The threshold is not the problem — a signal that moves
+6× on a 5 % exposure change is. Candidates worth measuring, in order: a hysteresis or bimodality check
+around the Otsu cut; a two-class ink model that keeps light annotation OUT of the wall mask rather than
+letting a threshold decide; and making `structureScore` a graded distance falloff rather than a binary
+`<= radius` count (measured: it lifts every legit fixture while leaving BOTH nulls at exactly 0.000,
+so it does not weaken the discriminator — it was prototyped in S26 and NOT shipped, because the Otsu
+instability is upstream of it and should be fixed first).
+
+**Acceptance:** a fixture that pins the Otsu discontinuity · the owner's plan's verdict stable across a
+±10 % exposure sweep · both nulls still refused · corpus mean floor held.
+
+### Artifacts
+
+All gitignored and local. `docs/sessions/S26/bench/`: `owner-appchain.bin` (the real two-stage bytes),
+`owner-APPCHAIN.txt` / `owner-UI-LEVELS.txt` / `owner-AFTER-FIX.txt`, `otsu-mechanism.txt`,
+`adjudication.txt`, `corpus-UI-levels.txt`, plus `browser-resample.mjs` (the corrected two-stage
+capture) and `diagnose.ts` (per-stage instrumentation). `docs/sessions/S26/shots/` holds the live-UI
+run. The photo itself is at the repo root as `IMG_7421.jpeg` and is gitignored — do not commit it.
+
+<details><summary>The original S25 write-up, kept because the numbers are real — they are just from the wrong chain</summary>
 
 **Measured 2026-07-29 on `IMG_7421.jpeg` (1320×1734), the owner's real plan, through the REAL app path
 (`detectWalls`, which includes the refusal — not `detectSegments`, which does not):**
@@ -647,3 +744,6 @@ only then change anything.
 **Artifacts (gitignored, local):** `docs/sessions/S25/bench/owner-floorplan.txt` (the three-sensitivity
 run), `owner-plan-default.png` and `owner-plan-sens15.png` (overlays). The photo itself is at the repo
 root as `IMG_7421.jpeg` and is gitignored — do not commit it.
+
+
+</details>

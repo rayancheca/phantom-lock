@@ -1,6 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { detectSegments, detectWalls, inkMask, pxToWorld, segmentsToWalls, type GrayImage } from '../detect';
-import { corpusFixtures, fixtureByName } from './fixtures/floorplan-corpus';
+import {
+  detectSegments,
+  detectWalls,
+  inkMask,
+  pxToWorld,
+  segmentsToWalls,
+  WALL_HALF_WIDTH_FRAC,
+  WALL_HALF_WIDTH_MAX,
+  WORK_MAX,
+  type GrayImage,
+} from '../detect';
+import { CORPUS, corpusFixtures, fixtureByName } from './fixtures/floorplan-corpus';
+import { downscale, rasterize, scalePlan } from './fixtures/floorplan-raster';
 import { scoreDetection } from './fixtures/detect-score';
 import { segLength, headingGap, segHeading } from '../vision/types';
 
@@ -183,6 +194,7 @@ const FLOORS: Record<string, number> = {
   'apartment-cluttered': 0.75,
   'apartment-rotated': 0.8,
   'heavy-poche': 0.95,
+  'oblique-survey': 0.7,
 };
 
 const MEAN_FLOOR = 0.92;
@@ -296,6 +308,121 @@ describe('sensitivity', () => {
       for (const seg of segs) expect(Number.isFinite(segLength(seg))).toBe(true);
     }
   });
+
+  /**
+   * THE MONOTONIC-KNOB GUARANTEE (S26).
+   *
+   * `sensitivity` scales `minSegment`, and `structure` is measured on the
+   * segment population that survives it — so asking for FEWER walls
+   * mechanically lowers structure, and the user's own pickiness then reads back
+   * to them as evidence about their image. Measured on `oblique-survey`:
+   * 0.346 at the default, 0.222 at 'Careful' — the same plan, refused only
+   * because the knob was turned down.
+   *
+   * The knob may change WHICH walls are offered. It must never, by itself, turn
+   * an image the default accepts into "this doesn't look like a floorplan".
+   *
+   * The levels swept here are the three `useWallDetection.SENSITIVITY` can
+   * actually send. A test at 0.6 would guard a value no control produces.
+   */
+  const UI_LEVELS = [0.7, 1, 1.5];
+
+  it('never lets the KNOB alone turn an accepted plan into a refusal', () => {
+    for (const f of corpusFixtures()) {
+      if (f.entry.refuse) continue;
+      if (detectWalls(f.img, { sensitivity: 1 }).quality.refusal) continue;
+      for (const s of UI_LEVELS) {
+        const res = detectWalls(f.img, { sensitivity: s });
+        expect(`${f.name}@${s}: ${res.quality.refusal ?? 'ok'}`).toBe(`${f.name}@${s}: ok`);
+      }
+    }
+  });
+
+  it('...and the knob still BITES — the guarantee must not be met by disabling it', () => {
+    // Without this the monotonic-knob guarantee above is satisfiable by the
+    // crudest possible wrong fix: make `minSegment` ignore sensitivity below 1
+    // and 'Careful' becomes a literal no-op, at which point it can never cause a
+    // refusal because it can never cause anything. Measured today, 'Careful'
+    // returns strictly fewer walls than the default on six fixtures
+    // (apartment-annotated 12<13, apartment-photo 11<12, apartment-skewed 9<12,
+    // hatched 12<14, apartment-cluttered 16<20, oblique-survey 9<13).
+    let strictlyFewer = 0;
+    for (const f of corpusFixtures()) {
+      if (f.entry.refuse) continue;
+      const careful = detectWalls(f.img, { sensitivity: 0.7 }).segments.length;
+      const balanced = detectWalls(f.img, { sensitivity: 1 }).segments.length;
+      if (careful < balanced) strictlyFewer++;
+    }
+    expect(strictlyFewer).toBeGreaterThanOrEqual(4);
+  });
+
+  it('...and does NOT rescue a reading that is itself a scatter', () => {
+    // The rescue is about the IMAGE, but what gets OFFERED is the user's own
+    // reading — so it has to be worth offering. `oblique-survey` redrawn at 0.7x
+    // and read at 'Careful' produces 12 segments of which not one of the 24
+    // endpoints meets another: structure exactly 0, the same value the null
+    // fixtures score, and 46.4 % accurate against ground truth. Pooling rescued
+    // it until the `structure > 0` condition was added.
+    const entry = CORPUS.find((e) => e.spec.name === 'oblique-survey')!;
+    const small = rasterize(scalePlan(entry.spec, 0.7));
+    const res = detectWalls(small.img, { sensitivity: 0.7 });
+    expect(res.quality.structure).toBe(0);
+    expect(res.quality.refusal).not.toBeNull();
+  });
+
+  it('...and scores the second reading at ITS OWN corner radius, not the user\'s', () => {
+    // `cornerRadius` is `max(6, strokeWidth * 2, minSegment * 0.25)`, and on every
+    // corpus fixture the stroke term dominates — so scoring the reference
+    // segments at the USER's radius is a no-op and no test notices. It is a
+    // no-op by corpus coincidence, not by construction (the S19/S22 lesson: the
+    // corpus follows the code's guards).
+    //
+    // Drawn thin, `minSegment * 0.25` takes over and the radii diverge: measured
+    // 13.57 px at 'Careful' against 9.50 px at the default. At the correct
+    // radius the default reading scores 0.231 and this plan is refused; at the
+    // user's wider radius it scores 0.385 and would be wrongly offered.
+    const base = CORPUS.find((e) => e.spec.name === 'oblique-survey')!.spec;
+    const thin = rasterize({
+      ...base,
+      name: 'oblique-thin',
+      strokeWidth: 2,
+      walls: base.walls.map((w) => ({ ...w, thickness: w.thickness === 10 ? 4 : 2 })),
+    });
+    expect(detectWalls(thin.img, { sensitivity: 0.7 }).quality.refusal).not.toBeNull();
+    // ...and the same drawing one step heavier IS rescued, so the assertion above
+    // is about the radius rather than about thin strokes being hopeless.
+    const heavier = rasterize({
+      ...base,
+      name: 'oblique-thin-3',
+      strokeWidth: 3,
+      walls: base.walls.map((w) => ({ ...w, thickness: w.thickness === 10 ? 5 : 3 })),
+    });
+    expect(detectWalls(heavier.img, { sensitivity: 0.7 }).quality.refusal).toBeNull();
+  });
+
+  it('...and the guarantee does NOT smuggle a null through, at any level', () => {
+    // The negative control for the rule above, and it is NOT decorative: the
+    // first cut of that rule failed this test. `no-plan-shelf` exists because
+    // pooling a second reading is safe only when that reading is itself a
+    // DETECTION — its default reading is a clean 2-segment corner scoring a
+    // perfect structure 0.500 while being refused for `MIN_WALLS`, and pooling
+    // that number accepted 11 unrelated sticks at 'Thorough'.
+    //
+    // Note what is deliberately NOT asserted here any more: that a null scores
+    // structure 0. The two older nulls do, which made "a null fails both arms by
+    // a mile" look like a law. `no-plan-shelf` scores 0.500 on the arm that
+    // matters, so the safety has to come from the guard, not from the numbers
+    // happening to be small.
+    for (const f of corpusFixtures()) {
+      if (!f.entry.refuse) continue;
+      for (const s of UI_LEVELS) {
+        const res = detectWalls(f.img, { sensitivity: s });
+        expect(`${f.name}@${s}: ${res.quality.refusal ? 'refused' : 'ACCEPTED'}`).toBe(
+          `${f.name}@${s}: refused`,
+        );
+      }
+    }
+  });
 });
 
 describe('negative controls — the score must be able to FALL', () => {
@@ -331,6 +458,95 @@ describe('negative controls — the score must be able to FALL', () => {
     expect(scoreDetection([...segs, ...blobOutlines], f.truth, { tolerance: 9 }).score).toBeLessThan(
       baseline - 0.05,
     );
+  });
+});
+
+/**
+ * THE REGIME NO FIXTURE REACHED (S26).
+ *
+ * Every corpus fixture rasterises at 700x520 or 900x700 — at or under
+ * `WORK_MAX = 900` — so `detectWallsFromUnderlay`'s downscale is a no-op on all
+ * of them and none of these numbers has ever been measured at the resolution a
+ * phone photo arrives at. That blind spot is how S25 came to measure a P0 at
+ * 1320x1734 and believe it was the app: a full-resolution reading of the
+ * owner's plan scores structure 0.231 and is REFUSED, while the same file
+ * through the app's own two downscales scores 0.500 and is offered.
+ *
+ * No fixture can catch a harness/app mismatch — that is not a property of any
+ * image. What a fixture CAN do is pin the property the mismatch hid: that a
+ * plan photographed at phone resolution still reads once the app has shrunk it.
+ */
+describe('resolution — the app downscales before the pipeline ever runs', () => {
+  const PHOTO_SCALE = 2.5; // 700x520 -> 1750x1300, an ordinary phone photo
+  const NAMES = ['apartment-bare', 'apartment-annotated', 'tiny-rooms', 'oblique-survey'];
+
+  it('still reads a plan photographed at phone resolution, after the downscale to WORK_MAX', () => {
+    for (const name of NAMES) {
+      const entry = CORPUS.find((e) => e.spec.name === name)!;
+      const big = rasterize(scalePlan(entry.spec, PHOTO_SCALE));
+      // buildUnderlay caps at 1600, then detectWallsFromUnderlay caps at 900.
+      const work = downscale(downscale(big.img, 1600), 900);
+      expect(Math.max(work.width, work.height)).toBeLessThanOrEqual(900);
+      const res = detectWalls(work);
+      expect(`${name}: ${res.quality.refusal ?? 'ok'}`).toBe(`${name}: ok`);
+      expect(res.segments.length).toBeGreaterThanOrEqual(4);
+    }
+  });
+
+  it('...and the walls it finds still describe the same plan', () => {
+    // Not just "did not refuse": the ground truth rides the same downscales, so
+    // this is an accuracy claim at photo resolution, not a liveness one.
+    for (const name of NAMES) {
+      const entry = CORPUS.find((e) => e.spec.name === name)!;
+      const big = rasterize(scalePlan(entry.spec, PHOTO_SCALE));
+      const work = downscale(downscale(big.img, 1600), 900);
+      const k = work.width / big.img.width;
+      const truth = big.truth.map((s) => ({
+        a: { x: s.a.x * k, y: s.a.y * k },
+        b: { x: s.b.x * k, y: s.b.y * k },
+      }));
+      const res = detectWalls(work);
+      const d = scoreDetection(res.quality.refusal ? [] : res.segments, truth, {
+        tolerance: Math.max(6, big.strokeWidth * k),
+      });
+      // A floor rather than a pin: the two downscales are an area average here
+      // and Skia in the browser, so the exact figure is not reproducible across
+      // them. What IS reproducible is that the read stays good.
+      expect(`${name} scored ${(d.score * 100).toFixed(0)}%`).toBe(
+        d.score >= 0.6 ? `${name} scored ${(d.score * 100).toFixed(0)}%` : `${name} scored >=60%`,
+      );
+    }
+  });
+
+  it('WORK_MAX keeps the pipeline inside the band its constants were calibrated for', () => {
+    // `maxHalfWidth` is `clamp(round(0.018 * maxDim), 3, 24)`. Note the ROUND:
+    // the clamp only changes the value once `0.018 * maxDim >= 24.5`, i.e. at
+    // maxDim 1362, not 1334 (measured: 1361 -> 24, 1362 -> 25 clamped to 24).
+    // Past there a heavy-poche wall keeps getting thicker while the "this is
+    // furniture, not a wall" threshold does not. Measured on `heavy-poche` at
+    // 2.5x native (1750 px): 97.5 % of the ink is deleted by
+    // `removeThickRegions` and the plan is REFUSED.
+    //
+    // That is latent, not live, and this test is what keeps it latent: the DOM
+    // wrapper's WORK_MAX must stay under the point where the clamp bites.
+    //
+    // The arithmetic bound is a deliberately CONSERVATIVE proxy, not the
+    // measured cliff. Swept on `heavy-poche`, the plan is still accepted well
+    // past 1362 — 1333 -> 10 walls / 55.3 % of ink removed, 1400 -> 15 walls,
+    // 1500 -> 16 walls, all accepted — and falls off between 1500 and 1600
+    // (1600 -> 6 walls, 97.6 % removed, REFUSED). So the clamp starts biting
+    // before the answer breaks, which is exactly the margin worth keeping.
+    const CLAMP_BITES_AT = (WALL_HALF_WIDTH_MAX + 0.5) / WALL_HALF_WIDTH_FRAC; // 1361.1
+    expect(WORK_MAX).toBeLessThan(CLAMP_BITES_AT);
+
+    // ...and demonstrate the failure it is holding back, so the bound above is
+    // a measured guard rather than an assertion about arithmetic.
+    const poche = CORPUS.find((e) => e.spec.name === 'heavy-poche')!;
+    const unshrunk = rasterize(scalePlan(poche.spec, 2.5));
+    expect(Math.max(unshrunk.img.width, unshrunk.img.height)).toBeGreaterThan(CLAMP_BITES_AT);
+    expect(detectWalls(unshrunk.img).quality.refusal).not.toBeNull();
+    // The same photo, once the app has shrunk it, reads fine.
+    expect(detectWalls(downscale(unshrunk.img, WORK_MAX)).quality.refusal).toBeNull();
   });
 });
 

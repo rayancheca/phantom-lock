@@ -2251,3 +2251,126 @@ that seeds against the wall.
 only), so any "consumers verified" claim about it is vacuous. Its `dist(p, q) < CELL` short-circuit also
 hardcodes `CELL` while `regionOf` grows the cell past ~47 m spans. Recorded for a future cleanup rather
 than deleted in a bug-fix commit.
+
+---
+
+## Session 26 — 2026-07-29 — The P0 that wasn't, and the defect underneath it (`docs/ideas.md` §13)
+
+**The session's stated P0 is REFUTED.** S25 measured the owner's real floorplan at structure **0.231**
+against `MIN_STRUCTURE = 0.25` and filed *"detection REFUSES the owner's own floorplan at the default
+sensitivity"* as the top of the backlog. It does not. That number came from handing the original
+1320×1734 file to `detectWalls`, and the app puts **two unconditional lossy stages** in front of it:
+`buildUnderlay` caps the import at `MAX_DIM = 1600` and re-encodes it as **JPEG q0.72**
+(`underlay-import.ts:3,11-13,28`), then `detectWallsFromUnderlay` caps THAT at `WORK_MAX = 900`
+(`detect.ts:308`). `detectWallsFromUnderlay` is the only non-test caller of `detectWalls`, its only
+caller is `useWallDetection.ts:94`, and the downscale has no branch.
+
+Through the real chain, and **confirmed end to end by driving the real UI in headless Chrome with the
+owner's actual file**:
+
+| UI level | sensitivity | walls | confidence | support | structure | explained | verdict |
+|---|---|---|---|---|---|---|---|
+| Careful | 0.7 | 9 | 73.9 % | 1.000 | 0.278 | 0.737 | accepted |
+| **Balanced (default)** | **1.0** | **15** | **85.0 %** | **1.000** | **0.500** | **0.832** | **accepted** |
+| Thorough | 1.5 | 24 | 91.8 % | 0.992 | 0.646 | 0.894 | accepted |
+
+The live card reads *"Found 15 walls — 34.5 m · Read confidence 85 %"* with `Add 15 walls` and no
+refusal toast (`docs/sessions/S26/shots/02-proposal-default.jpg`). S25's 9/13/21 walls at
+0.111/0.231/0.548 reproduce EXACTLY at full resolution, which is how the chain was identified. Two
+further corrections: **sensitivity 0.6 is not a value the UI can send** (the levels are 0.7/1.0/1.5), and
+**this session made the same mistake itself** — the first S26 harness fixed the 900 stage and forgot the
+JPEG stage, reading 0.588 instead of 0.500. Caught by an agent, not by the main thread.
+
+### What was actually wrong, and what shipped
+
+**1. The knob could refuse a plan the default accepts.** `sensitivity` scales `minSegment`, and
+`structure` is measured on the segments that survive it — so asking for FEWER walls mechanically lowers
+structure, and the user's own pickiness is reported back as evidence about their image. `detectWalls`
+now takes a **lazy second reading at the default sensitivity** and refuses for structure only if both
+fall short. Stages 1–5 do not depend on `sensitivity`, so the second reading re-runs only 6–8, and only
+when the first would have been refused — zero cost on the accepting path. Stated and tested invariant:
+*the knob may change WHICH walls are offered; it can never, by itself, turn an accepted image into
+"this doesn't look like a floorplan."*
+
+**2. The corpus was blind to resolution BY CONSTRUCTION.** All 22 fixtures rasterise at 700×520 or
+900×700 — at or under `WORK_MAX` — so `k = min(1, 900/maxDim)` is exactly 1 for every one and the app's
+downscale had never been exercised. That is the hole S25 fell into. A new `resolution` block rasterises
+fixtures at 2.5× (a phone photo), pushes them through both of the app's downscales, and asserts the read
+survives — plus a band test pinning `WORK_MAX` under `WALL_HALF_WIDTH_MAX / WALL_HALF_WIDTH_FRAC` = 1333,
+demonstrated by `heavy-poche` at 2.5× losing **97.5 %** of its ink and being refused.
+
+**3. The refusal never named the control that would help.** The toast now appends *"Try 'Thorough' to
+look harder."* when a harder level exists, and nothing at the top level.
+
+### The fixture
+
+`oblique-survey` (620×760) — the gap no synthetic occupied. An oblique envelope whose corners are
+**sub-`minSegment` jogs** (37–57 px against 38 px at the default and 54 at Careful), dimension lines
+beside every wall, heavy poché (10) against thin partitions (6), and a warren of closet-scale rooms each
+with its own doorway. Measured **0.222 REFUSED at Careful / 0.346 accepted at Balanced / 0.658 at
+Thorough**, score 74.7 % — the lowest structure of any legitimate fixture at the default
+(`apartment-cluttered` is next at 0.425). It is what made the monotonic-knob test fail first: on HEAD it
+produced the literal P0 sentence.
+
+### Evidence
+
+**Agents (16 across two workflows).** Adjudication workflow — `skeptic-p0` (could not refute; **found my
+own harness was missing the JPEG stage**), `harness` (confirmed both `--image` bugs, duplicated in S23;
+produced the resolution sweep), `lowsens` (mechanism + fix candidates), `fixture` (characterisation +
+spec), each with an independent refuter. Self-review workflow — correctness / tests / corpus-safety /
+silent-failure over the actual diff.
+
+**Findings I rejected, with reasons (TRAP 9).** (a) *"max(user, default) fixes the gamma-1.15 case"* —
+REFUTED and I had already measured it: on the real bytes both arms are below threshold, so the rule does
+not rescue it. The fix is justified by the `oblique-survey` flip and by rescuing gamma 1.50 at Careful,
+not by that claim. (b) *"the margin rises to 0.175"* — an artifact of computing both arms
+unconditionally; `max(a,b) ≥ T` ⟺ `a ≥ T ∨ b ≥ T`, so the lazy and eager forms are the same predicate
+and the margin is unchanged at 0.114. (c) *"the live UI evidence was never produced, shots/ is empty"* —
+stale; the run landed at 13:12 while that agent was mid-flight, and a refuter opened the JPEGs and
+confirmed them. (d) *"the knife-edge is caused by a mis-measured strokeWidth / a dominantAngle flip"* —
+**mechanism refuted**, symptom confirmed: forcing the stroke back leaves structure at 0.000 and injecting
+the correct axis does too. I re-measured and the real cause is the **Otsu threshold**, which jumps
+175 → 208 between gamma 1.02 and 1.05 and TRIPLES raw ink 32 376 → 107 365 px. Stroke width and the 69°
+axis flip are both downstream of that.
+
+**Prototyped and NOT shipped:** a graded `structureScore` (distance falloff instead of a binary
+`<= radius`). It lifts every legit fixture while leaving BOTH nulls at exactly 0.000, so it does not
+weaken the discriminator — but the Otsu instability is upstream of it and should be fixed first, and
+shipping it now would look like a threshold move in disguise. Recorded in `ideas.md` §13b with numbers.
+
+**The self-review found a hole in the fix, and it was real.** Pooling a second reading is safe only
+when that reading is ITSELF a detection: a shelf edge meeting an upright is a clean two-segment corner
+scoring a perfect structure while being refused for `MIN_WALLS`, and pooling that number offered 11
+loose sticks at 'Thorough' in 9 of 9 variants. A second review lane found the mirror hole — the rescue
+was unconditional on the USER's own reading, so `oblique-survey` redrawn at 0.7x offered 12 segments
+whose structure was exactly 0 (46.4 % accurate). Both are closed, each by a condition with a measured
+justification rather than a tuned constant, and each has a fixture or a negative control. Three further
+review findings were adopted: the hint was pointing 'Careful' at a level the engine had already tried
+(measured futile 5 of 5, so the refusal now carries a CAUSE and the hint skips it); the knob test was
+satisfiable by DISABLING the knob (66/66 passed with 'Careful' made a no-op); and `referenceStructure`
+scored at the user's corner radius was a no-op by corpus coincidence, which a thin-stroke control now
+catches. Four accuracy corrections were also applied — `expectWalls` 13 → 25, the clamp boundary
+1333 → 1361 (the `round`), a mis-stitched gamma figure, and `scalePlan`'s overclaim about what scales.
+
+**Test count 1365 → 1387** (+22). Nothing skipped, `.only`'d or weakened. Corpus mean 95.6 % → **94.6 %**
+against a `MEAN_FLOOR` of 0.92 — the new `oblique-survey` scores 74.7 % by design, so the headroom is
+2.6 points and worth watching.
+
+**Gate (literal tails).** `npm run lint` → 0 problems. `npm test` → `Test Files 67 passed (67) / Tests
+1387 passed (1387)`. `npm run build` → `dist/assets/index-BB6XWN7z.js 479.80 kB │ gzip: 156.27 kB`, CSS
+`51.55 kB │ gzip: 9.56 kB` unchanged, HTML `1.31 kB`.
+
+**Behaviour-preserving, proven against the pre-session engine.** `git show main:` the two changed engine
+files into /tmp, point them at the live siblings, and run both on the REAL app-chain bytes: segments,
+confidence and structure are identical to 1e-12 in all six cases, and exactly one verdict moves —
+`oblique-survey` at 'Careful', REFUSED → offered. Saved as `docs/sessions/S26/bench/old-vs-new.txt`.
+
+**Live verification: RUN.** Fresh headless-Chrome profile (fresh origin, `phantom-lock:v2` asserted
+null), the owner's photo fed through the app's own file input so it travels `buildUnderlay` → the
+underlay record → `detectWallsFromUnderlay`, then the real Auto-detect button and the real
+`DetectionProposalCard`. Screenshots in `docs/sessions/S26/shots/` (gitignored). ONE browser, as always.
+
+**Left open, honestly.** §13b is the new head of the queue: the verdict is unstable under exposure and
+the cause is upstream of everything this session touched. The owner's plan is accepted today with a
+**one-junction margin at Careful** (structure 0.278; 5 of 18 endpoints joined, and 4 of 18 = 0.222 would
+refuse), which is the tightest reachable margin in the app and the number to watch.
