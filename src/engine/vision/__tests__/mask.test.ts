@@ -78,6 +78,81 @@ describe('inkMaskOf', () => {
     expect(m.data[20 * 40 + 20]).toBe(1);
     expect(m.data[5 * 40 + 5]).toBe(0);
   });
+
+  /**
+   * THE S27 DEFECT, in one page.
+   *
+   * A plain intensity histogram counts a large FLAT region once per pixel, so a
+   * region that is neither ink nor page — a grey margin, a shadow, a scan
+   * border — votes in proportion to its AREA. Big enough, and it drags the
+   * threshold across itself and is called ink.
+   *
+   * This is not hypothetical: the owner's own floorplan carries flat grey
+   * letterbox bars at luminance ~198 over 11.1 % of the page, and Otsu's
+   * criterion scored the two rival cuts within 2 % of each other. A 5 % exposure
+   * change flipped which one won, tripled the ink, and the plan was refused as
+   * "not a floorplan". See `docs/ideas.md` Section 13b.
+   *
+   * The fix is to weight each pixel by its local intensity CHANGE: a flat region
+   * has none, so only the boundaries of things vote — which is what a threshold
+   * between ink and page is supposed to be derived from in the first place.
+   */
+  it('does NOT call a large flat mid-tone region ink, however much of the page it covers', () => {
+    const img = page(120, 90, 250);
+    // a margin band of a third tone — neither the ink below nor the page around
+    ink(img, 0, 0, 21, 89, 150);
+    ink(img, 98, 0, 119, 89, 150);
+    // the actual drawing
+    ink(img, 30, 20, 90, 23, 20);
+    ink(img, 30, 60, 90, 63, 20);
+    ink(img, 30, 20, 33, 63, 20);
+
+    const m = inkMaskOf(img);
+    expect(m.data[45 * 120 + 60]).toBe(0); // blank page, between the strokes
+    expect(m.data[21 * 120 + 60]).toBe(1); // a real stroke
+    expect(m.data[45 * 120 + 10]).toBe(0); // INSIDE the left margin band
+    expect(m.data[45 * 120 + 108]).toBe(0); // INSIDE the right margin band
+  });
+
+  /**
+   * The same shape pushed as far as it actually goes, so the working range is
+   * written down rather than assumed.
+   *
+   * At 40 % of the page the mid-tone already outweighs everything the drawing
+   * puts on the paper, and "ink is the minority class" would be no help at all
+   * — a threshold above the band makes the PAPER the minority and the strokes
+   * stop being ink. Gradient weighting still gets it right because a flat band
+   * contributes only its two boundaries however wide it is.
+   *
+   * Measured limit, for the next person: with a drawing this sparse (two
+   * strokes) it holds to 50 % and breaks at 60 %, where the band's own two
+   * boundaries finally outvote the drawing's edges; with five strokes it holds
+   * to at least 77 %. The case this was built for — the owner's grey letterbox
+   * bars — is 11.1 %.
+   */
+  it('still finds the ink when a flat mid-tone covers 40 % of the page', () => {
+    const img = page(120, 90, 250);
+    ink(img, 0, 0, 23, 89, 150);
+    ink(img, 96, 0, 119, 89, 150);
+    ink(img, 32, 15, 87, 18, 20);
+    ink(img, 32, 70, 87, 73, 20);
+
+    const m = inkMaskOf(img);
+    expect(m.data[16 * 120 + 59]).toBe(1); // a stroke
+    expect(m.data[55 * 120 + 59]).toBe(0); // paper between the strokes
+    expect(m.data[45 * 120 + 12]).toBe(0); // inside the flat mid-tone
+  });
+
+  it('falls back to the plain histogram when the page is too faint to have edges', () => {
+    // 4 levels of separation: nothing clears the gradient gate, so the choice
+    // must degrade to exactly what it was before gradient weighting existed —
+    // never to "no ink at all".
+    const faint = page(80, 60, 250);
+    ink(faint, 10, 28, 69, 31, 246);
+    const m = inkMaskOf(faint);
+    expect(m.data[29 * 80 + 40]).toBe(1);
+    expect(m.data[10 * 80 + 40]).toBe(0);
+  });
 });
 
 describe('distanceTo', () => {

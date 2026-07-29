@@ -69,14 +69,129 @@ export function otsuThreshold(hist: Uint32Array, total: number): number {
 }
 
 /**
+ * Minimum local intensity change, as |dx| + |dy| on the blurred page, for a
+ * pixel to vote on where the ink/page threshold goes.
+ *
+ * Calibrated against the enumerated corpus, and the measurement is a PLATEAU
+ * rather than a point: the corpus mean is flat at 95.6 % for every gate from 8
+ * to 24, and the owner's real plan is accepted at every exposure for every gate
+ * from 4 to 56. What bounds it on each side is a different failure:
+ *
+ *   too low    photographic noise clears it, and the weighting degenerates back
+ *              toward the plain histogram it was meant to replace. The corpus's
+ *              noisiest fixtures run at sigma 8, which a 3x3 box blur brings to
+ *              about 2.7, so |dx| + |dy| of pure noise sits near 5-11.
+ *   too high   a genuinely faint drawing stops voting at all. Measured, a plan
+ *              with only 20 levels between ink and paper starves above gate 8 —
+ *              which is what `MIN_EDGE_FRACTION` exists to catch.
+ *
+ * 16 sits above the noise and inside the plateau.
+ */
+const EDGE_GATE = 16;
+
+/**
+ * Below this fraction of the page clearing `EDGE_GATE`, the gradient weighting
+ * has too little to work with and the plain histogram is used instead.
+ *
+ * Measured separation, not a guess: the LOWEST any corpus fixture puts through
+ * the gate is 4.167 % of the page (`no-plan`), the lowest legitimate plan is
+ * 5.059 % (`clean-rect`), and a 20-levels-of-contrast page — the one case where
+ * gradient weighting would otherwise refuse a plan the old code accepted —
+ * measures 0.668 %. 2 % sits between them with better than 2x margin either way.
+ */
+const MIN_EDGE_FRACTION = 0.02;
+
+/**
+ * A histogram in which each pixel votes only if it lies on an intensity CHANGE.
+ *
+ * A plain histogram counts area, so a large flat region votes in proportion to
+ * how much of the page it covers — even though a flat region contains no
+ * information at all about where ink ends and page begins. Blank paper is the
+ * benign case. The malignant one is a third tone that is neither: a grey scan
+ * margin, a shadow, a letterbox bar. Big enough, and it drags the threshold
+ * across itself and is admitted as ink.
+ *
+ * The blur is not cosmetic. Photographic noise puts a gradient on every pixel,
+ * so without it the gate admits nearly everything and the weighting decays back
+ * into the plain histogram — measured, `apartment-photo` fell from 96.5 % to
+ * 89.8 %, through its own floor. A 3x3 box drops noise by about a third while
+ * leaving a real wall edge far above the gate.
+ */
+export function edgeWeightedHistogram(img: GrayImage, gray: Uint8Array): Uint32Array {
+  const { width: w, height: h } = img;
+  const out = new Uint32Array(256);
+  if (w < 3 || h < 3) return out;
+  // Both passes CLAMP at the border rather than skipping it. Leaving the border
+  // ring of `blur` at its initial zero and then differencing across it
+  // manufactures a false edge of ~250 levels around the entire image — measured,
+  // that was the ONLY thing voting on an 80x60 page with 4 levels of contrast
+  // (268 votes, every one of them the border), and it picked a threshold of 127
+  // on a page whose ink and paper are both above 245.
+  const blur = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let s = 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        const yy = y + dy < 0 ? 0 : y + dy >= h ? h - 1 : y + dy;
+        for (let dx = -1; dx <= 1; dx++) {
+          const xx = x + dx < 0 ? 0 : x + dx >= w ? w - 1 : x + dx;
+          s += gray[yy * w + xx];
+        }
+      }
+      blur[y * w + x] = (s / 9) | 0;
+    }
+  }
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      const xm = x === 0 ? i : i - 1;
+      const xp = x === w - 1 ? i : i + 1;
+      const ym = y === 0 ? i : i - w;
+      const yp = y === h - 1 ? i : i + w;
+      const g = Math.abs(blur[xp] - blur[xm]) + Math.abs(blur[yp] - blur[ym]);
+      if (g > EDGE_GATE) out[gray[i]]++;
+    }
+  }
+  return out;
+}
+
+/**
  * Luminance + Otsu -> ink mask. Ink is taken to be the MINORITY class, which is
  * what makes a white-on-dark blueprint work without a separate code path: a
  * plan is mostly page, whichever colour the page is.
+ *
+ * The threshold is chosen on the EDGE-WEIGHTED histogram (see above), because
+ * Otsu on a plain histogram is unstable whenever the page carries a third tone
+ * mass. Its criterion is nearly flat across a wide band on any real page — the
+ * owner's plan scores within 3 % of its optimum for every threshold in
+ * [142, 219] — and where that band spans blank paper the choice inside it does
+ * not matter, but where it spans an 11 %-of-the-page grey margin, one end of the
+ * band gives 4.6 % ink and the other 17.4 %. Two rival optima within 2 % of each
+ * other, and a 5 % exposure change swapping their order, is a coin toss deciding
+ * whether a floorplan is read or refused. Measured: the owner's plan went from
+ * REFUSED at 5 of 11 exposures to accepted at all 11, and the corpus mean rose
+ * 94.57 % -> 95.65 %.
+ *
+ * Two rules that did NOT work, recorded so they are not retried: breaking the
+ * near-tie toward the smaller minority class moved 13 of 24 corpus masks (on a
+ * clean page the criterion is a flat plateau spanning an EMPTY histogram valley,
+ * so plateau noise satisfies any local-maximum test and "least ink" walks into
+ * the anti-aliased edge of the stroke); and picking the emptiest cut within the
+ * band moved 21 of 24.
  */
 export function inkMaskOf(img: GrayImage): Mask {
   const { gray, hist } = luminance(img);
   const n = img.width * img.height;
-  const thresh = otsuThreshold(hist, n);
+  const edges = edgeWeightedHistogram(img, gray);
+  let edgeVotes = 0;
+  for (let t = 0; t < 256; t++) edgeVotes += edges[t];
+  // Starved: a page too faint or too small for the gradient to say anything.
+  // Fall back to the plain histogram, which is exactly the pre-S27 behaviour —
+  // so this can only ever decline to a decision already known to be acceptable.
+  const thresh =
+    edgeVotes < n * MIN_EDGE_FRACTION
+      ? otsuThreshold(hist, n)
+      : otsuThreshold(edges, edgeVotes);
   let darkCount = 0;
   for (let i = 0; i < n; i++) if (gray[i] <= thresh) darkCount++;
   const inkIsDark = darkCount <= n - darkCount;

@@ -585,6 +585,72 @@ export const CORPUS: CorpusEntry[] = [
     spec: OBLIQUE_SURVEY,
   },
   {
+    // Added in S27. Until now EVERY fixture here was drawn with one page tone and
+    // one ink tone, which makes the page bimodal by construction — and a bimodal
+    // page is precisely the case Otsu is built for. So the corpus could not
+    // express the shape that breaks it, and did not: a THIRD tone mass, neither
+    // ink nor paper, large enough to compete for the threshold.
+    //
+    // The owner's own plan has one. Flat grey letterbox bars run down both edges
+    // of their file at luminance ~198 over 11.1 % of the page (verified in the
+    // original 1320x1734 image, not introduced by any resampling), and they made
+    // Otsu's criterion near-tied between a cut BELOW the grey (4.6 % ink) and one
+    // ABOVE it (17.4 % ink) — 175 at 100.00 % against 209 at 98.07 %. A 5 %
+    // exposure change swapped the order, and the plan was refused as "not a
+    // floorplan". See `docs/ideas.md` Section 13b.
+    //
+    // Faithful to the measured tone structure rather than to the guess that
+    // preceded it: poche darkest, dimension annotation LIGHTER than the walls
+    // (the owner's measures 120-173 against walls at 96-103), and the flat margin
+    // between the annotation and the paper.
+    //
+    // Honest about what it does NOT do: this fixture does not reproduce the
+    // VERDICT flip. 540 parameter combinations were swept and none did — a clean
+    // synthetic page survives the flood that a noisy JPEG does not, because its
+    // tone modes are narrow and gamma slides the threshold smoothly instead of
+    // making it jump. What it does pin is the shape, so the corpus can never
+    // again be blind to a page with three tone masses. The flip itself is pinned
+    // in `vision/__tests__/mask.test.ts`, at the level where it actually lives.
+    why: 'A THIRD TONE MASS: a plan with flat grey margins that compete with the ink for the Otsu threshold — the shape that made the owner\'s verdict flip on a 5 % exposure change',
+    expectWalls: 10,
+    spec: {
+      name: 'annotated-margins',
+      width: W,
+      height: H,
+      paper: 246,
+      ink: 26,
+      strokeWidth: 9,
+      walls: [
+        { a: { x: 130, y: 50 }, b: { x: 570, y: 50 }, thickness: 9 },
+        { a: { x: 570, y: 50 }, b: { x: 570, y: 470 }, thickness: 9 },
+        { a: { x: 570, y: 470 }, b: { x: 130, y: 470 }, thickness: 9 },
+        { a: { x: 130, y: 470 }, b: { x: 130, y: 50 }, thickness: 9 },
+        { a: { x: 350, y: 50 }, b: { x: 350, y: 250 }, thickness: 6 },
+        { a: { x: 350, y: 320 }, b: { x: 350, y: 470 }, thickness: 6 },
+        { a: { x: 130, y: 270 }, b: { x: 220, y: 270 }, thickness: 6 },
+        { a: { x: 280, y: 270 }, b: { x: 350, y: 270 }, thickness: 6 },
+        { a: { x: 460, y: 350 }, b: { x: 570, y: 350 }, thickness: 6 },
+        { a: { x: 460, y: 350 }, b: { x: 460, y: 470 }, thickness: 6 },
+      ],
+      blobs: [
+        // the margins: flat, featureless, and 12.3 % of the page between them
+        { kind: 'rect', x: 21, y: 260, w: 43, h: 520, ink: 165 },
+        { kind: 'rect', x: 679, y: 260, w: 43, h: 520, ink: 165 },
+      ],
+      // dimension runs, drawn lighter than the walls they measure
+      speckles: [
+        { x: 150, y: 30, len: 400, size: 7, ink: 150 },
+        { x: 150, y: 492, len: 400, size: 7, ink: 150 },
+        { x: 108, y: 90, len: 340, vertical: true, size: 7, ink: 150 },
+        { x: 592, y: 90, len: 340, vertical: true, size: 7, ink: 150 },
+        { x: 220, y: 210, len: 90, size: 8, ink: 150 },
+        { x: 400, y: 410, len: 90, size: 8, ink: 150 },
+      ],
+      photo: { blur: 1, noise: 4, gradient: 14 },
+      seed: 7,
+    },
+  },
+  {
     why: 'THE NULL CASE: a photo of a table and some text, no floorplan at all. Detection must REFUSE.',
     expectWalls: 0,
     refuse: true,

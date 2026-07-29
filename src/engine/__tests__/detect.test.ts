@@ -14,6 +14,7 @@ import { CORPUS, corpusFixtures, fixtureByName } from './fixtures/floorplan-corp
 import { downscale, rasterize, scalePlan } from './fixtures/floorplan-raster';
 import { scoreDetection } from './fixtures/detect-score';
 import { segLength, headingGap, segHeading } from '../vision/types';
+import { MIN_WALLS } from '../vision/quality';
 
 /** Paint a synthetic floorplan: white page, dark wall strokes. */
 function makePlan(
@@ -195,6 +196,7 @@ const FLOORS: Record<string, number> = {
   'apartment-rotated': 0.8,
   'heavy-poche': 0.95,
   'oblique-survey': 0.7,
+  'annotated-margins': 0.95,
 };
 
 /**
@@ -205,8 +207,17 @@ const FLOORS: Record<string, number> = {
  * headroom. Measured — the 20 pre-S26 legit fixtures mean 0.9556; adding
  * `oblique-survey` (0.7470) takes the 21 to 0.9457. Headroom over 0.92 went
  * 0.0356 -> 0.0257, i.e. room for FOUR more ~0.75 fixtures before S26, THREE
- * now. `docs/ideas.md` Section 13b schedules another low-scoring one, so the
- * next session should expect to re-derive this rather than assume it holds.
+ * now.
+ *
+ * S27 moved it the other way for once. Gradient-weighted thresholding lifted
+ * `apartment-photo` (0.965 -> 1.000), `apartment-skewed` (0.898 -> 0.975),
+ * `apartment-rotated` (0.849 -> 0.866) and `oblique-survey` (0.747 -> 0.766)
+ * while costing `apartment-cluttered` 0.001, taking the 21 to 0.9526; the new
+ * `annotated-margins` scores 1.000 and takes the 22 to **0.9548**. Headroom is
+ * back to 0.0348 — room for about three more ~0.75 fixtures. Note that
+ * `annotated-margins` is NOT held by this floor in any meaningful way (it scores
+ * 100 % on the pre-S27 engine too); what holds it is the ink-mask assertion
+ * below, and the reason is written there.
  */
 const MEAN_FLOOR = 0.92;
 
@@ -274,6 +285,38 @@ describe('the corpus — accuracy', () => {
       const r = results.find((x) => x.f.name === name)!;
       expect(r.d.precision).toBeGreaterThan(0.9);
     }
+  });
+
+  /**
+   * The S27 defect, asserted where it actually shows.
+   *
+   * `annotated-margins` scores 100 % on BOTH the pre-S27 and post-S27 engines,
+   * because the flat margins are fat and `removeThickRegions` deletes them
+   * either way — so the accuracy floor above cannot see this at all, and a
+   * fixture whose only guard is a floor it always clears is decoration.
+   *
+   * What differs is the INK mask, one stage earlier. Measured on this exact
+   * fixture: with the plain intensity histogram the threshold lands at 187 and
+   * **97.1 %** of the margin band is called ink; with the gradient-weighted
+   * histogram it lands below the margin tone and **0.0 %** is. The margin only
+   * fails to matter here because a later stage happens to clean up after it —
+   * on the owner's real photo the same admission cost them the plan.
+   */
+  it('does not call a flat margin band ink, which is what the accuracy score cannot see', () => {
+    const f = fixtureByName('annotated-margins');
+    const mask = inkMask(f.img);
+    const BAND = 43;
+    let band = 0;
+    let inked = 0;
+    for (let y = 0; y < f.img.height; y++) {
+      for (let x = 0; x < f.img.width; x++) {
+        if (x >= BAND && x < f.img.width - BAND) continue;
+        band++;
+        inked += mask[y * f.img.width + x];
+      }
+    }
+    expect(band).toBeGreaterThan(30000);
+    expect(inked / band).toBeLessThan(0.02);
   });
 
   it('makes corners meet', () => {
@@ -383,16 +426,69 @@ describe('sensitivity', () => {
 
   it('...and does NOT rescue a reading that is itself a scatter', () => {
     // The rescue is about the IMAGE, but what gets OFFERED is the user's own
-    // reading — so it has to be worth offering. `oblique-survey` redrawn at 0.7x
-    // and read at 'Careful' produces 12 segments of which not one of the 24
-    // endpoints meets another: structure exactly 0, the same value the null
-    // fixtures score, and 46.4 % accurate against ground truth. Pooling rescued
-    // it until the `structure > 0` condition was added.
-    const entry = CORPUS.find((e) => e.spec.name === 'oblique-survey')!;
-    const small = rasterize(scalePlan(entry.spec, 0.7));
-    const res = detectWalls(small.img, { sensitivity: 0.7 });
-    expect(res.quality.structure).toBe(0);
-    expect(res.quality.refusal).not.toBeNull();
+    // reading — so it has to be worth offering.
+    //
+    // S26 used `oblique-survey` redrawn at 0.7x for this, which then read at
+    // 'Careful' as 12 segments with not one of its 24 endpoints meeting another.
+    // S27's gradient-weighted threshold reads that same drawing better and it is
+    // no longer a scatter (structure 0.000 -> 0.038), so it stopped being a
+    // vehicle for this guard. Searching 1 050 scaled and thinned variants of the
+    // whole corpus turned up NO replacement — which is a good outcome for the
+    // detector and leaves this guard with nothing in the corpus to exercise it.
+    //
+    // So the vehicle is built on purpose. `minSegment` is
+    // `max(12, 0.05 * maxDim / sensitivity)` — 35 px at the default and 50 px at
+    // 'Careful' — so corner connectors 45 px long survive the default and are
+    // dropped at 'Careful'. The result is a plan that genuinely falls apart into
+    // disconnected sticks when the knob is turned down: 11 segments at structure
+    // 0.909 at the default, 5 segments at structure EXACTLY 0 at 'Careful'.
+    //
+    // Verified load-bearing rather than assumed: with the `structure > 0`
+    // condition removed from `detect.ts`, this input is ACCEPTED.
+    const L = 90;
+    const R = 610;
+    const T = 70;
+    const B = 450;
+    const g = 30;
+    const stub = 45;
+    const scatter = rasterize({
+      name: 'knob-scatter',
+      width: 700,
+      height: 520,
+      paper: 246,
+      ink: 26,
+      strokeWidth: 7,
+      walls: [
+        // four long runs that stop short of every corner...
+        { a: { x: L + g, y: T }, b: { x: R - g, y: T } },
+        { a: { x: R, y: T + g }, b: { x: R, y: B - g } },
+        { a: { x: R - g, y: B }, b: { x: L + g, y: B } },
+        { a: { x: L, y: B - g }, b: { x: L, y: T + g } },
+        { a: { x: 350, y: T + g }, b: { x: 350, y: B - g } },
+        // ...and the short connectors that close them, which only the default
+        // sensitivity is willing to keep
+        { a: { x: L + g, y: T }, b: { x: L, y: T + g } },
+        { a: { x: R - g, y: T }, b: { x: R, y: T + g } },
+        { a: { x: R, y: B - g }, b: { x: R - g, y: B } },
+        { a: { x: L, y: B - g }, b: { x: L + g, y: B } },
+        { a: { x: 350, y: T + g }, b: { x: 350 - stub, y: T + g } },
+        { a: { x: 350, y: B - g }, b: { x: 350 + stub, y: B - g } },
+      ],
+      photo: { blur: 1, noise: 3 },
+      seed: 3,
+    });
+
+    const careful = detectWalls(scatter.img, { sensitivity: 0.7 });
+    expect(careful.segments.length).toBeGreaterThanOrEqual(MIN_WALLS);
+    expect(careful.quality.structure).toBe(0);
+    expect(careful.quality.refusal).not.toBeNull();
+
+    // ...and the default reading really would have rescued it, so the assertion
+    // above is about the guard and not about there being nothing to pool.
+    const dflt = detectWalls(scatter.img, { sensitivity: 1 });
+    expect(dflt.segments.length).toBeGreaterThanOrEqual(MIN_WALLS);
+    expect(dflt.quality.structure).toBeGreaterThanOrEqual(0.25);
+    expect(dflt.quality.refusal).toBeNull();
   });
 
   it('...and scores the second reading at ITS OWN corner radius, not the user\'s', () => {
@@ -402,27 +498,37 @@ describe('sensitivity', () => {
     // no-op by corpus coincidence, not by construction (the S19/S22 lesson: the
     // corpus follows the code's guards).
     //
-    // Drawn thin, `minSegment * 0.25` takes over and the radii diverge: measured
-    // 13.57 px at 'Careful' against 9.50 px at the default. At the correct
-    // radius the default reading scores 0.231 and this plan is refused; at the
-    // user's wider radius it scores 0.385 and would be wrongly offered.
-    const base = CORPUS.find((e) => e.spec.name === 'oblique-survey')!.spec;
-    const thin = rasterize({
-      ...base,
-      name: 'oblique-thin',
-      strokeWidth: 2,
-      walls: base.walls.map((w) => ({ ...w, thickness: w.thickness === 10 ? 4 : 2 })),
-    });
-    expect(detectWalls(thin.img, { sensitivity: 0.7 }).quality.refusal).not.toBeNull();
-    // ...and the same drawing one step heavier IS rescued, so the assertion above
+    // Drawn thin, `minSegment * 0.25` takes over and the radii diverge.
+    //
+    // S26's vehicle was a thin `oblique-survey`; S27 reads that well enough that
+    // it is no longer refused at all, so it stopped exercising this. Re-derived
+    // by scanning 1 260 thinned and scaled variants for the case that actually
+    // straddles the threshold: `apartment-cluttered` drawn at stroke 2 and
+    // scaled to 0.85 gives a reference radius of 9.56 px against the user's
+    // 13.66 px, and the reference segments score 0.200 at their OWN radius
+    // against 0.400 at the user's — one side of MIN_STRUCTURE each.
+    //
+    // Verified load-bearing: scored at the user's radius, this input is ACCEPTED.
+    const base = CORPUS.find((e) => e.spec.name === 'apartment-cluttered')!.spec;
+    const thinned = (sw: number, heavy: number) =>
+      rasterize(
+        scalePlan(
+          {
+            ...base,
+            name: `cluttered-thin-${sw}`,
+            strokeWidth: sw,
+            walls: base.walls.map((w) => ({
+              ...w,
+              thickness: (w.thickness ?? 3) > (base.strokeWidth ?? 3) ? heavy : sw,
+            })),
+          },
+          0.85,
+        ),
+      );
+    expect(detectWalls(thinned(2, 3).img, { sensitivity: 0.7 }).quality.refusal).not.toBeNull();
+    // ...and the same drawing one step heavier IS accepted, so the assertion above
     // is about the radius rather than about thin strokes being hopeless.
-    const heavier = rasterize({
-      ...base,
-      name: 'oblique-thin-3',
-      strokeWidth: 3,
-      walls: base.walls.map((w) => ({ ...w, thickness: w.thickness === 10 ? 5 : 3 })),
-    });
-    expect(detectWalls(heavier.img, { sensitivity: 0.7 }).quality.refusal).toBeNull();
+    expect(detectWalls(thinned(3, 4).img, { sensitivity: 0.7 }).quality.refusal).toBeNull();
   });
 
   it('...and the SUPPORT half of that guard is a real implication, not a coincidence', () => {

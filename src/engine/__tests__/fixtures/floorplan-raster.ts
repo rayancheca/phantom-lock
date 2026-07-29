@@ -57,6 +57,8 @@ export interface WallSpec {
   hollow?: boolean;
   /** Exclude from ground truth — for deliberately-unwanted ink (see `decoy`). */
   decoy?: boolean;
+  /** Stroke luminance, overriding the plan's own. See `PlanSpec.ink`. */
+  ink?: number;
 }
 
 export interface BlobSpec {
@@ -70,6 +72,8 @@ export interface BlobSpec {
   rotation?: number;
   /** Outline only, rather than a solid fill. */
   outline?: number;
+  /** Fill luminance, overriding the plan's own. See `PlanSpec.ink`. */
+  ink?: number;
 }
 
 export interface ArcSpec {
@@ -90,6 +94,8 @@ export interface SpeckleSpec {
   vertical?: boolean;
   /** Mark height in px. */
   size?: number;
+  /** Mark luminance, overriding the plan's own. See `PlanSpec.ink`. */
+  ink?: number;
 }
 
 /** Diagonal hatching, as used to fill a wall section or a tiled floor. */
@@ -125,7 +131,18 @@ export interface PlanSpec {
   height: number;
   /** Page luminance, 0-255. */
   paper?: number;
-  /** Stroke luminance, 0-255. */
+  /**
+   * Default stroke luminance, 0-255. Individual walls, blobs and speckles may
+   * override it.
+   *
+   * That per-element override is not decoration. A page with only ONE ink tone
+   * is bimodal by construction, and a bimodal page is exactly the case Otsu is
+   * built for — so until S27 the corpus could not express the shape that breaks
+   * it: a THIRD tone mass, neither ink nor paper, large enough to compete for
+   * the threshold. The owner's own plan has one (flat grey letterbox bars at
+   * ~198 over 11 % of the page), and it is what made their verdict flip under a
+   * 5 % exposure change. See `annotated-margins`.
+   */
   ink?: number;
   /** Default wall thickness, px. */
   strokeWidth?: number;
@@ -532,6 +549,7 @@ export function rasterize(spec: PlanSpec): Fixture {
     const a = warp(wl.a, spec);
     const b = warp(wl.b, spec);
     const t = wl.thickness ?? stroke;
+    const wink = wl.ink ?? ink;
     if (wl.hollow) {
       // Two faces with an empty cavity — the classic cause of double detections.
       const dx = b.x - a.x;
@@ -547,19 +565,20 @@ export function rasterize(spec: PlanSpec): Fixture {
           { x: a.x + nx * off * s, y: a.y + ny * off * s },
           { x: b.x + nx * off * s, y: b.y + ny * off * s },
           face,
-          ink,
+          wink,
         );
       }
     } else {
-      strokeLine(p, a, b, t, ink);
+      strokeLine(p, a, b, t, wink);
     }
   }
 
   for (const b of spec.blobs ?? []) {
     const c = warp({ x: b.x, y: b.y }, spec);
     const rot = (b.rotation ?? 0) + (spec.photo?.rotate ?? 0);
-    if (b.kind === 'circle') fillCircle(p, c.x, c.y, b.w / 2, ink, b.outline);
-    else fillRect(p, c.x, c.y, b.w, b.h, rot, ink, b.outline);
+    const bink = b.ink ?? ink;
+    if (b.kind === 'circle') fillCircle(p, c.x, c.y, b.w / 2, bink, b.outline);
+    else fillRect(p, c.x, c.y, b.w, b.h, rot, bink, b.outline);
   }
 
   for (const a of spec.arcs ?? []) {
@@ -569,7 +588,7 @@ export function rasterize(spec: PlanSpec): Fixture {
 
   for (const s of spec.speckles ?? []) {
     const c = warp({ x: s.x, y: s.y }, spec);
-    drawSpeckle(p, { ...s, x: c.x, y: c.y }, ink, rand);
+    drawSpeckle(p, { ...s, x: c.x, y: c.y }, s.ink ?? ink, rand);
   }
 
   for (const h of spec.hatches ?? []) drawHatch(p, h, ink);
