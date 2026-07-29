@@ -58,7 +58,36 @@ function withinSeg(b1: Vec2, b2: Vec2, p: Vec2): boolean {
  * worse: a 45-degree hypotenuse can hold an entire anti-diagonal of centres, and
  * one measured **92.16 m² for a 40.05 m² triangle**.
  *
- * **Why only `d3`/`d4`, and deliberately NOT `d1`/`d2`.** `d3`/`d4` zero means a
+ * **The taxonomy is complete, which is why this is the textbook predicate rather
+ * than a patch.** `segsCross` implemented *proper* intersection only, so every
+ * *improper* (touching) one leaked, and there are exactly three shapes:
+ *   1. `d3`/`d4` zero — a step ENDPOINT lands on the blocker. The whole-ROW case:
+ *      an entire line of cell centres sits on a wall, so every step across it is
+ *      free. Catastrophic and global.
+ *   2. `d1`/`d2` zero — a blocker ENDPOINT lands on the step. A pinhole at a wall
+ *      end or a doorway jamb (see below — this one is not optional).
+ *   3. all four zero — the step runs collinear INSIDE the wall.
+ * All three are covered by the four `=== 0` branches; verified against a hand
+ * table including "collinear but entirely beyond the wall's end", which must
+ * stay FREE.
+ *
+ * **`d1`/`d2` is not optional, and the first cut of this fix got it wrong.** It
+ * is tempting to handle only `d3`/`d4` and argue that going around a wall's TIP
+ * is legitimate. That reasoning fails on the shape the generator actually builds:
+ * at an entry door the exterior wall splits into two stubs and the door rect's
+ * edges START at exactly the stub ends, so on that cell row THREE blockers each
+ * merely touch the step. None blocks alone; together they seal the wall. The
+ * partial fix left 4 of 300 generated designs still fully unsealed while passing
+ * every other test in `rooms.test.ts` — see the `THE SEAM` fixture, distilled
+ * from `one-bed`/seed 6, which exists specifically to discriminate the two.
+ *
+ * **Over-blocking was the real risk, and it was measured rather than argued.**
+ * Blocking a graze could seal a narrow doorway, and `arrange.ts:599` builds its
+ * hard walkable-containment constraint from this region. The cell GROWS as
+ * `span/158` past ~47 m, so a 0.9 m doorway spans 3.0 cells at an 8 m envelope,
+ * 2.4 at 60 m, 1.6 at 90 m and 1.0 at 140 m — it connects at every one.
+ *
+ * **What `d3`/`d4` versus `d1`/`d2` actually mean.** `d3`/`d4` zero means a
  * cell CENTRE lies on the blocker — that cell is inside the wall, so the step
  * into it must be blocked. `d1`/`d2` zero means a blocker ENDPOINT lies on the
  * step, i.e. the step grazes the wall's TIP, and going around a wall's end is
