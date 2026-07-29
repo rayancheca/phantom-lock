@@ -11,7 +11,7 @@ effort — a small high-value item beats a large one.
 | # | Idea | Priority | Effort |
 |---|---|---|---|
 | 13 | ✅ **Detection refuses the owner's floorplan** — **REFUTED S26** (measured at a resolution the app never uses) | ~~P0~~ done | — |
-| 13b | **Detection's verdict is unstable under exposure** — a 5 % darkening triples the ink via an Otsu jump | **P1 — high** | 1 session |
+| 13b | ✅ **Detection's verdict was unstable under a tone curve** — **DONE S27** (owner 38/138 refusals → 0/138; corpus mean 94.82 % → 95.48 %) | ~~P1~~ done | — |
 | 1 | ✅ **Auto-detect walls accuracy overhaul** — **DONE S22** (52.1 % → 95.6 %, and it refuses) | ~~P0~~ done | — |
 | 2 | ✅ **Grid-loop iteration cap** — **DONE S18** (safety half; slowness half → 2b) | ~~P0~~ done | — |
 | 2b | ✅ **Bound the reflection search** (`bestReflectionDb`) — **DONE S19** (50-room 13.7 s → ~0.5 s) | ~~P1~~ done | — |
@@ -652,7 +652,65 @@ through both of the app's downscales, and asserts the read survives.
 now appends *"Try 'Thorough' to look harder."* when a harder level exists, and says nothing at the top
 level.
 
-### What is still there — the new P1, and it is a better bug than the old one
+### 13b — the tone-curve instability — ✅ **DONE (S27, 2026-07-29)**
+
+**Cause, and it is not the one this section originally proposed.** The instability is not "light
+annotation gets swallowed". The owner's file has flat grey **letterbox bars** down both edges at
+luminance ~198 over **11.1 % of the page** — verified in the original 1320×1734 PNG (far-left and
+far-right pixels both 198, standard deviation 0.0: digital padding, not a photographed surround), so
+not a resampling artifact. That makes the page **trimodal**, and Otsu maximises between-class
+variance under a BIMODAL assumption. Its criterion ends up with two near-tied maxima — 175 at
+100.00 % against 209 at 98.07 % — and which one wins decides whether ink is 4.6 % or 17.4 % of the
+page. Confirmed by controlled substitution: paint the bars out with paper and the discontinuity
+vanishes entirely (26/41 gamma refusals → 0/41); force the threshold back and structure returns to
+exactly 0.500.
+
+**"Exposure" was the wrong word, and the correction is measured rather than pedantic.** Sweeping each
+axis independently over the owner's file: a **gamma curve refuses 26 of 41**, **linear gain across
+±0.3 EV refuses 0 of 46**, and an **additive lift refuses 0 of 41**. Gain preserves tone ratios and
+lift preserves tone differences, so neither can reorder the two optima; only a tone CURVE moves the
+grey mass and the paper by different amounts. Tone curves are what phone pipelines, auto-enhance and
+contrast sliders apply, so the bug was real — but a test that perturbed brightness would have passed
+on the broken engine. Also **S26's claim that JPEG quality 0.49–0.51 shows the same jump is
+REFUTED**: through the real chain the cut is 173 at every quality from 30 to 100 and the plan is
+accepted at all thirteen.
+
+**The fix: choose the threshold on a GRADIENT-WEIGHTED histogram.** A plain histogram counts AREA, so
+a large flat region votes in proportion to how much of the page it covers — even though a flat region
+says nothing about where ink ends and paper begins. Each pixel now votes only if its local intensity
+change (3×3 box blur, then |dx|+|dy|) exceeds `EDGE_GATE` = 16, so a flat band contributes only its
+two boundaries however wide it is. Below `MIN_EDGE_FRACTION` = 2 % of the page clearing the gate the
+plain histogram is used instead, which degrades exactly to the pre-S27 decision.
+
+Measured: the owner's plan goes **38/138 refusals → 0/138** over gamma 0.70–1.60 × 3 UI levels, and
+the corpus mean rises **94.82 % → 95.48 %** over the same 22 fixtures — `apartment-photo`
+0.965→1.000, `apartment-skewed` 0.898→0.975, `oblique-survey` 0.747→0.766, at a cost of 0.001 on
+`apartment-cluttered`. Every per-fixture floor holds and all three nulls still refuse. Confirmed
+end to end by driving the real UI with the owner's actual file: 9 / 15 / 24 walls at 74 / 85 / 92 %,
+identical to S26.
+
+**Three rules that do NOT work, recorded so they are not retried.** Breaking the near-tie toward the
+smaller minority class moved 13 of 24 corpus masks; picking the emptiest cut within the band moved
+21 of 24. Both fail for the same reason — on a clean page the criterion is a flat plateau spanning an
+EMPTY histogram valley, so plateau noise satisfies any local-maximum test and "least ink" walks into
+the anti-aliased edge of the stroke. And a design agent proved the general case: over **6 080
+three-mode histograms**, 1 539 have the CORRECT cut as argmax with a WRONG cut as a near-tied rival
+reaching 100.00 % of it, because the owner's page and its mirror are the same histogram with the
+middle mode's ROLE swapped. **No function of the histogram alone can separate them** — which is
+precisely why the fix uses spatial information the histogram discards.
+
+**Still open, honestly.** Gradient weighting is not universally correct either: it distinguishes a
+flat mass from thin strokes, so a large mid-tone mass that is TEXTURED would still vote. No such case
+is known in the corpus or in the owner's file. See §13c.
+
+### 13c. The adversarial case gradient weighting does not cover — **P3**
+
+The fix rests on "a thing that should be excluded is flat". A large mid-tone region that is heavily
+textured — halftone, dithering, dense hatching over a big area — would clear the gate and vote like
+ink. Nothing measured today exhibits it, and the corpus has no such fixture. Worth a fixture if a
+real image ever shows it; not worth pre-emptive machinery.
+
+### What S26 left, for the record
 
 **The verdict is unstable under invisible capture detail, and the cause is the Otsu threshold.**
 Measured on the owner's real plan through the app chain, applying a gamma curve as a stand-in for a

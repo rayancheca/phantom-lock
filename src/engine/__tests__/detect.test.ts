@@ -258,6 +258,32 @@ const BY_LEVEL = corpusFixtures().map((f) => ({
   reads: UI_LEVELS.map((s) => detectWalls(f.img, { sensitivity: s })),
 }));
 
+/**
+ * The tone-curve sweep, computed ONCE at module scope for the same reason
+ * `RESULTS` and `BY_LEVEL` are: nine `detectWalls` calls inside an `it` pass
+ * plainly under `npm test` and TIME OUT under `npm run test:coverage`, where v8
+ * instrumentation makes the same work several times slower. That is the S18
+ * lesson, and this file has now learned it three times.
+ */
+const TONE_SWEEP = (() => {
+  const f = fixtureByName('scan-letterbox');
+  const gamma = (g: number): GrayImage => {
+    const out = new Uint8ClampedArray(f.img.data.length);
+    for (let i = 0; i < out.length; i += 4) {
+      for (let k = 0; k < 3; k++) out[i + k] = 255 * Math.pow(f.img.data[i + k] / 255, g);
+      out[i + 3] = 255;
+    }
+    return { data: out, width: f.img.width, height: f.img.height };
+  };
+  return [0.9, 0.95, 0.97, 1, 1.02, 1.03, 1.05, 1.08, 1.1].map((g) => {
+    const res = detectWalls(g === 1 ? f.img : gamma(g));
+    const d = scoreDetection(res.quality.refusal ? [] : res.segments, f.truth, {
+      tolerance: Math.max(6, f.strokeWidth),
+    });
+    return { g, refusal: res.quality.refusal, score: d.score };
+  });
+})();
+
 describe('the corpus — accuracy', () => {
   const results = RESULTS;
 
@@ -309,22 +335,9 @@ describe('the corpus — accuracy', () => {
    * would pass on the broken engine.
    */
   it('reads the same plan the same way when the tone curve moves', () => {
-    const f = fixtureByName('scan-letterbox');
-    const gamma = (g: number): GrayImage => {
-      const out = new Uint8ClampedArray(f.img.data.length);
-      for (let i = 0; i < out.length; i += 4) {
-        for (let k = 0; k < 3; k++) out[i + k] = 255 * Math.pow(f.img.data[i + k] / 255, g);
-        out[i + 3] = 255;
-      }
-      return { data: out, width: f.img.width, height: f.img.height };
-    };
-    for (const g of [0.9, 0.95, 0.97, 1, 1.02, 1.03, 1.05, 1.08, 1.1]) {
-      const res = detectWalls(g === 1 ? f.img : gamma(g));
-      const d = scoreDetection(res.quality.refusal ? [] : res.segments, f.truth, {
-        tolerance: Math.max(6, f.strokeWidth),
-      });
-      expect(`g=${g}: ${res.quality.refusal ?? 'ok'}`).toBe(`g=${g}: ok`);
-      expect(`g=${g}: score ${d.score >= 0.9}`).toBe(`g=${g}: score true`);
+    for (const { g, refusal, score } of TONE_SWEEP) {
+      expect(`g=${g}: ${refusal ?? 'ok'}`).toBe(`g=${g}: ok`);
+      expect(`g=${g}: score ${score >= 0.9}`).toBe(`g=${g}: score true`);
     }
   });
 

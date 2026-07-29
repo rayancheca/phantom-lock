@@ -2382,3 +2382,106 @@ underlay record → `detectWallsFromUnderlay`, then the real Auto-detect button 
 the cause is upstream of everything this session touched. The owner's plan is accepted today with a
 **one-junction margin at Careful** (structure 0.278; 5 of 18 endpoints joined, and 4 of 18 = 0.222 would
 refuse), which is the tightest reachable margin in the app and the number to watch.
+
+---
+
+## Session 27 — 2026-07-29 — The threshold was decided by flat area (`docs/ideas.md` §13b)
+
+**§13b is closed, and the cause is one level deeper than the section described.** It was written up as
+"a 5 % darkening triples the ink". Both halves of that needed correcting.
+
+**What it actually is.** The owner's file carries flat grey **letterbox bars** down both edges at
+luminance ~198 over **11.1 % of the page** — verified in the original 1320×1734 PNG (far-left and
+far-right pixels both 198 at standard deviation 0.0: digital padding, not a photographed surround). That
+makes the page trimodal, and Otsu maximises between-class variance under a BIMODAL assumption, so its
+criterion ends up with two near-tied maxima: **175 at 100.00 % against 209 at 98.07 %**. One gives 4.6 %
+ink, the other 17.4 %. Confirmed by controlled substitution — paint the bars out and the discontinuity
+vanishes entirely (26/41 gamma refusals → 0/41); force the threshold back and structure returns to
+exactly 0.500.
+
+**"Exposure" was the wrong word, and the correction is measured rather than pedantic.** Sweeping each
+axis independently over the owner's file: a gamma curve refuses **26 of 41**, linear gain across ±0.3 EV
+refuses **0 of 46**, an additive lift refuses **0 of 41**. Gain preserves tone ratios and lift preserves
+tone differences, so neither can reorder two near-tied optima; only a tone CURVE moves two modes by
+different amounts. The consequence is not semantic: the obvious regression test — perturb brightness —
+would have passed on the broken engine. S26's companion claim that JPEG quality 0.49–0.51 shows the same
+jump is also **refuted**: through the real chain the cut is 173 at every quality from 30 to 100.
+
+**The fix.** `inkMaskOf` chooses its threshold on a **gradient-weighted histogram**: 3×3 box blur, then
+|dx| + |dy| central differences, and a pixel votes only if that clears `EDGE_GATE` = 16 — so a flat band
+contributes only its two boundaries however much of the page it covers. Below `MIN_EDGE_FRACTION` = 2 %
+of the page clearing the gate it falls back to the plain histogram, which is exactly the pre-S27
+decision. A plain histogram counts AREA; area is the wrong vote for "where does ink end?".
+
+**Three rules that do NOT work, measured and recorded in the code.** Breaking the near-tie toward the
+smaller minority class moved **13 of 24** corpus masks; picking the emptiest cut within the band moved
+**21 of 24**. Both fail because on a clean page the criterion is a flat plateau spanning an EMPTY
+histogram valley, so plateau noise satisfies any local-maximum test. And a design agent proved the
+general case: over **6 080 three-mode histograms, 1 539** have the correct cut as argmax and a wrong cut
+as a near-tied rival reaching **100.00 %** of it, because a page and its mirror are the same histogram
+with the middle mode's ROLE swapped. No function of the histogram alone can separate them — which is
+exactly why the fix uses spatial information the histogram discards.
+
+### Evidence
+
+**Agents spawned (8 + 4).** Design workflow: `threshold-rule` (proved the impossibility result;
+proposed a two-reading alternative, byte-identical on the corpus — not adopted, see below) ·
+`downstream` (bars never reach the wallMask; fixing the threshold IS sufficient) · `skeptic`
+(CONFIRMED the diagnosis by controlled substitution and forced threshold; REFUTED the "exposure"
+framing and S26's JPEG claim) · `fixture` (re-derived the `ink?:` byte-identity proof independently,
+including against the version the main thread had already landed; built the fixture that actually
+reproduces the flip). Plus four verifiers, one per proposal. Then a 4-lens self-review over the diff.
+
+**Adjudicated, not accepted.** The skeptic's framing refutation was re-measured by the main thread
+before any wording changed (gamma 26/41, gain 0/46, lift 0/41 — reproduced exactly). The
+`threshold-rule` agent's two-reading design was NOT adopted: it is byte-identical on the corpus where
+the shipped fix *improves* it, and its impossibility result argues for changing the histogram rather
+than reading it twice. The main thread's own first two candidate rules were refuted by its own
+measurements before any agent reported.
+
+**Before/after test count: 1388 → 1393.** No test skipped, `.only`'d or weakened. Two of S26's negative
+controls FAILED on the new engine — because detection improved on the degraded inputs they used — and
+were **re-derived**, not relaxed: a search over 1 050 and 1 260 scaled/thinned variants found no
+replacement in the corpus, so one vehicle was constructed on purpose and both were proven load-bearing
+by disabling the guard they protect and watching the verdict flip.
+
+**Gate (literal tails).**
+
+```
+> eslint .
+(no output — 0 problems)
+
+ Test Files  67 passed (67)
+      Tests  1393 passed (1393)
+   Duration  11.71s
+
+dist/index.html                   1.31 kB │ gzip:   0.63 kB
+dist/assets/index-DL95iJRY.css   51.55 kB │ gzip:   9.56 kB
+dist/assets/index-CF22zYkB.js   480.36 kB │ gzip: 156.51 kB
+✓ built in 516ms
+```
+
+**Live verification: RUN.** Fresh headless-Chrome profile, the owner's real plan fed through the app's
+own file input so it travels `buildUnderlay` → the underlay record → `detectWallsFromUnderlay` → the
+real `DetectionProposalCard`. Result **9 / 15 / 24 walls at 74 / 85 / 92 %** — identical to S26, i.e. no
+regression on the owner's own plan through the real product path. Screenshots in
+`docs/sessions/S27/shots/` (gitignored). ONE browser, as always.
+
+**Acceptance, bullet by bullet.**
+- *A fixture that reproduces the shape and pins the discontinuity* — **met.** `scan-letterbox`. On the
+  pre-S27 engine it reads perfectly at gamma 1.00–1.02 (10 walls, structure 0.750, score 100 %) and is
+  REFUSED from 1.03 (24 walls, structure 0.125, score 0 %); post-S27 it holds 10 walls and 95–100 % at
+  every step from 0.90 to 1.10. Enabled by per-element `ink?:` on `WallSpec`/`BlobSpec`/`SpeckleSpec`,
+  proven byte-identical on all 24 pre-existing fixtures.
+- *The owner's verdict stable across ±10 %* — **exceeded.** 0 refusals over gamma 0.70–1.60 × 3 UI
+  levels (138 readings), against 38 before.
+- *All nulls still refused* — **met**, all three, at every level.
+- *Corpus mean floor held, headroom stated* — **met and improved.** 94.82 % → **95.48 %** over the same
+  22 fixtures against a 0.92 floor; headroom 0.0257 → **0.0348**, about three more ~0.75 fixtures.
+
+**Left open, honestly.** Gradient weighting distinguishes a flat mass from thin strokes, so a large
+mid-tone mass that is heavily TEXTURED would still vote like ink. Nothing in the corpus or the owner's
+file exhibits it; filed as §13c (P3) rather than pre-empted. The `scalePlan` annotation-stroke-width gap
+(`drawSpeckle`'s hardcoded 1.2 px, `ArcSpec.thickness`'s 1.4) is still open and deliberately NOT bundled
+here — an agent measured that fixing it moves `apartment-annotated` at 2.5× from 99.7 % to 91.7 %, which
+is a resolution-test number and must not ride along inside a byte-identity-preserving change.
