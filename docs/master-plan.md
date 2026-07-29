@@ -2170,3 +2170,84 @@ its own golden and was deliberately not smuggled into a unit-fix commit.
 **Audit result:** `shell.ts` was the ONLY site in the tree writing degrees into a radians field. Every
 other `* 180 / Math.PI` is a display conversion, and both UI writers (`InspectorPanel.tsx:428`,
 `UnderlayCard.tsx:82`) convert back. `swingDeg = 90` is genuinely degrees per the type and is untouched.
+
+
+---
+
+## Session 25 — 2026-07-29 — `regionOf` walked through walls (`docs/ideas.md` §12b)
+
+**The bug.** `rooms.ts` `segsCross` implemented **proper** segment intersection only
+(`d1*d2 < 0 && d3*d4 < 0`), which is correct exactly when all four determinants are non-zero. Every
+**improper** (touching) intersection leaked — and zero is not an accident here, it is manufactured by
+the app's own geometry: the flood-fill grid origin is `sceneBounds().min − cell`, `sceneBounds` reads
+door rect CORNERS, and an ordinary door's `h = 0.1` puts `min.y` at −0.05, landing a whole cell-centre
+ROW on a wall metres away.
+
+**Measured**, 8 archetypes × seeds 0–59 = 300 multi-room designs: fully unsealed **19 → 0**, below
+1.4× **28 → 0**. A minimal 8×5.5 room with one door read **54.81 m² → 43.74 m²** (true 44.00; the
+remainder is sub-cell fringe). **Skewed walls were worse, not exempt** — a 45° hypotenuse holds a whole
+anti-diagonal of centres, measured **92.16 m² for a 40.05 m² triangle**. That is the case that matters
+for the owner's real floorplan, which is almost entirely non-axis-aligned.
+
+**The half-fix trap.** The obvious repair handles only `d3`/`d4` (a cell CENTRE on the blocker) and
+argues `d1`/`d2` (a blocker ENDPOINT on the step) should stay free because going around a wall's tip is
+legitimate. That fails on the shape the generator builds: at an entry door the exterior wall splits into
+two stubs and the door rect's edges START at the stub ends, so on that cell row THREE blockers each
+merely TOUCH — none blocks alone, together they seal the wall, and the fill threads the seam. The
+partial fix left **4 of 300** designs unsealed while passing all 22 other tests.
+
+### Evidence block
+
+**Agents spawned (6).** Impact workflow: `understand:consumers` + `understand:degeneracy` (both
+completed and independently confirmed the three-shape taxonomy); its design phase ran long and was
+**stopped** — I had already made and measured that decision, so the remaining value was the skeptic.
+Self-review workflow (3): `review:over-block` ISSUES_FOUND · `review:consumers` ISSUES_FOUND ·
+`review:silent-failure` **BLOCKING**.
+
+**Findings adjudicated against the tree myself — 1 confirmed, 2 refuted.**
+- **CONFIRMED (HIGH, found independently by two agents):** a seat within 0.15 m of a grid-aligned wall
+  collapsed its region to a single 0.09 m² cell, because the new predicate blocks the step OUT of the
+  seed cell as well as into it. 640 of 17 600 interior seat positions on the 0.05 m snap grid.
+  `optimize.ts:265` has no `area > 2` guard, so it surfaced as "Suggest placement" returning ZERO
+  speakers. **Fixed** by nudging the seed in `regionOf` (not in `segsCross`, which would reopen the
+  leak), with the exact-tie case resolved by running both fills and keeping the larger — without that a
+  seat dragged precisely onto the centreline picked the strip OUTSIDE the building (8.64 m² vs 43.74).
+- **REFUTED (CRITICAL):** "the `=== 0` gate is unsound; at H = 4.0 the determinant is one ulp off and
+  the leak reproduces". The arithmetic is right, the conclusion is not — a non-zero determinant with the
+  correct sign is what the strict test handles, and H = 4.0/3.7/6.1 are all sealed at 0.35/0.5/0.8 m
+  beyond the wall. The evidence offered (`contains(4, 4.1) === true`) is half-cell quantisation.
+- **REFUTED (CRITICAL):** "34 % of import-legal coordinate offsets reopen the leak". Across 41 offsets
+  to 100 km, `contains(0.5 m beyond the wall)` is false at **every** one; the area moving 43.74 → 46.17
+  is one extra boundary ROW (2.43 m²).
+
+**Also fixed from the review (MEDIUM):** the module comment still described the REJECTED partial fix and
+contradicted the code twenty lines below it. In this file the comment is the specification, so a future
+session would have reverted to the predicate that leaves 4 of 300 unsealed.
+
+**Negative-control ladder** (pinned in the suite): strict → **5 of 23 fail** · partial (`d3`/`d4` only)
+→ **1 fails** (`THE SEAM`, distilled from `one-bed`/seed 6) · full → **all pass**.
+
+**Over-blocking measured, not argued.** Blocking a graze could seal a narrow doorway, and `arrange.ts:599`
+builds its hard walkable-containment constraint from this region. The cell grows as `span/158` past ~47 m,
+so a 0.9 m doorway spans 3.0 cells at 8 m, 2.4 at 60 m, 1.6 at 90 m and 1.0 at 140 m — it connects at
+every one. The `consumers` reviewer independently ran the real `suggestPlacement`/`arrangeFurniture` over
+480 designs: speaker counts identical everywhere (1868/1868, 3746/3746, 1920/1920), zero zones lost, and
+where whole-house positions moved it was a CORRECTION (65/1200 speakers previously landed outside their
+assigned room; 0/1200 after).
+
+**Test count 1356 → 1365** (+9). Nothing skipped or weakened.
+
+**Gate (literal tails).** `npx eslint .` → 0 problems. `npm test` → `Test Files 67 passed (67) / Tests
+1365 passed (1365)`. `npm run build` → `dist/assets/index-E8D3okWk.js 479.06 kB │ gzip: 155.95 kB`, CSS
+`51.55 kB │ gzip: 9.56 kB` unchanged, HTML `1.31 kB`.
+
+**Live verification: NOT run, stated rather than skipped.** This is a pure engine predicate with no UI
+surface; the deterministic evidence (a 300-design corpus, a three-way negative-control ladder, and a
+doorway-vs-cell sweep across four envelope scales) is strictly stronger than a screenshot. The one
+user-visible consequence — "Suggest placement" returning zero speakers — is now covered by a unit test
+that seeds against the wall.
+
+**Known, not fixed:** `sameRegion` has **no production caller** (definition plus two test assertions
+only), so any "consumers verified" claim about it is vacuous. Its `dist(p, q) < CELL` short-circuit also
+hardcodes `CELL` while `regionOf` grows the cell past ~47 m spans. Recorded for a future cleanup rather
+than deleted in a bug-fix commit.
