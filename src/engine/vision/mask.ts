@@ -320,6 +320,18 @@ export function inkThresholds(img: GrayImage): InkThresholds {
   // handful of votes as a candidate would be offering noise, and `otsuThreshold`
   // on ZERO votes does not even return noise, it returns its 127 initialiser.
   //
+  // ⚠️ THIS IS THE ONE PLACE THE CANDIDATE SET IS NOT A UNION, and it is worth
+  // stating plainly because everything else in S28 rests on that union being
+  // total. A starved page is read by the plain rule ALONE — i.e. by the pre-S27
+  // engine, with S27's rule fully disarmed and no fallback — so on that class of
+  // image the third-tone-mass defect S27 exists to fix is re-armed. It is a
+  // documentation point rather than a live one: the symmetric version (emit
+  // `[plain, grad]` when starved) was built and measured over 13 starved images
+  // x 3 UI levels and is behaviourally INERT — 0 legitimate plans rescued, 0
+  // new nulls leaked — because a starved page's gradient cut is derived from
+  // too few votes to differ usefully. Revisit if a real starved page ever turns
+  // up carrying a third tone mass.
+  //
   // A zero-pixel image divides 0 by 0, so `edgeDensity` is NaN and `NaN < x` is
   // false — not starved. That is DELIBERATELY the same answer the area rule gave
   // (`0 < 0 * 0.02` is also false) and it costs nothing either way: with no

@@ -11,8 +11,9 @@ effort — a small high-value item beats a large one.
 | # | Idea | Priority | Effort |
 |---|---|---|---|
 | 13 | ✅ **Detection refuses the owner's floorplan** — **REFUTED S26** (measured at a resolution the app never uses) | ~~P0~~ done | — |
-| 13d | **S27's fix has a MIRROR regression** — thin dark linework deletes thick light walls; a 10-wall plan goes 100 % → REFUSED. **S27 did NOT land because of this.** | **P0** | ½ session |
-| 13b | ⏸ **Detection's verdict was unstable under a tone curve** — fixed on branch `session-27-detect-exposure` (owner 38/138 → 0/138; corpus 94.82 % → 95.48 %) but **UNLANDED**, see §13d | P1 | — |
+| 13d | ✅ **S27's fix had a MIRROR regression** — **DONE S28** (both threshold rules kept as candidates; polarity case REFUSED → 14/16/26 walls live) | ~~P0~~ done | — |
+| 13b | ✅ **Detection's verdict was unstable under a tone curve** — **DONE S27, LANDED S28** (owner 38/138 → 0/138; corpus 94.82 % → 95.48 %) | ~~P1~~ done | — |
+| 13e | **The refusal gates accept images with no floorplan** — a page of furniture OUTLINES is offered 27/27 at confidence 1.00. Pre-existing on `main`; no threshold rule can reach it. | **P1** | ½–1 session |
 | 1 | ✅ **Auto-detect walls accuracy overhaul** — **DONE S22** (52.1 % → 95.6 %, and it refuses) | ~~P0~~ done | — |
 | 2 | ✅ **Grid-loop iteration cap** — **DONE S18** (safety half; slowness half → 2b) | ~~P0~~ done | — |
 | 2b | ✅ **Bound the reflection search** (`bestReflectionDb`) — **DONE S19** (50-room 13.7 s → ~0.5 s) | ~~P1~~ done | — |
@@ -704,7 +705,88 @@ precisely why the fix uses spatial information the histogram discards.
 flat mass from thin strokes, so a large mid-tone mass that is TEXTURED would still vote. No such case
 is known in the corpus or in the owner's file. See §13c.
 
-### 13d. S27's fix has a MIRROR regression — **P0, and it is why S27 did not land**
+### 13d. S27's fix has a MIRROR regression — ✅ **DONE (S28, 2026-07-30)**
+
+**Fixed by keeping BOTH threshold rules as candidates.** `vision/mask.ts` `inkThresholds` returns the
+gradient-weighted cut and the plain cut, best guess first and de-duplicated; `detect.ts` `detectWalls`
+runs the pipeline at the first and re-runs at the second ONLY when the first reading is refused.
+Live-verified through the real UI on a fresh Chrome profile: the polarity fixture reads **14 / 16 / 26
+walls at 85 / 83 / 92 %** where the S27 build produces **no proposal card at all**, and the owner's
+real plan is unchanged at **9 / 15 / 24 walls at 74 / 85 / 92 %**, identical to S26 and S27.
+
+Three things are worth carrying forward, because each corrected a plausible wrong answer:
+
+**The null cost is ZERO against what users actually have, and the reason is a theorem rather than a
+sweep.** A second candidate is a second chance for a null to be accepted, so this was the session's
+main risk. The acceptance set is exactly `accept(gradient) ∪ accept(plain)` — verified over 591
+readings with 0 violations — and **S27 never landed, so `main` IS the plain-histogram engine**: the
+challenger is `main`'s own rule. Measured over 504 null readings, new-vs-`main` is **61 for the S27
+engine alone and 61 for the candidate set**. So the honest statement is not "this costs leaks"; it is
+that S27 closed 61 null readings as a *side effect* of swapping the rule and paid for them with this
+regression, and S28 hands them back to buy the regression off. An S27 design agent's claim of "0 leaks
+over 684 readings" for this shape was a claim about its 684 constructions, not about the rule, and
+re-pointing another agent's polarity-repainted nulls at the same engine broke it immediately.
+
+**No challenger guard survived measurement, and the one first proposed was a data-loss bug.** Round 1
+recommended a challenger-only floor `CHALLENGER_MIN_STRUCTURE = 0.45` on a claimed 1.49× margin. Over
+an *enumerated* protected set of 391 legitimate challenger rescues the structures run down to **0.214**
+(a 57 %-correct read of a poche plan photographed 8° off-square) while the attack family reaches
+**0.346** — the populations overlap, so no floor separates them at any value. 0.45 would refuse **87 of
+the 391**, the worst an 88 %-correct read, leave this session's own `screened-poche` fixture (0.464)
+0.014 above a refusal cliff, and *still* not close the worst attack (structure 0.667, above every
+legitimate rescue). Two further guards were measured and dropped: "the challenger must produce
+≥ `MIN_WALLS`" is provably vacuous (`assessDetection` already refuses below it), and "the challenger's
+own structure must clear `MIN_STRUCTURE`" costs a real 57 %-correct read and closes 0 of the 61.
+
+**`screened-poche` is `scan-letterbox`'s mirror, and the pair is the argument.** On `scan-letterbox`
+the correct cut admits LESS ink (6.7 % against 31.9 %) and comes from the EDGE histogram; on
+`screened-poche` it admits MORE (16.3 % against 0.7 %) and comes from the PLAIN one. So "always weight
+by gradient", "always use the plain histogram", "prefer the candidate admitting less ink" and "prefer
+the one admitting more" each break exactly one of the two — which is why the choice has to be made
+downstream, on whether the reading is a floorplan. The fixture is load-bearing on two assertions: on
+the S27 engine it scores **0.000** against a floor of 0.78, and it drags the corpus mean to **0.9132**
+against `MEAN_FLOOR` 0.92.
+
+Evidence: `docs/sessions/S28/bench/` (reproduction, adjudication, negative control) and
+`docs/sessions/S28/shots/`.
+
+### 13e. The refusal gates accept images with no floorplan — **P1, pre-existing, and not reachable from the threshold**
+
+Surfaced while censusing S28's null cost, and it is **older and larger than anything S28 touched** —
+`main`, the S27 engine and the S28 engine accept these identically, so no threshold rule can reach
+them. They live in `vision/quality.ts`.
+
+- **A page of thin furniture OUTLINES** — four rectangles, no floorplan — is offered in **27/27**
+  readings (stroke {3,5,7} × tone {26,90,150} × 3 UI levels) at structure up to **1.000** and
+  confidence **1.00**. A rectangle's corners meet, and `structureScore` measures exactly that.
+- **A null whose two tone populations EACH form joined corners** (a light thick shelf run plus a thin
+  dark one) leaks **27/27** on all three engines, up to 9 walls at structure 0.813, confidence 1.00.
+- `no-plan-lines` **repainted in a light-ink palette** measures structure 0.261–0.346 with support
+  1.000 and total length 6.5–6.8× maxDim — every feature measured sits inside the legitimate range,
+  and a rotated poche plan is indistinguishable from it.
+- The **worst single offer** found is `no-plan-lines` + grey bars at luminance 120 over 20 % of the
+  page at gamma 0.70: **13 walls at structure 0.846 and confidence 1.00**, at both Careful and
+  Thorough. Note this one is INCUMBENT-routed, i.e. present on the S27 engine as well — an earlier
+  draft of this section named a 3-wall / 0.667 / 93 % case, which is only the worst *challenger*-routed
+  leak and understates the user-facing harm by 4–6× in wall count.
+
+The severity split is worth keeping: censused over 124 constructions × 3 levels, the **86 pre-existing**
+accepted cells have median structure 0.750 / confidence 0.975 and **52 of 86 reach confidence ≥ 0.90**,
+while the cells S28 hands back are the quiet kind (median 0.318 / 0.759, 1 of 19 at ≥ 0.90). The loud
+holes are the old ones.
+
+**Do not chase this by moving `MIN_STRUCTURE`.** An incumbent-side floor was swept and its very first
+step, 0.28, already refuses **24 readings of the owner's own plan** (which reads at incumbent structure
+0.273–0.300 at 'Careful'). What is needed is a signal `structure` does not have — S26 already recorded
+that `support` and `explained` cannot separate anything, because both are measured against the mask the
+pipeline itself produced. Candidates worth measuring: whether the segments ENCLOSE regions
+(`rooms.ts` already flood-fills), the ratio of enclosed area to total length, or whether the graph has
+cycles at building scale rather than furniture scale.
+
+**Acceptance:** the furniture-outline page and the two-tone shelf page become null fixtures · both
+refused · no legitimate corpus fixture refused · the owner's plan unchanged at 9/15/24.
+
+### 13d-original. The mirror regression, as first written
 
 **Confirmed by the S27 self-review and independently reproduced by the main thread.** Gradient
 weighting scales a tone's weight in the histogram by its perimeter-to-area ratio — i.e. by
@@ -735,14 +817,16 @@ containing ten perfectly clear straight walls. `detectWallsFromUnderlay` returns
 refusal, so they get nothing plus a false explanation blaming their drawing. S26's lazy second reading
 cannot rescue it, because the threshold does not depend on `sensitivity` at all.
 
-**The remedy is already designed and measured.** Do not replace the plain threshold — make the
-gradient-weighted one an additional CANDIDATE. `otsuCandidates` returns the argmax plus the near-tied
-rival; `detectWalls` reads at each and keeps the reading `assessDetection` prefers. An S27 design
-agent measured that shape as byte-identical on all 24 corpus fixtures at all three UI levels, and it
-took the owner's plan from 38/138 refusals to 0/138. Because it never *removes* a candidate it cannot
-produce this regression. Its full patch is in the S27 workflow journal.
+**The remedy as S27 wrote it, and how S28 changed it.** S27 proposed `otsuCandidates` — the argmax of
+the PLAIN histogram plus its near-tied rival. That patch could not be pasted: an S27 skeptic proved it
+**silently reverts the gradient fix** when applied on top of it, because its `detectWalls` computes its
+own plain-histogram candidates and never calls `inkMaskOf`, leaving `edgeWeightedHistogram` dead on the
+detection path while `tsc` and `lint` stay clean and the owner metric still reads 0/138. S28 kept the
+idea and changed the candidate set to `{gradient-weighted, plain}` — the two RULES, not two peaks of
+one rule — which is what makes it a fix rather than a swap. See §13d above for what landed.
 
-Reproduction: `docs/sessions/S27/bench/CRITICAL-polarity.txt`.
+Reproduction: `docs/sessions/S27/bench/CRITICAL-polarity.txt` and
+`docs/sessions/S28/bench/polarity-repro.txt`.
 
 ### 13c. The adversarial case gradient weighting does not cover — **P3, and measured**
 

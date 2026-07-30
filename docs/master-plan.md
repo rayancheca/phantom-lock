@@ -2485,3 +2485,82 @@ file exhibits it; filed as §13c (P3) rather than pre-empted. The `scalePlan` an
 (`drawSpeckle`'s hardcoded 1.2 px, `ArcSpec.thickness`'s 1.4) is still open and deliberately NOT bundled
 here — an agent measured that fixing it moves `apartment-annotated` at 2.5× from 99.7 % to 91.7 %, which
 is a resolution-test number and must not ride along inside a byte-identity-preserving change.
+
+---
+
+## Session 28 — 2026-07-30 — Read the page at BOTH threshold rules (`docs/ideas.md` §13d)
+
+**Branched from `session-27-detect-exposure`, not from `main`** — the decision the kickoff left open.
+S27's work is measured and correct as far as it goes, and the §13d remedy *adds* a candidate rather
+than replacing one, so the gradient histogram, the `scan-letterbox` fixture and the tone-curve sweep
+all survive intact. Landing S28 therefore lands S27 with it, and `main` goes from the pre-S27 engine
+to both.
+
+### The P0, reproduced before anything was designed
+
+Gradient weighting scales a tone's vote by roughly **1/thickness**. It demotes a flat mass, which is
+what S27 wanted, and it equally demotes THICK LIGHT WALLS while amplifying THIN DARK LINES. On a
+plotted sheet with screened poché under hairline annotation — an ordinary drafting convention — every
+wall lands on the paper side of the cut. Reproduced with an independent construction (10 walls at
+thickness 14 / ink 175, plus N thin thickness-3 ink-26 lines, five seeds), S27 against a pre-S27 copy:
+
+| thin dark lines | pre-S27 | S27 branch |
+|---|---|---|
+| 0–2 | ok, 76–100 % | ok, 76–100 % |
+| 4 | ok, 57–73 % | **REFUSED, structure 0.000 (5/5 seeds)** |
+| 8 | ok, 50–62 % | **REFUSED (5/5 seeds)** |
+
+### What shipped
+
+`vision/mask.ts` `inkThresholds(img)` returns `{gray, thresholds, starved, edgeVotes, edgeDensity}` —
+the gradient-weighted cut and the plain cut, best guess first, de-duplicated, at most two.
+`detect.ts` `detectWalls` runs `pipelineAt` at candidate 0 and re-runs at candidate 1 ONLY when the
+first reading is refused. `DetectionResult.ink` records which cut answered.
+`MIN_EDGE_FRACTION` → `MIN_EDGE_DENSITY` (votes per unit page PERIMETER, not a fraction of AREA).
+New corpus fixture `screened-poche`.
+
+### Three things that corrected a plausible wrong answer
+
+**The kickoff's recommended patch could not be pasted.** Reading the S27 workflow journal rather than
+the summary of it: an S27 skeptic had proved that patch *silently reverts the gradient fix* when
+applied on top of it — its `detectWalls` computes its own plain-histogram candidates and never calls
+`inkMaskOf`, so `edgeWeightedHistogram` becomes dead code on the detection path while `tsc` and
+`lint` stay clean and the owner metric still reads 0/138. The candidate set here is the two RULES,
+not two peaks of one rule.
+
+**"0 leaks over 684 readings" was refuted by measurement.** A design agent reported that for exactly
+the shipped shape. The acceptance set is `accept(gradient) ∪ accept(plain)` — a UNION, so it can only
+ADD acceptances — and re-pointing a different agent's polarity-repainted nulls at the same engine
+found two leaks immediately (23 walls at structure 0.261; 4 at 0.250). Re-framed against what
+actually shipped: **S27 never landed, so `main` IS the plain rule and the challenger is `main`'s own
+engine.** Over 504 null readings, new-vs-`main` is **61 for the S27 engine alone and 61 for the
+candidate set** — new null acceptances attributable to this fix, **0**.
+
+**No challenger guard survived measurement.** Round 1 proposed `CHALLENGER_MIN_STRUCTURE = 0.45` on a
+claimed 1.49× margin. Against an enumerated protected set of 391 legitimate rescues the structures run
+to **0.214** while attacks reach **0.346** — the populations overlap. 0.45 would refuse **87 of 391**
+(worst: an 88 %-correct read), leave `screened-poche` (0.464) 0.014 above a refusal cliff, and still
+miss the worst attack (0.667). Two more guards were measured and dropped: "challenger ≥ `MIN_WALLS`"
+is provably vacuous, and "challenger's own structure ≥ `MIN_STRUCTURE`" costs a real 57 %-correct read
+and closes 0 of the 61.
+
+### Evidence
+
+- **Gates**: `npm test` 1393 → **1404**; `npm run build` **481.38 kB / 156.84 kB gz** (+1.01 / +0.33);
+  `npm run lint` clean; `git ls-files --others --exclude-standard src/` empty.
+- **Live, real UI, fresh Chrome profile** — owner's real plan **9 / 15 / 24 walls at 74 / 85 / 92 %**,
+  identical to S26 and S27. The polarity fixture: **14 / 16 / 26 walls at 85 / 83 / 92 %** on the fix,
+  and **no proposal card at all** on a build of the S27 tree. Shots in `docs/sessions/S28/shots/`.
+- **Corpus**: 22 pre-existing legitimate fixtures byte-identical at all three UI levels; mean 0.9548
+  (22) → **0.9497** (23) against `MEAN_FLOOR` 0.92.
+- **The fixture is load-bearing twice**: on the S27 engine `screened-poche` scores **0.000** against
+  its 0.78 floor AND drags the mean to **0.9132** against the 0.92 floor.
+
+### Left open, honestly
+
+**§13e is the new P1 and it is older than either session**: the refusal gates accept images with no
+floorplan. A page of four thin furniture OUTLINES is offered **27/27** readings at structure up to
+1.000 and confidence 1.00 — identically by `main`, by S27 and by S28, so no threshold rule can reach
+it. An incumbent-side structure floor is not the answer (its first step, 0.28, already refuses 24
+readings of the owner's own plan). Also still open: the `scalePlan` annotation-stroke gap (§2d of the
+S28 kickoff), and `npm run test:coverage` is still not clean.

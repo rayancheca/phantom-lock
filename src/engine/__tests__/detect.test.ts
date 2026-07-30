@@ -184,8 +184,20 @@ const FLOORS: Record<string, number> = {
   'apartment-bare': 0.95,
   'apartment-furnished': 0.95,
   'apartment-annotated': 0.88,
-  'apartment-photo': 0.92,
-  'apartment-skewed': 0.85,
+  // ⚠️ THESE TWO ARE THE CANDIDATE-ORDER GUARD (S28). Ratcheted from 0.92 and
+  // 0.85, and not for tidiness: the S28 candidate set returns the FIRST
+  // non-refused reading, so swapping `inkThresholds`' order to [plain, gradient]
+  // leaves the accept SET identical (a union is commutative) while returning the
+  // plain reading wherever both accept — which silently reverts S27's entire
+  // corpus benefit, mean 95.48 % straight back to main's 94.82 %. Measured, that
+  // wrong version passes MEAN_FLOOR, every other per-fixture floor, the
+  // `scan-letterbox` tone sweep and the monotonic-knob guarantee. These two
+  // fixtures are where the gradient rule earns the most, so pinning them at what
+  // it actually scores is what makes the order load-bearing.
+  //   shipped (gradient first)  100.0 / 97.5     -> passes, 2.0 / 2.5 headroom
+  //   [plain, gradient]          96.5 / 89.8     -> FAILS both
+  'apartment-photo': 0.98,
+  'apartment-skewed': 0.95,
   'apartment-faint': 0.95,
   blueprint: 0.95,
   'angled-wall': 0.9,
@@ -690,26 +702,28 @@ describe('the ink reading — which candidate answered', () => {
    *                which is what makes the corpus byte-identical claim true.
    */
   it('reads every legitimate fixture at the FIRST candidate — except the polarity case', () => {
-    for (const { name, img } of corpusFixtures()) {
-      if (name.startsWith('no-plan')) continue;
-      const rescued = name === 'screened-poche';
-      for (const sensitivity of [0.7, 1, 1.5]) {
-        const r = detectWalls(img, { sensitivity });
-        expect(`${name}@${sensitivity}: cand ${r.ink.candidateIndex}`).toBe(
-          `${name}@${sensitivity}: cand ${rescued ? 1 : 0}`,
-        );
-        expect(`${name}@${sensitivity}: ${r.ink.rule}`).toBe(
-          `${name}@${sensitivity}: ${rescued ? 'plain' : 'gradient'}`,
-        );
+    // Reads `BY_LEVEL` rather than calling `detectWalls` again: 69 fresh calls
+    // inside an `it` pass under `npm test` and TIME OUT under
+    // `npm run test:coverage`, where v8 instrumentation makes the same work
+    // several times slower. That is the S18 lesson, this file has now learned it
+    // four times, and the fix is always to stop duplicating the work rather than
+    // to raise a timeout. `BY_LEVEL` already holds exactly these readings.
+    for (const { f, reads } of BY_LEVEL) {
+      if (f.entry.refuse) continue;
+      const rescued = f.name === 'screened-poche';
+      reads.forEach((r, i) => {
+        const at = `${f.name}@${UI_LEVELS[i]}`;
+        expect(`${at}: cand ${r.ink.candidateIndex}`).toBe(`${at}: cand ${rescued ? 1 : 0}`);
+        expect(`${at}: ${r.ink.rule}`).toBe(`${at}: ${rescued ? 'plain' : 'gradient'}`);
         expect(r.ink.value).toBeGreaterThanOrEqual(0);
         expect(r.ink.value).toBeLessThanOrEqual(255);
         expect(r.ink.starved).toBe(false);
         // the evidence, in the form the starvation floor actually tests
         expect(r.ink.edgeDensity).toBeCloseTo(
-          r.ink.edgeVotes / (2 * (img.width + img.height)),
+          r.ink.edgeVotes / (2 * (f.img.width + f.img.height)),
           9,
         );
-      }
+      });
     }
   });
 
