@@ -386,9 +386,12 @@ const SP_PAPER = 246;
  * Annotation ink and weight. Solid black at a fine pen.
  *
  * Both sit inside a measured plateau rather than on an edge: sweeping each axis
- * alone at the tones below, the failure reproduces for annotation ink 0-95 (i.e.
- * anything from pure black to a mid grey — the whole sweep) and for pen widths
- * 1.5-5 px. At 1.2 px and below it stops reproducing, which is recorded rather
+ * alone at the tones below, the failure reproduces for annotation ink **0-87**
+ * (pure black up to a mid grey) and for pen widths 1.5-5 px. An earlier draft of
+ * this comment said 0-95 "the whole sweep"; re-measured by overriding the tone on
+ * every consumer (the decoy walls `spDimString` emits, `SP_LEADERS`, and all of
+ * `SP_TEXT`), candidate 0 is refused at 0-87 and ACCEPTED at 88 and above, so the
+ * two highest values it named do not in fact reproduce. At 1.2 px and below it stops reproducing, which is recorded rather
  * than explained: nothing here establishes WHY, only where the edge is.
  */
 const SP_ANN_INK = 30;

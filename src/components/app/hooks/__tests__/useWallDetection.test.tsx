@@ -291,6 +291,52 @@ describe('useWallDetection', () => {
   });
 
   /**
+   * THE NEGATIVE HALF, and it is the one that matters. The two tests above pin
+   * what the ORDINARY path is not, and neither notices if the ordinary path
+   * starts logging: changing `candidateIndex > 0` to `>= 0` — a one-character
+   * slip — leaves all 23 tests in this file green while every unremarkable
+   * reading announces itself as a rescue. That is exactly the "a success reads
+   * as a defect" failure the hook's own comment warns against.
+   */
+  it('says NOTHING on an ordinary reading — the best-guess cut, not starved', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    detectMock.mockResolvedValue({ walls: [wall('a', 0)], quality: QUALITY, ink: INK });
+    const h = harness();
+    act(() => h.view.result.current.run());
+    await waitFor(() => expect(h.view.result.current.proposal).not.toBeNull());
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  /**
+   * ...and a browser that could not read the image at all is NOT a starvation.
+   * `detectWallsFromUnderlay`'s `ctx === null` branch returns `starved: true`
+   * with `candidateCount: 0` beside `cause: 'unreadable'`, because no pixel was
+   * ever sampled. Logging that as a threshold event would send whoever reads it
+   * chasing tone curves for a canvas failure — the same reason `nextLevelHint`
+   * already special-cases this cause.
+   */
+  it('does not call an UNREADABLE image a starved ink reading', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    detectMock.mockResolvedValue({
+      walls: [],
+      quality: {
+        ...QUALITY,
+        confidence: 0,
+        refusal: 'This browser could not read the image.',
+        cause: 'unreadable',
+        wallCount: 0,
+      },
+      ink: { ...INK, rule: 'plain', starved: true, candidateCount: 0, edgeVotes: 0, edgeDensity: 0 },
+    });
+    const h = harness();
+    act(() => h.view.result.current.run());
+    await waitFor(() => expect(h.showToast).toHaveBeenCalled());
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  /**
    * THE FOOT-GUN THIS FILE WALKED INTO. `vi.mock`'s factory is untyped, so an
    * engine field the mock forgets is `undefined` at runtime — and every read in
    * the hook's `.then` is inside its own `.catch`, which reports "Could not read

@@ -2546,7 +2546,7 @@ and closes 0 of the 61.
 
 ### Evidence
 
-- **Gates**: `npm test` 1393 → **1404**; `npm run build` **481.38 kB / 156.84 kB gz** (+1.01 / +0.33);
+- **Gates**: `npm test` 1393 → **1407**; `npm run build` **481.42 kB / 156.86 kB gz** (+1.05 / +0.35);
   `npm run lint` clean; `git ls-files --others --exclude-standard src/` empty.
 - **Live, real UI, fresh Chrome profile** — owner's real plan **9 / 15 / 24 walls at 74 / 85 / 92 %**,
   identical to S26 and S27. The polarity fixture: **14 / 16 / 26 walls at 85 / 83 / 92 %** on the fix,

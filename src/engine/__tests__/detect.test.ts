@@ -743,6 +743,63 @@ describe('the ink reading — which candidate answered', () => {
     expect(detectAtThreshold(f.img, cands.thresholds[1]).quality.refusal).toBeNull();
   });
 
+  /**
+   * THE CASE THAT MAKES THE STARVATION GUARD LOAD-BEARING, end to end.
+   *
+   * The tempting argument is that the candidate set makes the guard redundant: a
+   * starved page gives `otsuThreshold` zero votes, it falls through to its 127
+   * initialiser, the mask comes out EMPTY, the reading is refused for
+   * `too-few-lines`, and the plain candidate rescues it anyway. That holds only
+   * when the page sits entirely on one side of 127.
+   *
+   * A flat low-contrast scan that STRADDLES it does not. Squash `hollow-rect`
+   * into [125, 136] — a real drawing, cavity walls and all — and nothing clears
+   * `EDGE_GATE`, so the gradient histogram is empty. Without the guard the
+   * candidate list becomes [127, 130] and the accidental 127 cut produces a
+   * plausible, WRONG mask that is ACCEPTED — so the correct plain cut is never
+   * reached, because the fallback only runs on a refusal. Measured:
+   *
+   *   with the guard      cuts [130]        4 walls, 100.0 %
+   *   without the guard   cuts [127, 130]   3 walls,  79.1 %
+   *
+   * `mask.test.ts` pins the helper-level half of this; a hard-filled two-tone
+   * page cannot show it, because there every cut in [125, 135] gives the same
+   * mask.
+   */
+  it('a starved page that straddles 127 is read on the PLAIN cut, not the accident', () => {
+    const src = fixtureByName('hollow-rect');
+    const data = new Uint8ClampedArray(src.img.data.length);
+    for (let i = 0; i < data.length; i += 4) {
+      const g =
+        (src.img.data[i] * 299 + src.img.data[i + 1] * 587 + src.img.data[i + 2] * 114) / 1000;
+      data[i] = data[i + 1] = data[i + 2] = Math.round(125 + (g / 255) * 11);
+      data[i + 3] = 255;
+    }
+    const img: GrayImage = { data, width: src.img.width, height: src.img.height };
+
+    const cands = inkThresholds(img);
+    expect(cands.edgeVotes).toBe(0);
+    expect(cands.starved).toBe(true);
+    // The whole point: 127 is not offered, so it cannot win by arriving first.
+    expect(cands.thresholds).not.toContain(127);
+    expect(cands.thresholds).toHaveLength(1);
+
+    const res = detectWalls(img);
+    expect(res.quality.refusal).toBeNull();
+    expect(res.segments.length).toBe(4);
+    expect(
+      scoreDetection(res.segments, src.truth, { tolerance: Math.max(6, src.strokeWidth) }).score,
+    ).toBeGreaterThan(0.95);
+
+    // ...and the accident really is worse, so the guard is not decoration: the
+    // 127 reading is ACCEPTED, which is exactly why no fallback can save it.
+    const wrong = detectAtThreshold(img, 127);
+    expect(wrong.quality.refusal).toBeNull();
+    expect(
+      scoreDetection(wrong.segments, src.truth, { tolerance: Math.max(6, src.strokeWidth) }).score,
+    ).toBeLessThan(0.85);
+  });
+
   it('reports a STARVED page as a plain, single-candidate reading', () => {
     // Eleven levels of contrast: nothing clears the gradient gate, so there is
     // one rule and it is the plain one. Deliberately a page that STRADDLES 127,

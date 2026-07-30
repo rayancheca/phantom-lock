@@ -151,9 +151,18 @@ export function useWallDetection(a: Args): WallDetection {
         // its own because `vi.mock`'s factory is untyped — which is why that
         // file's `detectMock` is typed as returning `UnderlayDetection`, so the
         // NEXT field added here is a build error instead of a runtime lie.
-        if (ink?.starved) {
+        // ...and BOTH are gated on the image having actually been read. The
+        // `ctx === null` branch of `detectWallsFromUnderlay` returns a placeholder
+        // reading with `starved: true` and `candidateCount: 0` beside
+        // `cause: 'unreadable'` — no pixel was ever sampled, so reporting it as a
+        // threshold starvation would misdirect whoever reads the log toward tone
+        // tuning when the real cause is a canvas failure. `nextLevelHint` below
+        // special-cases the same cause for the same reason: 'unreadable' is not a
+        // claim about the image at all.
+        const wasRead = (ink?.candidateCount ?? 0) > 0;
+        if (wasRead && ink?.starved) {
           console.warn('[phantom-lock] ink threshold starved — read on the plain histogram', ink);
-        } else if (ink && ink.candidateIndex > 0) {
+        } else if (wasRead && ink && ink.candidateIndex > 0) {
           console.warn('[phantom-lock] ink threshold rescued by the runner-up candidate', ink);
         }
         if (quality.refusal) {

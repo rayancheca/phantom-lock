@@ -306,6 +306,21 @@ function pipelineAt(
   // knob may change WHICH walls are offered; it must never, by itself, turn an
   // accepted image into "this doesn't look like a floorplan".
   //
+  // ⚠️ AND THAT SENTENCE IS SCOPED TO THIS CAUSE ONLY — it was written without
+  // the qualifier and read as a whole-engine guarantee for two sessions. The
+  // rescue below fires for `unstructured` and nothing else (see the three
+  // conditions), so a `too-few-lines` refusal has never been covered: an image
+  // sitting right at `MIN_WALLS` can be accepted at 'Balanced' and refused at
+  // 'Careful', because `sensitivity` scales `minSegment` and a shorter wall
+  // simply stops qualifying. Measured on a swept family of sparse 3-wall plans,
+  // **31 of them do exactly that — identically on `main` and on this engine**,
+  // at the same parameters, with a SINGLE candidate in play. So it is neither
+  // new nor caused by the S28 candidate set; it is the honest scope of the S26
+  // guarantee, and `docs/ideas.md` Section 13f is where the fix is scheduled.
+  // Extending the rescue to `too-few-lines` is a real behaviour change with its
+  // own null-leak surface (a null refused for too-few-lines would get a second
+  // chance) and needs its own measurement, not a bolt-on here.
+  //
   // The second reading is LAZY — it costs nothing unless the first would have
   // been refused for structure, which is the rare case — and it re-runs only
   // stages 6-8, since 1-5 do not depend on `sensitivity`. `confidence` and the

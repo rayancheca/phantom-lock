@@ -289,12 +289,24 @@ export interface InkThresholds {
  * back to the next only if that reading is REFUSED — which is why this returns a
  * list rather than a decision. Measured consequences of ordering it this way:
  *
- *   - the two rules AGREE outright on 8 of the 25 corpus fixtures, so there is
- *     only one candidate on those and the fallback is not merely unused, it does
- *     not exist;
- *   - on the other 17 every legitimate fixture is accepted at `thresholds[0]` at
- *     all three UI levels, so the fallback never runs and the corpus result is
- *     byte-identical to the single-candidate engine.
+ *   - the two rules AGREE outright on 8 of the 26 corpus fixtures (clean-rect,
+ *     thick-rect, hollow-rect, hairline, tiny-rooms, heavy-poche, scan-letterbox
+ *     and the `no-plan` null), so there is only one candidate on those and the
+ *     fallback is not merely unused, it does not exist;
+ *   - on the other 18, EXACTLY ONE legitimate fixture is read by the runner-up —
+ *     `screened-poche`, the polarity case this whole mechanism exists for. Every
+ *     other one is accepted at `thresholds[0]` at all three UI levels, so those
+ *     readings are byte-identical to the single-candidate engine.
+ *
+ * ORDER IS LOAD-BEARING, and it is not free. `detectWalls` returns the FIRST
+ * non-refused reading, so emitting `[plain, gradient]` instead leaves the accept
+ * set bit-identical — a union is commutative, measured 0 refusals introduced and
+ * 0 removed over 624 readings — while returning the plain reading wherever both
+ * accept. That silently reverts S27's entire corpus benefit: mean 95.48 % back to
+ * `main`'s 94.82 %, `apartment-skewed` 97.5 -> 89.8, `apartment-photo`
+ * 100.0 -> 96.5. The gradient rule goes first because it is measurably the better
+ * reader on the pages where the two disagree; the guard is the ratcheted FLOORS
+ * on those two fixtures in `detect.test.ts`, which the swapped order fails.
  *
  * Ink is taken to be the MINORITY class at whichever cut is used, which is what
  * makes a white-on-dark blueprint work without a separate code path: a plan is

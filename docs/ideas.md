@@ -786,6 +786,31 @@ cycles at building scale rather than furniture scale.
 **Acceptance:** the furniture-outline page and the two-tone shelf page become null fixtures · both
 refused · no legitimate corpus fixture refused · the owner's plan unchanged at 9/15/24.
 
+### 13f. The monotonic-knob guarantee is narrower than it is written — **P2, pre-existing**
+
+S26's guarantee is stated in `CLAUDE.md` and in `detect.ts` as *"the knob may change WHICH walls are
+offered; it can never, by itself, turn an accepted image into 'this doesn't look like a floorplan'."*
+That is true only for the `unstructured` cause. The lazy second reading fires for that cause and no
+other, so a **`too-few-lines`** refusal has never been covered: `sensitivity` scales `minSegment`, so
+a plan sitting near `MIN_WALLS` can be accepted at 'Balanced' and refused at 'Careful' simply because
+a short wall stopped qualifying.
+
+**Measured, and it is NOT caused by the S28 candidate set**: over a swept family of sparse 3-wall
+plans (wall length 40–120 px × stroke {3,5,7}), **31 combinations are accepted at 'Balanced' and
+refused at 'Careful' — identically on `main` and on the S28 engine**, at the same parameters, with a
+single candidate in play (`cand 0/1`). A self-review agent reproduced it via a candidate-rescued
+image and read it as an S28 regression; re-measured against `main`, it is neither new nor
+candidate-related.
+
+The fix is a real behaviour change and needs its own measurement: extending the rescue to
+`too-few-lines` gives a null refused for that cause a second chance, which is exactly the leak surface
+S26's `ref.segments.length >= MIN_WALLS` guard exists to close. Alternatives worth measuring: rescue
+only when the DEFAULT reading clears `MIN_WALLS` at the same candidate; or leave the behaviour and
+narrow the written guarantee permanently.
+
+**Acceptance:** the 31-case sweep becomes a test · the guarantee's scope is stated correctly wherever
+it appears · no null gains an acceptance · the owner's plan unchanged.
+
 ### 13d-original. The mirror regression, as first written
 
 **Confirmed by the S27 self-review and independently reproduced by the main thread.** Gradient

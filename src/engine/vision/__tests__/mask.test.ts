@@ -200,15 +200,22 @@ describe('inkMaskOf', () => {
   });
 
   /**
-   * THE GUARD IS LOAD-BEARING, and the obvious argument that it is not is wrong.
+   * A starved page that STRADDLES 127 must still offer only the plain cut.
    *
-   * That argument: a starved page gives `otsuThreshold` zero votes, it returns
-   * its 127 initialiser, the mask comes out EMPTY, the reading is refused and
-   * the plain candidate rescues it anyway. True only when the page does not
-   * STRADDLE 127. This one spans [125, 136] — eleven levels, nothing clears
-   * `EDGE_GATE` — so the accidental 127 cut splits it into a plausible, WRONG
-   * mask that a downstream reading will happily accept. Measured end to end in
-   * S28: with the guard 4 walls at 100.0 %, without it 3 walls at 56.5 %.
+   * The obvious argument that the guard is redundant runs: a starved page gives
+   * `otsuThreshold` zero votes, it returns its 127 initialiser, the mask comes
+   * out EMPTY, the reading is refused, and the plain candidate rescues it
+   * anyway. That holds only when the page sits entirely on one side of 127.
+   *
+   * ⚠️ THIS PAGE IS NOT THE FALSIFYING CASE, and an earlier version of this
+   * comment claimed it was. It is drawn with a hard fill and contains exactly
+   * two luminances (136 and 125), so EVERY cut in [125, 135] — including 127 —
+   * yields the identical mask, and letting 127 through would cost nothing here.
+   * What this test actually pins is narrower and still worth pinning: the guard
+   * fires, the candidate list is the plain cut ALONE, and 127 never appears in
+   * it. The end-to-end case where 127 really does produce a plausible WRONG
+   * mask needs a page with tones on BOTH sides of it, and lives in
+   * `detect.test.ts` ("a starved page that straddles 127...").
    */
   it('offers only the PLAIN cut on a starved page, even when 127 would split it', () => {
     const img = page(200, 150, 136);
