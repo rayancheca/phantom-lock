@@ -29,7 +29,7 @@ under it today (all `Test timed out in 5000ms`, not assertion failures); after S
 question, not "is it zero?". The cause is the S18 lesson: v8 instrumentation makes detection several
 times slower, so work inside an `it` that passes under `npm test` blows the 5 000 ms default. The fix
 is always to hoist to module scope, never to raise a timeout. **Cleaning this up properly is a
-worthwhile small task if you want one** (see §2d).
+worthwhile small task if you want one** (see §2e).
 
 ---
 
@@ -86,7 +86,7 @@ Commit a baseline, then again after the gate. Land with `git -C <REPO> merge --f
    persistence, touches `src/engine`, deletes/overwrites data, or edits more than one file.
 4. **Adversarially verify — ALWAYS**, and then adjudicate (TRAP 9).
 5. **Implement fully.** Every Acceptance bullet → "met (with evidence)" or "deferred to <block>".
-6. **Test with PROOF.** Failing-test-first for new pure behaviour; never below **1393**. Paste the
+6. **Test with PROOF.** Failing-test-first for new pure behaviour; never below the floor you START from — **1388** if you branch from `main`, **1393** if you build on the S27 branch. Paste the
    coverage line for every file touched. Vite routes by FILENAME: `*.test.ts` → node, `*.test.tsx` → jsdom.
 7. **Migrations get an OLD-SHAPE test.**
 8. **Double-check.** Self-review agents over the ACTUAL diff.
@@ -107,7 +107,7 @@ behaviour caught. The code looked right.
 
 ### 2a. §13d — **P0. Land S27's fix without its mirror regression.**
 
-**S27 did not land.** Its work is committed on branch `session-27-detect-exposure` (7 commits, all
+**S27 did not land.** Its work is committed on branch `session-27-detect-exposure` (6 commits, all
 three gates green, live-verified) and `main` is untouched. The reason is in `docs/ideas.md` §13d and
 it was found by S27's own self-review and then reproduced by the main thread.
 
@@ -194,8 +194,8 @@ read-only 3D view (P2, `docs/3d-view-plan.md`).
 
 ## 3. WHAT S27 DID, AND WHAT IT LEFT
 
-**§13b is closed.** The verdict instability was real, but neither its cause nor its axis was what the
-section said.
+**§13b is SOLVED BUT NOT LANDED** — see §2a for why. The verdict instability was real, and neither
+its cause nor its axis was what the section said.
 
 - **Cause.** The owner's file has flat grey **letterbox bars** over **11.1 %** of the page at
   luminance ~198 (verified in the original 1320×1734 PNG, standard deviation 0.0 — digital padding).
@@ -223,17 +223,17 @@ section said.
 - **§13c** — gradient weighting separates a FLAT mass from thin strokes. A large mid-tone mass that is
   heavily TEXTURED (halftone, dithering, dense hatching over a big area) would still vote like ink.
   Nothing measured exhibits it; P3, not pre-empted.
-- **`test:coverage` is not green** (see the banner above and §2d).
-- **`scalePlan`'s annotation strokes** (§2c).
+- **`test:coverage` is not green** (see the banner above and §2e).
+- **`scalePlan`'s annotation strokes** (§2d).
 - **The Careful margin on the owner's plan is still one junction** — structure 0.278 at 'Careful',
   i.e. 5 of 18 endpoints joined, where 4 of 18 = 0.222 would refuse. Unchanged by S27 and still the
   tightest reachable margin in the app.
 - **`sameRegion` still has NO production caller**; **`optimize.ts:265` still has no `area > 2` guard**
   while its two siblings do.
-- A design agent's alternative fix (read the image at BOTH near-tied cuts, let `assessDetection`
-  choose) is written up in the S27 workflow journal. It is byte-identical on the corpus where the
-  shipped fix improves it, so it was not adopted — but it is a sound design if the gradient approach
-  ever needs replacing.
+- **§13d, the P0.** The design agent's alternative (read at BOTH near-tied cuts, let
+  `assessDetection` choose) was passed over during the session because it is byte-identical on the
+  corpus where the gradient fix *improves* it. The self-review then found the mirror regression, which
+  that design cannot produce — so it is now the recommended remedy, not a runner-up. §2a has it.
 
 ---
 
