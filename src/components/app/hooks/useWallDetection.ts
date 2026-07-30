@@ -125,7 +125,37 @@ export function useWallDetection(a: Args): WallDetection {
     busy.current = true;
     setDetecting(true);
     detectWallsFromUnderlay(underlay, { sensitivity: SENSITIVITY[level].value })
-      .then(({ walls, quality }) => {
+      .then(({ walls, quality, ink }) => {
+        // TRACED, NOT SURFACED — the two non-default ink readings.
+        //
+        // `ink.starved` means too little of the page cleared the gradient gate,
+        // so the threshold came from the plain intensity histogram alone: the
+        // pre-S27 engine, which is known wrong on a page carrying a third tone
+        // mass. `ink.candidateIndex > 0` means the opposite — the best-guess cut
+        // was REFUSED and the runner-up rescued the image, which is the S28 fix
+        // doing its job. Both share `rule === 'plain'`, so they must be logged
+        // as different things or a success reads as a defect.
+        //
+        // Neither is shown to the user: there is no control that changes either,
+        // so a sentence about them is noise. But leaving them completely silent
+        // is what made the starvation path invisible for a whole session — the
+        // same call the `catch` below already makes, for the same reason (the
+        // S13 `font-ready.ts` lesson).
+        //
+        // Read with `?.` deliberately. Everything in this `.then` body runs
+        // inside the `.catch` below, which reports "Could not read that image."
+        // — so a plain property read on a field the engine did not supply does
+        // not surface as a bug, it surfaces as a LIE about the user's file.
+        // Measured: without the `?.`, all 12 behavioural tests in
+        // `useWallDetection.test.tsx` fail that way. `tsc` does not catch it on
+        // its own because `vi.mock`'s factory is untyped — which is why that
+        // file's `detectMock` is typed as returning `UnderlayDetection`, so the
+        // NEXT field added here is a build error instead of a runtime lie.
+        if (ink?.starved) {
+          console.warn('[phantom-lock] ink threshold starved — read on the plain histogram', ink);
+        } else if (ink && ink.candidateIndex > 0) {
+          console.warn('[phantom-lock] ink threshold rescued by the runner-up candidate', ink);
+        }
         if (quality.refusal) {
           // Say what was wrong with the IMAGE. The old single message — "No
           // clear walls found in that image — trace them instead." — was

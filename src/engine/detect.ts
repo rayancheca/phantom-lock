@@ -54,6 +54,9 @@ import {
   closeMask,
   countInk,
   inkMaskOf,
+  inkThresholds,
+  type InkThresholds,
+  maskAtThreshold,
   meanStrokeWidth,
   removeSmallComponents,
   removeThickRegions,
@@ -156,6 +159,41 @@ export interface DetectionResult {
   wallMask: Mask;
   /** Measured mean wall thickness in px — what the tuning derived from. */
   strokeWidth: number;
+  /**
+   * WHICH CUT read the page, and which candidate it was — see `InkReading`.
+   *
+   * A diagnostic, like `wallMask` and `strokeWidth`, and deliberately NOT part
+   * of `DetectionQuality`: that type's contract is that everything in it is
+   * computable from the image and the candidate output alone, and this is a
+   * fact about how the page was READ, not about how good the answer is. It is
+   * also what the UI string-matches, and there is no control that changes any
+   * of this, so a sentence about it would be noise the user cannot act on.
+   *
+   * It exists because both of the paths it names used to be INVISIBLE. A
+   * fallback that silently never runs looks exactly like one that runs and
+   * agrees, so without this the candidate set could not be measured from
+   * outside — and a starved reading is the pre-S27 engine, which is a caveat on
+   * every number downstream of it.
+   */
+  ink: InkReading;
+}
+
+/** How stage 1 decided where ink ends — see `vision/mask.ts` `inkThresholds`. */
+export interface InkReading {
+  /** The cut used, 0-255. Ink is whichever side of it is the minority class. */
+  value: number;
+  /** Which rule produced `value`. `plain` on a starved page OR a fallback. */
+  rule: 'gradient' | 'plain';
+  /** 0 for the best guess, 1 for the runner-up that had to rescue it. */
+  candidateIndex: number;
+  /** How many candidates the page offered. */
+  candidateCount: number;
+  /** True when the gradient histogram was too small a sample to be offered. */
+  starved: boolean;
+  /** Pixels whose local intensity change cleared `EDGE_GATE`. */
+  edgeVotes: number;
+  /** ...per unit of page perimeter, the form the starvation floor tests. */
+  edgeDensity: number;
 }
 
 function clamp(v: number, lo: number, hi: number): number {
@@ -166,7 +204,8 @@ function clamp(v: number, lo: number, hi: number): number {
 const DEFAULT_SENSITIVITY = 1;
 
 /**
- * The pure pipeline, with everything it learned along the way.
+ * The pure pipeline at ONE ink threshold, with everything it learned along the
+ * way. `detectWalls` runs it over a candidate SET of thresholds — see there.
  *
  * `sensitivity` scales exactly two things — the minimum wall length and the
  * required ink support — because those are the two places a correct pipeline
@@ -178,8 +217,13 @@ const DEFAULT_SENSITIVITY = 1;
  * Stages 1-5 do not depend on `sensitivity` at all, which is what makes the
  * second reading below nearly free: only stages 6-8 are re-run.
  */
-export function detectWalls(img: GrayImage, opts: DetectOptions = {}): DetectionResult {
-  const sensitivity = clamp(opts.sensitivity ?? DEFAULT_SENSITIVITY, 0.4, 2);
+function pipelineAt(
+  img: GrayImage,
+  gray: Uint8Array,
+  thresh: number,
+  sensitivity: number,
+  inkInfo: InkReading,
+): DetectionResult {
   const maxDim = Math.max(img.width, img.height);
 
   const maxHalfWidth = clamp(
@@ -198,7 +242,7 @@ export function detectWalls(img: GrayImage, opts: DetectOptions = {}): Detection
   // `2 * closeRadius` — a hatched wall section, a tiled bathroom floor — fills
   // into a solid mass, and a mass that arrives after the first filter has run
   // is a mass nothing else will ever reject.
-  const ink = inkMaskOf(img);
+  const ink = maskAtThreshold(gray, img.width, img.height, thresh);
   const deFurnished = removeThickRegions(ink, maxHalfWidth);
   const closed = removeThickRegions(closeMask(deFurnished, closeRadius), maxHalfWidth, maxHalfWidth * 0.5);
   const wallMask = removeSmallComponents(closed, minComponentSpan, MIN_COMPONENT_PIXELS);
@@ -325,7 +369,148 @@ export function detectWalls(img: GrayImage, opts: DetectOptions = {}): Detection
       })()
     : first;
 
-  return { segments: user.segments, quality, wallMask, strokeWidth };
+  return { segments: user.segments, quality, wallMask, strokeWidth, ink: inkInfo };
+}
+
+/**
+ * Describe one candidate of a page's threshold set.
+ *
+ * `rule` is derived rather than stored because it is a property of the POSITION
+ * in the list: `inkThresholds` emits the gradient cut first and the plain cut
+ * second, and emits the plain cut alone when the page starved. So candidate 0 is
+ * the gradient rule exactly when the page did not starve, and every later one is
+ * the plain rule by construction.
+ *
+ * Note `rule === 'plain'` therefore covers TWO different events — a starved page
+ * (degraded, the pre-S27 engine) and a successful rescue by the runner-up (the
+ * S28 fix working). `starved` and `candidateIndex` tell them apart, and any
+ * consumer that logs one of them must not describe the other.
+ */
+function inkReading(c: InkThresholds, i: number): InkReading {
+  // The FIRST candidate is the gradient cut unless the page starved or the two
+  // rules coincided; every later one is the plain cut by construction.
+  const rule: 'gradient' | 'plain' = i === 0 && !c.starved ? 'gradient' : 'plain';
+  return {
+    value: c.thresholds[i],
+    rule,
+    candidateIndex: i,
+    candidateCount: c.thresholds.length,
+    starved: c.starved,
+    edgeVotes: c.edgeVotes,
+    edgeDensity: c.edgeDensity,
+  };
+}
+
+/**
+ * The pipeline at ONE named cut.
+ *
+ * Exported as the seam the candidate-set tests measure through: without it
+ * "which candidate answered?" is unobservable from outside, and a fallback that
+ * silently never runs looks exactly like one that runs and agrees.
+ */
+export function detectAtThreshold(
+  img: GrayImage,
+  thresh: number,
+  opts: DetectOptions = {},
+): DetectionResult {
+  const c = inkThresholds(img);
+  // `rule` is derived, not asserted: the caller named the cut, so the only
+  // honest answer is which rule WOULD have produced it. Claiming 'gradient'
+  // unconditionally would put a lie in the one place built to be read.
+  return pipelineAt(img, c.gray, thresh, clamp(opts.sensitivity ?? DEFAULT_SENSITIVITY, 0.4, 2), {
+    value: thresh,
+    rule: !c.starved && thresh === c.thresholds[0] ? 'gradient' : 'plain',
+    candidateIndex: 0,
+    candidateCount: 1,
+    starved: c.starved,
+    edgeVotes: c.edgeVotes,
+    edgeDensity: c.edgeDensity,
+  });
+}
+
+/**
+ * Floorplan image -> wall segments, over THE CANDIDATE SET (S28).
+ *
+ * Two threshold rules disagree about where ink ends, each is right about a
+ * different page, and no function of the histogram they were computed from can
+ * tell which page this is — see `inkThresholds` for the mechanism and the
+ * numbers. S27 replaced one rule with the other and thereby swapped which
+ * polarity was broken: a plan with light poche walls and thin dark dimension
+ * lines went from a 57-73 % read to REFUSED on 5 of 5 seeds.
+ *
+ * So the pipeline runs at the best guess and RE-RUNS at the runner-up only when
+ * the first reading is refused. Three properties follow, and each is why a
+ * different shape was not taken:
+ *
+ *   - it is not a REPLACEMENT, so it cannot have a polarity. Whichever rule is
+ *     wrong about this page, the other one still gets to answer.
+ *   - it costs nothing on an image that reads. Measured, every one of the 22
+ *     legitimate corpus fixtures is accepted at the first candidate at all three
+ *     UI levels, so all 75 (fixture, sensitivity) readings are byte-identical to
+ *     the single-candidate engine; the re-run happens only where the user would
+ *     otherwise have been handed a refusal and no walls at all.
+ *   - a second candidate is a second chance for a NULL to be ACCEPTED. That is
+ *     the real hazard, and it is why the set is exactly two FIXED rules rather
+ *     than "any near-tied peak" (an unbounded set, measured leaking in S27).
+ *
+ * ⚠️ THE NULL COST, AND WHY IT IS ZERO AGAINST WHAT USERS HAVE. An earlier
+ * version of this comment claimed "684 readings, 0 leaks". That was a claim
+ * about 684 particular constructions, NOT about this rule, and it is retired —
+ * re-pointing a different agent's polarity-repainted nulls at the same engine
+ * found leaks immediately.
+ *
+ * The rule's acceptance set is exactly `accept(gradient) UNION accept(plain)`,
+ * verified as a theorem over 591 readings with 0 violations. Two things follow
+ * structurally rather than as lucky measurements: it can never CLOSE a leak,
+ * and every leak the CHALLENGER opens is one the plain rule already had. And
+ * the plain rule is not a hypothetical — **S27 never landed, so `main` IS the
+ * plain-histogram engine.** The challenger is the shipped engine. Measured over
+ * 504 null readings (3 unmodified nulls + 3 polarity repaints x 19 tone steps +
+ * 3 x 18 bar variants, x 3 UI levels): `main` accepts 58, the S27 engine 75,
+ * this one 119 — and new-vs-`main` is **61 for the S27 engine alone and 61 for
+ * this one. New null acceptances attributable to the candidate set: 0.** There
+ * is no reading it accepts that neither `main` nor S27 already accepts.
+ *
+ * So the honest statement is not "this costs 19 leaks". It is that S27 closed
+ * 61 null readings as a SIDE EFFECT of swapping the threshold rule, and paid
+ * for them with the polarity regression above; this restores the polarity case
+ * and hands those 61 back. They live on the INCUMBENT path, and no incumbent
+ * floor is viable — the first step swept, 0.28, already refuses 24 readings of
+ * the owner's own plan, which reads at incumbent structure 0.273-0.300 at
+ * 'Careful'. See docs/ideas.md Section 13e.
+ *
+ * A challenger-only structure floor was measured and REJECTED, and not narrowly:
+ * over an enumerated protected set of 391 legitimate challenger rescues the
+ * structures run down to **0.214** (a 57 %-correct read of a poche plan
+ * photographed 8 degrees off-square) while the attack family reaches **0.346**.
+ * The populations OVERLAP, so no floor separates them at any value. Round 1's
+ * proposed 0.45 would refuse 87 of the 391 — the worst an 88 %-correct read —
+ * and leave this file's own `screened-poche` fixture (0.464) 0.014 above a
+ * refusal cliff, while still not closing the worst attack (structure 0.667,
+ * above every legitimate rescue). That is the S18 lesson exactly: a cap
+ * calibrated against constructed attacks rather than an enumerated protected
+ * set is a data-loss bug.
+ *
+ * The loud null holes are elsewhere and are not reachable from this seam: a page
+ * of thin furniture OUTLINES is offered by `main`, by S27 and by this engine
+ * alike, 27/27 readings at structure up to 1.000 and confidence 1.00. Those live
+ * in the refusal gates. Also Section 13e.
+ */
+export function detectWalls(img: GrayImage, opts: DetectOptions = {}): DetectionResult {
+  const sensitivity = clamp(opts.sensitivity ?? DEFAULT_SENSITIVITY, 0.4, 2);
+  const cands = inkThresholds(img);
+  const best = pipelineAt(img, cands.gray, cands.thresholds[0], sensitivity, inkReading(cands, 0));
+  if (!best.quality.refusal) return best;
+  for (let i = 1; i < cands.thresholds.length; i++) {
+    const alt = pipelineAt(img, cands.gray, cands.thresholds[i], sensitivity, inkReading(cands, i));
+    if (!alt.quality.refusal) return alt;
+  }
+  // Every candidate refused, so there is nothing to choose between and the
+  // question is only which numbers to REPORT. The first reading's: they are what
+  // the best-guess rule produced, so the `cause` and confidence on screen
+  // describe the reading the user would otherwise have been shown. Reporting the
+  // runner-up would explain a mask nothing ever chose.
+  return best;
 }
 
 /**
@@ -384,6 +569,8 @@ export const WORK_MAX = 900;
 export interface UnderlayDetection {
   walls: WallObj[];
   quality: DetectionQuality;
+  /** Carried through so a degraded / rescued ink reading is observable. */
+  ink: InkReading;
 }
 
 /**
@@ -414,6 +601,17 @@ export async function detectWallsFromUnderlay(
   if (!ctx) {
     return {
       walls: [],
+      // Nothing was read, so nothing decided the ink. Reported with zero
+      // evidence rather than omitted, so no consumer needs an undefined branch.
+      ink: {
+        value: 0,
+        rule: 'plain',
+        candidateIndex: 0,
+        candidateCount: 0,
+        starved: true,
+        edgeVotes: 0,
+        edgeDensity: 0,
+      },
       quality: {
         confidence: 0,
         refusal: 'This browser could not read the image.',
@@ -435,5 +633,6 @@ export async function detectWallsFromUnderlay(
   return {
     walls: result.quality.refusal ? [] : segmentsToWalls(result.segments, u, workScale),
     quality: result.quality,
+    ink: result.ink,
   };
 }

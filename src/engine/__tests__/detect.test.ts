@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  detectAtThreshold,
   detectSegments,
   detectWalls,
   inkMask,
@@ -10,6 +11,7 @@ import {
   WORK_MAX,
   type GrayImage,
 } from '../detect';
+import { inkThresholds } from '../vision/mask';
 import { CORPUS, corpusFixtures, fixtureByName } from './fixtures/floorplan-corpus';
 import { downscale, rasterize, scalePlan } from './fixtures/floorplan-raster';
 import { scoreDetection } from './fixtures/detect-score';
@@ -197,6 +199,13 @@ const FLOORS: Record<string, number> = {
   'heavy-poche': 0.95,
   'oblique-survey': 0.7,
   'scan-letterbox': 0.95,
+  // Measured 83.8 % at the default (80.8 / 83.8 / 74.2 across the three UI
+  // levels). It costs score for two reasons worth keeping rather than tuning
+  // away: the fixtures are drawn at the SAME screen tint as the walls, which is
+  // the only place in the corpus that question is asked at the light tone
+  // (worth 3.7 points), and the dimension chain is broken below `minSegment`
+  // the way a real one is. On the S27 engine this scores 0 % — it is REFUSED.
+  'screened-poche': 0.78,
 };
 
 /**
@@ -221,6 +230,12 @@ const FLOORS: Record<string, number> = {
  * exposure both engines read it perfectly. A fixture whose only guard is a floor
  * it always clears would be decoration. What holds it is the tone-curve sweep
  * below, where the pre-S27 engine scores 0 % from gamma 1.03 onward.
+ *
+ * S28 spent headroom again, and this time in the ordinary direction: adding
+ * `screened-poche` (0.838) takes the 23 to **0.9497**, leaving 0.0297 over the
+ * floor — room for about two more ~0.75 fixtures. Unlike `scan-letterbox` this
+ * one IS held by its own floor, because it is not a knife-edge case: the S27
+ * engine scores it **0 %** at its unperturbed exposure, no tone curve required.
  */
 const MEAN_FLOOR = 0.92;
 
@@ -655,6 +670,92 @@ const PHOTOS = ['apartment-bare', 'apartment-annotated', 'tiny-rooms', 'oblique-
     tolerance: Math.max(6, big.strokeWidth * k),
   });
   return { name, work, res, d };
+});
+
+describe('the ink reading — which candidate answered', () => {
+  /**
+   * The candidate set is only measurable if the result says which cut it used.
+   * A fallback that silently never runs looks exactly like one that runs and
+   * agrees, so without this every claim about the S28 fix rests on an argument
+   * rather than an observation.
+   *
+   * THE SPLIT IS THE ASSERTION. Exactly one legitimate fixture is read by the
+   * runner-up — `screened-poche`, the polarity case S28 exists for — and every
+   * other one is read by the best guess. Both halves are load-bearing and each
+   * catches a different way of getting this wrong:
+   *
+   *   all cand 0   would mean the fallback is DEAD CODE, and the P0 unfixed.
+   *   any other    would mean the fallback fires on ordinary plans, i.e. the
+   *                gradient rule is being second-guessed where it was right,
+   *                which is what makes the corpus byte-identical claim true.
+   */
+  it('reads every legitimate fixture at the FIRST candidate — except the polarity case', () => {
+    for (const { name, img } of corpusFixtures()) {
+      if (name.startsWith('no-plan')) continue;
+      const rescued = name === 'screened-poche';
+      for (const sensitivity of [0.7, 1, 1.5]) {
+        const r = detectWalls(img, { sensitivity });
+        expect(`${name}@${sensitivity}: cand ${r.ink.candidateIndex}`).toBe(
+          `${name}@${sensitivity}: cand ${rescued ? 1 : 0}`,
+        );
+        expect(`${name}@${sensitivity}: ${r.ink.rule}`).toBe(
+          `${name}@${sensitivity}: ${rescued ? 'plain' : 'gradient'}`,
+        );
+        expect(r.ink.value).toBeGreaterThanOrEqual(0);
+        expect(r.ink.value).toBeLessThanOrEqual(255);
+        expect(r.ink.starved).toBe(false);
+        // the evidence, in the form the starvation floor actually tests
+        expect(r.ink.edgeDensity).toBeCloseTo(
+          r.ink.edgeVotes / (2 * (img.width + img.height)),
+          9,
+        );
+      }
+    }
+  });
+
+  /**
+   * ...and the rescue is not cosmetic: the FIRST candidate genuinely cannot read
+   * that page. Without this the split above would hold just as well if the
+   * gradient rule had merely scored a point lower.
+   */
+  it('...and the first candidate on the polarity case is a REFUSAL, not a worse read', () => {
+    const f = fixtureByName('screened-poche');
+    const cands = inkThresholds(f.img);
+    expect(cands.thresholds.length).toBe(2);
+    const first = detectAtThreshold(f.img, cands.thresholds[0]);
+    expect(first.quality.refusal).not.toBeNull();
+    expect(first.segments.length).toBeLessThan(MIN_WALLS);
+    // ...and the runner-up reads it, which is the whole fix in two lines.
+    expect(detectAtThreshold(f.img, cands.thresholds[1]).quality.refusal).toBeNull();
+  });
+
+  it('reports a STARVED page as a plain, single-candidate reading', () => {
+    // Eleven levels of contrast: nothing clears the gradient gate, so there is
+    // one rule and it is the plain one. Deliberately a page that STRADDLES 127,
+    // where `otsuThreshold`'s zero-vote initialiser would otherwise produce a
+    // plausible wrong mask rather than an empty one — see `mask.test.ts`.
+    const w = 200;
+    const h = 150;
+    const data = new Uint8ClampedArray(w * h * 4).fill(255);
+    for (let i = 0; i < w * h; i++) data[i * 4] = data[i * 4 + 1] = data[i * 4 + 2] = 136;
+    const stroke = (x0: number, y0: number, x1: number, y1: number) => {
+      for (let y = y0; y <= y1; y++)
+        for (let x = x0; x <= x1; x++) {
+          const i = (y * w + x) * 4;
+          data[i] = data[i + 1] = data[i + 2] = 125;
+        }
+    };
+    stroke(20, 20, 179, 25);
+    stroke(20, 124, 179, 129);
+    stroke(20, 20, 25, 129);
+    stroke(174, 20, 179, 129);
+    const r = detectWalls({ data, width: w, height: h });
+    expect(r.ink.starved).toBe(true);
+    expect(r.ink.rule).toBe('plain');
+    expect(r.ink.candidateCount).toBe(1);
+    expect(r.ink.edgeVotes).toBe(0);
+    expect(r.ink.value).not.toBe(127);
+  });
 });
 
 /**

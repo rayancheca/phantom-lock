@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import type { Scene, WallObj } from '../../../../engine/types';
-import type { DetectionQuality } from '../../../../engine/detect';
+import type { DetectionQuality, UnderlayDetection } from '../../../../engine/detect';
 
 /**
  * The detection hook — the seam where a proposal becomes scene data.
@@ -14,7 +14,29 @@ import type { DetectionQuality } from '../../../../engine/detect';
  * struck-off walls are excluded, and that accepting is additive and undoable.
  */
 
-const detectMock = vi.fn();
+/**
+ * TYPED, and that is load-bearing.
+ *
+ * `vi.mock`'s factory return value is not checked against the real module, so a
+ * new REQUIRED field on `UnderlayDetection` compiles clean here and throws at
+ * runtime — inside the hook's `.then`, where its own `.catch` converts the throw
+ * into the user-facing sentence "Could not read that image." Measured when `ink`
+ * was added in S28: 12 of these 20 tests failed exactly that way, with `tsc`
+ * silent. Typing `detectMock`'s resolved value moves that failure to
+ * `npm run build`, which is where it belongs (the S20 lesson, one level down).
+ */
+const detectMock = vi.fn<(...args: unknown[]) => Promise<UnderlayDetection>>();
+
+/** The default ink reading: the best-guess candidate, no starvation, no rescue. */
+const INK: UnderlayDetection['ink'] = {
+  value: 140,
+  rule: 'gradient',
+  candidateIndex: 0,
+  candidateCount: 2,
+  starved: false,
+  edgeVotes: 40_000,
+  edgeDensity: 16.4,
+};
 vi.mock('../../../../engine/detect', () => ({
   detectWallsFromUnderlay: (...args: unknown[]) => detectMock(...args),
 }));
@@ -111,7 +133,7 @@ describe('useWallDetection', () => {
   });
 
   it('offers a reviewable proposal and writes NOTHING until accepted', async () => {
-    detectMock.mockResolvedValue({ walls: [wall('a', 0), wall('b', 1), wall('c', 2)], quality: QUALITY });
+    detectMock.mockResolvedValue({ walls: [wall('a', 0), wall('b', 1), wall('c', 2)], quality: QUALITY, ink: INK });
     const h = harness();
     act(() => h.view.result.current.run());
     await waitFor(() => expect(h.view.result.current.proposal).not.toBeNull());
@@ -127,6 +149,7 @@ describe('useWallDetection', () => {
     detectMock.mockResolvedValue({
       walls: [],
       quality: { ...QUALITY, refusal: "This image doesn't look like a floorplan." },
+      ink: INK,
     });
     const h = harness();
     act(() => h.view.result.current.run());
@@ -150,6 +173,7 @@ describe('useWallDetection', () => {
     detectMock.mockResolvedValue({
       walls: [],
       quality: { ...QUALITY, refusal: 'No rooms.', cause: 'unstructured' as const },
+      ink: INK,
     });
     const h = harness();
     act(() => h.view.result.current.run('careful'));
@@ -163,6 +187,7 @@ describe('useWallDetection', () => {
     detectMock.mockResolvedValue({
       walls: [],
       quality: { ...QUALITY, refusal: 'Not enough lines.', cause: 'too-few-lines' as const },
+      ink: INK,
     });
     const h = harness();
     act(() => h.view.result.current.run('careful'));
@@ -174,6 +199,7 @@ describe('useWallDetection', () => {
     detectMock.mockResolvedValue({
       walls: [],
       quality: { ...QUALITY, refusal: 'No rooms.', cause: 'unstructured' as const },
+      ink: INK,
     });
     const h = harness();
     act(() => h.view.result.current.run('thorough'));
@@ -192,6 +218,7 @@ describe('useWallDetection', () => {
         refusal: 'This browser could not read the image.',
         cause: 'unreadable' as const,
       },
+      ink: INK,
     });
     const h = harness();
     act(() => h.view.result.current.run('careful'));
@@ -219,13 +246,72 @@ describe('useWallDetection', () => {
     // The busy flag must clear on the failing path too — a stuck ref would
     // wedge the button forever with no way back.
     await waitFor(() => expect(h.view.result.current.detecting).toBe(false));
-    detectMock.mockImplementation(() => Promise.resolve({ walls: [wall('a', 0)], quality: QUALITY }));
+    detectMock.mockImplementation(() => Promise.resolve({ walls: [wall('a', 0)], quality: QUALITY, ink: INK }));
     act(() => h.view.result.current.run());
     await waitFor(() => expect(detectMock).toHaveBeenCalledTimes(2));
   });
 
+  /**
+   * The degraded and the rescued reads are TRACED, and they are different things.
+   *
+   * Both arrive with `rule: 'plain'`, so a hook that only looked at `rule` would
+   * report the S28 fix WORKING as a defect. And neither may reach the user: the
+   * proposal must be offered exactly as if nothing unusual happened, because
+   * there is no control either one corresponds to.
+   */
+  it('traces a STARVED ink reading without telling the user anything', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    detectMock.mockResolvedValue({
+      walls: [wall('a', 0)],
+      quality: QUALITY,
+      ink: { ...INK, rule: 'plain', starved: true, edgeVotes: 0, edgeDensity: 0, candidateCount: 1 },
+    });
+    const h = harness();
+    act(() => h.view.result.current.run());
+    await waitFor(() => expect(h.view.result.current.proposal).not.toBeNull());
+    expect(warn.mock.calls[0][0]).toMatch(/starved/);
+    expect(h.showToast).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('traces a RESCUED ink reading as a rescue, never as a starvation', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    detectMock.mockResolvedValue({
+      walls: [wall('a', 0)],
+      quality: QUALITY,
+      ink: { ...INK, rule: 'plain', starved: false, candidateIndex: 1, candidateCount: 2 },
+    });
+    const h = harness();
+    act(() => h.view.result.current.run());
+    await waitFor(() => expect(h.view.result.current.proposal).not.toBeNull());
+    expect(warn.mock.calls[0][0]).toMatch(/rescued/);
+    expect(warn.mock.calls[0][0]).not.toMatch(/starved/);
+    expect(h.showToast).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  /**
+   * THE FOOT-GUN THIS FILE WALKED INTO. `vi.mock`'s factory is untyped, so an
+   * engine field the mock forgets is `undefined` at runtime — and every read in
+   * the hook's `.then` is inside its own `.catch`, which reports "Could not read
+   * that image." Measured in S28: 12 of these tests failed exactly that way,
+   * blaming the user's file for a missing test fixture. `detectMock` is typed to
+   * stop it recurring; this pins the runtime half.
+   */
+  it('still offers the proposal when the engine supplies NO ink reading at all', async () => {
+    detectMock.mockResolvedValue({
+      walls: [wall('a', 0), wall('b', 1)],
+      quality: QUALITY,
+    } as unknown as UnderlayDetection);
+    const h = harness();
+    act(() => h.view.result.current.run());
+    await waitFor(() => expect(h.view.result.current.proposal).not.toBeNull());
+    expect(h.view.result.current.proposal!.walls).toHaveLength(2);
+    expect(h.showToast).not.toHaveBeenCalled();
+  });
+
   it('passes the chosen sensitivity through', async () => {
-    detectMock.mockResolvedValue({ walls: [wall('a', 0)], quality: QUALITY });
+    detectMock.mockResolvedValue({ walls: [wall('a', 0)], quality: QUALITY, ink: INK });
     const h = harness();
     act(() => h.view.result.current.run('thorough'));
     await waitFor(() => expect(detectMock).toHaveBeenCalled());
@@ -233,7 +319,7 @@ describe('useWallDetection', () => {
   });
 
   it('drops struck-off walls from the ghost AND from what is committed', async () => {
-    detectMock.mockResolvedValue({ walls: [wall('a', 0), wall('b', 1), wall('c', 2)], quality: QUALITY });
+    detectMock.mockResolvedValue({ walls: [wall('a', 0), wall('b', 1), wall('c', 2)], quality: QUALITY, ink: INK });
     const h = harness();
     act(() => h.view.result.current.run());
     await waitFor(() => expect(h.view.result.current.proposal).not.toBeNull());
@@ -246,7 +332,7 @@ describe('useWallDetection', () => {
   });
 
   it('toggling twice puts a wall back', async () => {
-    detectMock.mockResolvedValue({ walls: [wall('a', 0), wall('b', 1)], quality: QUALITY });
+    detectMock.mockResolvedValue({ walls: [wall('a', 0), wall('b', 1)], quality: QUALITY, ink: INK });
     const h = harness();
     act(() => h.view.result.current.run());
     await waitFor(() => expect(h.view.result.current.proposal).not.toBeNull());
@@ -256,7 +342,7 @@ describe('useWallDetection', () => {
   });
 
   it('accepting is ADDITIVE — existing objects survive — and is undoable', async () => {
-    detectMock.mockResolvedValue({ walls: [wall('a', 0)], quality: QUALITY });
+    detectMock.mockResolvedValue({ walls: [wall('a', 0)], quality: QUALITY, ink: INK });
     const existing = wall('mine', 9);
     const h = harness({ objects: [existing] });
     act(() => h.view.result.current.run());
@@ -272,7 +358,7 @@ describe('useWallDetection', () => {
   });
 
   it('drops the underlay opacity so the accepted walls read over it', async () => {
-    detectMock.mockResolvedValue({ walls: [wall('a', 0)], quality: QUALITY });
+    detectMock.mockResolvedValue({ walls: [wall('a', 0)], quality: QUALITY, ink: INK });
     const h = harness();
     act(() => h.view.result.current.run());
     await waitFor(() => expect(h.view.result.current.proposal).not.toBeNull());
@@ -281,7 +367,7 @@ describe('useWallDetection', () => {
   });
 
   it('refuses to commit an EMPTY selection, and says so instead of doing nothing', async () => {
-    detectMock.mockResolvedValue({ walls: [wall('a', 0)], quality: QUALITY });
+    detectMock.mockResolvedValue({ walls: [wall('a', 0)], quality: QUALITY, ink: INK });
     const h = harness();
     act(() => h.view.result.current.run());
     await waitFor(() => expect(h.view.result.current.proposal).not.toBeNull());
@@ -294,7 +380,7 @@ describe('useWallDetection', () => {
   });
 
   it('discard writes nothing', async () => {
-    detectMock.mockResolvedValue({ walls: [wall('a', 0)], quality: QUALITY });
+    detectMock.mockResolvedValue({ walls: [wall('a', 0)], quality: QUALITY, ink: INK });
     const h = harness();
     act(() => h.view.result.current.run());
     await waitFor(() => expect(h.view.result.current.proposal).not.toBeNull());

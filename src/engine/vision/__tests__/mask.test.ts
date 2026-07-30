@@ -7,6 +7,7 @@ import {
   distanceTo,
   erode,
   inkMaskOf,
+  inkThresholds,
   luminance,
   meanStrokeWidth,
   otsuThreshold,
@@ -141,6 +142,109 @@ describe('inkMaskOf', () => {
     expect(m.data[16 * 120 + 59]).toBe(1); // a stroke
     expect(m.data[55 * 120 + 59]).toBe(0); // paper between the strokes
     expect(m.data[45 * 120 + 12]).toBe(0); // inside the flat mid-tone
+  });
+
+  /**
+   * THE SHAPE OF THE STARVATION GUARD.
+   *
+   * A vote is a pixel on an intensity CHANGE, so the vote count is a LENGTH and
+   * grows as k when the same drawing arrives at k times the resolution. The
+   * pre-S28 guard divided it by AREA, which grows as k^2 — so the statistic fell
+   * as 1/k and the guard grew MORE likely to fire the larger the image, handing
+   * a phone-resolution plan back to the plain histogram.
+   *
+   * This pins the INVARIANT rather than the constant: one page-spanning stroke
+   * must score the same at every resolution.
+   */
+  it('measures edge evidence per unit of PAGE PERIMETER, so it does not decay with resolution', () => {
+    const densities: number[] = [];
+    const areaFractions: number[] = [];
+    for (const k of [1, 2, 4]) {
+      const img = page(700 * k, 520 * k, 246);
+      // one stroke straight across the middle, 3 px at every scale
+      ink(img, 0, 260 * k, 700 * k - 1, 260 * k + 2, 30);
+      const t = inkThresholds(img);
+      // Load-bearing, not decorative: this drawing's area fraction is 1.154 % at
+      // every k, UNDER the old 2 % floor, so the pre-S28 rule starved on a
+      // single clean stroke at every resolution.
+      expect(t.starved).toBe(false);
+      densities.push(t.edgeDensity);
+      areaFractions.push(t.edgeVotes / (700 * k * 520 * k));
+    }
+    // The perimeter-normalised statistic is IDENTICAL across a 4x range...
+    expect(densities[1]).toBeCloseTo(densities[0], 6);
+    expect(densities[2]).toBeCloseTo(densities[0], 6);
+    // ...and it is the same drawing, so a correct statistic MUST be flat here.
+    // The old one is not: it halves on every doubling, which is the defect.
+    expect(areaFractions[1]).toBeCloseTo(areaFractions[0] / 2, 4);
+    expect(areaFractions[2]).toBeCloseTo(areaFractions[0] / 4, 4);
+  });
+
+  /**
+   * The consequence on a plan rather than a synthetic stroke. Under the pre-S28
+   * area rule the simplest fixture in the corpus starved at 3x — an ordinary
+   * phone photo — and 9 of the 22 legitimate fixtures starved at 4x.
+   */
+  it('does NOT starve on a legitimate plan at phone resolution', () => {
+    for (const k of [1, 2, 3, 4]) {
+      const img = page(700 * k, 520 * k, 246);
+      ink(img, 60 * k, 50 * k, 640 * k, 50 * k + 4 * k, 30);
+      ink(img, 60 * k, 470 * k, 640 * k, 470 * k + 4 * k, 30);
+      ink(img, 60 * k, 50 * k, 60 * k + 4 * k, 470 * k, 30);
+      ink(img, 640 * k, 50 * k, 640 * k + 4 * k, 470 * k, 30);
+      const t = inkThresholds(img);
+      expect(t.starved).toBe(false);
+      // and it is not a near miss at any of them
+      expect(t.edgeDensity).toBeGreaterThan(4);
+    }
+  });
+
+  /**
+   * THE GUARD IS LOAD-BEARING, and the obvious argument that it is not is wrong.
+   *
+   * That argument: a starved page gives `otsuThreshold` zero votes, it returns
+   * its 127 initialiser, the mask comes out EMPTY, the reading is refused and
+   * the plain candidate rescues it anyway. True only when the page does not
+   * STRADDLE 127. This one spans [125, 136] — eleven levels, nothing clears
+   * `EDGE_GATE` — so the accidental 127 cut splits it into a plausible, WRONG
+   * mask that a downstream reading will happily accept. Measured end to end in
+   * S28: with the guard 4 walls at 100.0 %, without it 3 walls at 56.5 %.
+   */
+  it('offers only the PLAIN cut on a starved page, even when 127 would split it', () => {
+    const img = page(200, 150, 136);
+    ink(img, 20, 20, 179, 25, 125);
+    ink(img, 20, 124, 179, 129, 125);
+    ink(img, 20, 20, 25, 129, 125);
+    ink(img, 174, 20, 179, 129, 125);
+    const t = inkThresholds(img);
+    expect(t.edgeVotes).toBe(0);
+    expect(t.starved).toBe(true);
+    // ONE candidate, and it is the plain histogram's — not [127, plain].
+    expect(t.thresholds).toHaveLength(1);
+    expect(t.thresholds[0]).toBe(otsuThreshold(luminance(img).hist, 200 * 150));
+    expect(t.thresholds[0]).not.toBe(127);
+    // ...and the mask that follows is the real drawing, not the 127 accident.
+    const m = inkMaskOf(img);
+    expect(m.data[22 * 200 + 100]).toBe(1); // the top wall
+    expect(m.data[75 * 200 + 100]).toBe(0); // the floor between the walls
+  });
+
+  it('RECORDS the evidence the starvation floor was tested on', () => {
+    const normal = page(120, 90, 250);
+    ink(normal, 30, 20, 90, 23, 20);
+    ink(normal, 30, 60, 90, 63, 20);
+    ink(normal, 30, 20, 33, 63, 20);
+    const good = inkThresholds(normal);
+    expect(good.starved).toBe(false);
+    expect(good.edgeVotes).toBeGreaterThan(0);
+    expect(good.edgeDensity).toBeCloseTo(good.edgeVotes / (2 * (120 + 90)), 9);
+
+    const faint = page(80, 60, 250);
+    ink(faint, 10, 28, 69, 31, 246);
+    const bad = inkThresholds(faint);
+    expect(bad.starved).toBe(true);
+    expect(bad.edgeVotes).toBe(0);
+    expect(bad.edgeDensity).toBe(0);
   });
 
   it('falls back to the plain histogram when the page is too faint to have edges', () => {

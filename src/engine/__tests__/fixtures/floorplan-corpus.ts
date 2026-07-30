@@ -23,7 +23,14 @@
  * score is), but it makes each fixture's intent legible.
  */
 
-import { rasterize, type Fixture, type PlanSpec, type WallSpec } from './floorplan-raster';
+import {
+  rasterize,
+  type BlobSpec,
+  type Fixture,
+  type PlanSpec,
+  type SpeckleSpec,
+  type WallSpec,
+} from './floorplan-raster';
 
 /** A fixture plus what a human reading the image would call the right answer. */
 export interface CorpusEntry {
@@ -327,6 +334,207 @@ const OBLIQUE_SURVEY = {
   speckles: [...obDimensions(OB_WALLS, 26), ...obDimensions(OB_WALLS.slice(0, 9), -30)],
   photo: { rotate: 11, blur: 0.6, noise: 2.5, gradient: 8 },
   seed: 26,
+};
+
+// ---------------------------------------------------------------------------
+// `screened-poche` — the INK POLARITY case (S28)
+// ---------------------------------------------------------------------------
+
+const SP_W = 700;
+const SP_H = 520;
+
+/**
+ * The wall SCREEN TINT, and the reason this fixture exists.
+ *
+ * `scan-letterbox` put a third tone mass on the page and asked the threshold to
+ * ignore it. This one inverts the POLARITY: the walls are the LIGHT ink and the
+ * annotation is the DARK ink. That is not a contrivance, it is how a plotted
+ * sheet is normally drawn — wall bodies filled with a 20-30 % grey screen (the
+ * standard CTB plot style for poche, and what a photocopier does to a solid
+ * fill anyway) while dimension strings, witness lines, figures, leaders, room
+ * names and the title strip all plot in fine solid black.
+ *
+ * Gradient weighting scales a tone's vote by its perimeter-to-area ratio, i.e.
+ * by 1/thickness. On `scan-letterbox` that is exactly right — it demotes a flat
+ * mass that carries no boundary information. Here the same rule AMPLIFIES the
+ * hairline annotation and DEMOTES the wall bodies, and the linework captures
+ * the threshold.
+ *
+ * And it is not a near-tie, which is what makes this fixture robust rather than
+ * knife-edge. Measured on the page below, Otsu's criterion has ONE clear winner
+ * on each histogram and they disagree:
+ *
+ *   plain histogram   argmax 217 (100.00 %), runner-up 144 at 57.41 %
+ *   edge histogram    argmax 138 (100.00 %), runner-up 208 at 64.93 %
+ *
+ * 217 admits 16.3 % of the page as ink — the walls and fixtures. 138 admits
+ * 0.7 % — the linework only, with every wall on the light side of the cut. The
+ * dark ink is 0.64 % of the page by AREA and 6.7 % of it by EDGE VOTE, which is
+ * the whole mechanism in two numbers.
+ *
+ * It is also a MATCHED PAIR with `scan-letterbox`, and that is what makes the
+ * two of them pin the rule from both sides. There the correct cut admits LESS
+ * ink (6.7 % against 31.9 % at gamma 1.08) and comes from the EDGE histogram;
+ * here the correct cut admits MORE (16.3 % against 0.7 %) and comes from the
+ * PLAIN one. So "always weight by gradient", "always use the plain histogram",
+ * "prefer the candidate admitting less ink" and "prefer the one admitting more"
+ * each break exactly one of these two fixtures.
+ */
+const SP_SCREEN = 196;
+const SP_PAPER = 246;
+/**
+ * Annotation ink and weight. Solid black at a fine pen.
+ *
+ * Both sit inside a measured plateau rather than on an edge: sweeping each axis
+ * alone at the tones below, the failure reproduces for annotation ink 0-95 (i.e.
+ * anything from pure black to a mid grey — the whole sweep) and for pen widths
+ * 1.5-5 px. At 1.2 px and below it stops reproducing, which is recorded rather
+ * than explained: nothing here establishes WHY, only where the edge is.
+ */
+const SP_ANN_INK = 30;
+const SP_ANN_W = 2;
+/** Heavy exterior poche against thinner partitions, as a plotted sheet draws them. */
+const SP_POCHE = 16;
+const SP_PART = 10;
+
+const SP_L = 100;
+const SP_R = 612;
+const SP_T = 70;
+const SP_B = 462;
+/** Interior wall lines — and therefore also the dimension stops. */
+const SP_VX = 356;
+const SP_HY = 268;
+const SP_BX = 486;
+const SP_BY = 348;
+
+const SP_WALLS: WallSpec[] = [
+  { a: { x: SP_L, y: SP_T }, b: { x: SP_R, y: SP_T }, thickness: SP_POCHE, ink: SP_SCREEN },
+  { a: { x: SP_R, y: SP_T }, b: { x: SP_R, y: SP_B }, thickness: SP_POCHE, ink: SP_SCREEN },
+  { a: { x: SP_R, y: SP_B }, b: { x: SP_L, y: SP_B }, thickness: SP_POCHE, ink: SP_SCREEN },
+  { a: { x: SP_L, y: SP_B }, b: { x: SP_L, y: SP_T }, thickness: SP_POCHE, ink: SP_SCREEN },
+  { a: { x: SP_VX, y: SP_T }, b: { x: SP_VX, y: 246 }, thickness: SP_PART, ink: SP_SCREEN },
+  { a: { x: SP_VX, y: 316 }, b: { x: SP_VX, y: SP_B }, thickness: SP_PART, ink: SP_SCREEN },
+  { a: { x: SP_L, y: SP_HY }, b: { x: 186, y: SP_HY }, thickness: SP_PART, ink: SP_SCREEN },
+  { a: { x: 256, y: SP_HY }, b: { x: SP_VX, y: SP_HY }, thickness: SP_PART, ink: SP_SCREEN },
+  { a: { x: SP_BX, y: SP_BY }, b: { x: SP_R, y: SP_BY }, thickness: SP_PART, ink: SP_SCREEN },
+  { a: { x: SP_BX, y: SP_BY }, b: { x: SP_BX, y: SP_B }, thickness: SP_PART, ink: SP_SCREEN },
+];
+
+/**
+ * Gap left in each dimension run for the figure written in it.
+ *
+ * 60 px is not cosmetic. `minSegment` is 35 px at the default, and the stops
+ * below are close enough together that every surviving chain piece lands under
+ * it — which is what a real dimension string looks like and also what keeps
+ * this fixture measuring the THRESHOLD rather than measuring how well the
+ * detector ignores long annotation lines. Drawn with one figure per side
+ * instead, an earlier draft of this fixture scored 64.3 % on a working engine,
+ * because a full dimension FRAME is four long straight lines and `joinCorners`
+ * welds the building to them — which would have made this fixture a measure of
+ * that, not of the threshold. Drawn like this it scores 83.8 %.
+ */
+const SP_RUN_GAP = 60;
+
+/**
+ * One dimension string: a chain BROKEN at each run by its figure, a witness
+ * line from just off each wall face out past the chain, and a 45-degree tick at
+ * every stop. All of it `decoy` — none of it is a wall.
+ */
+function spDimString(
+  axis: 'h' | 'v',
+  base: number,
+  stops: number[],
+  face: number,
+): { walls: WallSpec[]; speckles: SpeckleSpec[] } {
+  const walls: WallSpec[] = [];
+  const speckles: SpeckleSpec[] = [];
+  const pen = { thickness: SP_ANN_W, ink: SP_ANN_INK, decoy: true as const };
+  const pt = (along: number, off: number) => (axis === 'h' ? { x: along, y: off } : { x: off, y: along });
+  const outward = base < face ? -1 : 1;
+  for (let i = 0; i < stops.length; i++) {
+    const s = stops[i];
+    walls.push({ a: pt(s, face + outward * 6), b: pt(s, base + outward * 7), ...pen });
+    const d = 6;
+    walls.push({
+      a: axis === 'h' ? { x: s - d, y: base + d } : { x: base + d, y: s - d },
+      b: axis === 'h' ? { x: s + d, y: base - d } : { x: base - d, y: s + d },
+      ...pen,
+    });
+    if (i === stops.length - 1) continue;
+    const next = stops[i + 1];
+    const mid = (s + next) / 2;
+    const half = SP_RUN_GAP / 2;
+    if (mid - half > s) walls.push({ a: pt(s, base), b: pt(mid - half, base), ...pen });
+    if (next > mid + half) walls.push({ a: pt(mid + half, base), b: pt(next, base), ...pen });
+    speckles.push(
+      axis === 'h'
+        ? { x: mid - 18, y: base - 11, len: 36, size: 5, ink: SP_ANN_INK }
+        : { x: base - 11, y: mid - 18, len: 36, size: 5, vertical: true, ink: SP_ANN_INK },
+    );
+  }
+  return { walls, speckles };
+}
+
+const SP_DIM_TOP = spDimString('h', 40, [SP_L, 186, 256, SP_VX, 420, SP_BX, SP_R], SP_T);
+const SP_DIM_LEFT = spDimString('v', 64, [SP_T, 168, SP_HY, SP_BY, 404, SP_B], SP_L);
+
+/** Leaders to the room names. Both deliberately under `minSegment`. */
+const SP_LEADERS: WallSpec[] = [
+  { a: { x: 172, y: 146 }, b: { x: 150, y: 160 }, thickness: SP_ANN_W, ink: SP_ANN_INK, decoy: true },
+  { a: { x: 416, y: 136 }, b: { x: 394, y: 150 }, thickness: SP_ANN_W, ink: SP_ANN_INK, decoy: true },
+];
+
+/** Room names and areas, the title strip, and the door/window tags. */
+const SP_TEXT: SpeckleSpec[] = (
+  [
+    [176, 140, 64],
+    [176, 155, 46],
+    [420, 130, 70],
+    [420, 145, 50],
+    [402, 484, 132],
+    [402, 498, 96],
+    [210, 258, 22],
+    [344, 258, 22],
+    [476, 338, 22],
+    [92, 200, 20],
+    [604, 240, 20],
+  ] as number[][]
+).map(([x, y, len]) => ({ x, y, len, size: 5, ink: SP_ANN_INK }));
+
+/**
+ * Solid fixtures at the SAME screen tint as the walls — a bath, a WC, a kitchen
+ * run, a bed, a sofa.
+ *
+ * Every other fixture in this corpus draws furniture and walls in the same
+ * DEFAULT ink, so "can `removeThickRegions` separate them when they share a
+ * tone?" has only ever been asked at one tone. Here that tone is the light one,
+ * which is the case a threshold error deletes first. They cost 3.7 points of
+ * score (87.5 % -> 83.8 % on a working engine) and change nothing about the
+ * refusal, which is the right trade for a question no other fixture asks.
+ */
+const SP_FIXTURES: BlobSpec[] = [
+  { kind: 'rect', x: 548, y: 400, w: 96, h: 46, ink: SP_SCREEN },
+  { kind: 'circle', x: 508, y: 420, w: 34, h: 34, ink: SP_SCREEN },
+  { kind: 'rect', x: 420, y: 96, w: 104, h: 40, ink: SP_SCREEN },
+  { kind: 'rect', x: 200, y: 370, w: 92, h: 62, ink: SP_SCREEN },
+  { kind: 'rect', x: 210, y: 190, w: 110, h: 52, ink: SP_SCREEN },
+];
+
+const SCREENED_POCHE: PlanSpec = {
+  name: 'screened-poche',
+  width: SP_W,
+  height: SP_H,
+  paper: SP_PAPER,
+  ink: SP_SCREEN,
+  strokeWidth: SP_PART,
+  walls: [...SP_WALLS, ...SP_DIM_TOP.walls, ...SP_DIM_LEFT.walls, ...SP_LEADERS],
+  blobs: SP_FIXTURES,
+  speckles: [...SP_DIM_TOP.speckles, ...SP_DIM_LEFT.speckles, ...SP_TEXT],
+  // Deliberately a clean vector render, like `heavy-poche`. The failure survives
+  // blur/noise/lighting/rotation as well (measured, four treatments up to 22
+  // degrees off-square, all still refused), so photo realism would only cost
+  // score without adding a guard.
+  seed: 28,
 };
 
 export const CORPUS: CorpusEntry[] = [
@@ -731,6 +939,32 @@ export const CORPUS: CorpusEntry[] = [
     why: 'A THIRD TONE MASS: flat grey scanner bars over 11 % of the page put two near-tied maxima in Otsu\'s criterion — the shape that made the owner\'s plan flip from read to refused',
     expectWalls: 10,
     spec: SCAN_LETTERBOX,
+  },
+  {
+    // Added in S28, and it is `scan-letterbox`'s MIRROR — the two of them
+    // together are what pin the threshold rule from both sides.
+    //
+    // S27 fixed `scan-letterbox` by weighting Otsu's histogram by local
+    // gradient, so that a flat mass votes in proportion to its BOUNDARY rather
+    // than its area. That is right there and inverted here: gradient weighting
+    // scales a tone's vote by roughly 1/thickness, so on a plotted sheet with
+    // screened poche walls and hairline black annotation it amplifies the
+    // linework, demotes the wall bodies, and the threshold lands with every wall
+    // on the paper side of the cut. Measured on the S27 engine: 1 wall,
+    // structure 0.000, REFUSED — "This image doesn't have enough clear straight
+    // lines to read as a floorplan", about the page below.
+    //
+    // The pair is what makes the argument, because each one falsifies a
+    // different simple rule. On `scan-letterbox` the correct cut admits LESS ink
+    // (6.7 % against 31.9 %) and comes from the EDGE histogram; here it admits
+    // MORE (16.3 % against 0.7 %) and comes from the PLAIN one. So "always
+    // weight by gradient", "always use the plain histogram", "prefer the
+    // candidate admitting less ink" and "prefer the one admitting more" each
+    // break exactly one of these two. The choice has to be made downstream, on
+    // whether the reading is a floorplan — which is the S28 candidate set.
+    why: 'THE INK POLARITY: screened poche walls under hairline black annotation, so the LIGHT tone is the structure — the mirror of scan-letterbox, and what a gradient-weighted threshold alone deletes',
+    expectWalls: 10,
+    spec: SCREENED_POCHE,
   },
   {
     why: 'THE NULL CASE: a photo of a table and some text, no floorplan at all. Detection must REFUSE.',

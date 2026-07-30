@@ -83,33 +83,93 @@ export function otsuThreshold(hist: Uint32Array, total: number): number {
  *              about 2.7, so |dx| + |dy| of pure noise sits near 5-11.
  *   too high   a genuinely faint drawing stops voting at all. Measured, a plan
  *              with only 20 levels between ink and paper starves above gate 8 —
- *              which is what `MIN_EDGE_FRACTION` exists to catch.
+ *              which is what `MIN_EDGE_DENSITY` exists to catch.
  *
  * 16 sits above the noise and inside the plateau.
  */
 const EDGE_GATE = 16;
 
 /**
- * Below this fraction of the page clearing `EDGE_GATE`, the gradient weighting
- * has too little to work with and the plain histogram is used instead.
+ * Below this many votes per unit of page PERIMETER, the gradient histogram is
+ * too small a sample to be offered as a candidate at all, and the page is read
+ * on the plain one alone.
  *
- * ⚠️ THE FIGURES BELOW WERE RE-MEASURED AFTER THE BORDER-CLAMP FIX, because the
- * first set was taken before it and every one of them was inflated by exactly
- * the false border ring — 2*(w-2 + h-2) - 4 votes, which is 0.667 pp on a
- * 700x520 page. Corrected: the LOWEST any corpus fixture puts through the gate
- * is **3.500 %** (`no-plan`), the lowest legitimate plan is **4.392 %**
- * (`clean-rect`), and a 20-levels-of-contrast page measures **0.016 %**. So the
- * real low-side margin is **1.75x**, not the "better than 2x" first claimed.
+ * ## Why perimeter, and not area
  *
- * ⚠️ AND THE GUARD IS THE WRONG SHAPE, which is recorded rather than fixed here.
- * It compares a count that scales as PERIMETER against a fraction of AREA, so
- * the edge fraction falls as 1/k and the guard becomes MORE likely to fire the
- * larger the image: measured, `clean-rect` and `thick-rect` already starve at 3x
- * (an ordinary phone photo), and 12 of 22 fixtures starve at 4x. The product is
- * protected today only because `detectWallsFromUnderlay` downscales to
- * `WORK_MAX` 900 first — `detectWalls` itself is public and pure.
+ * A vote is a pixel sitting on an intensity CHANGE, so the vote count tracks the
+ * total LENGTH of ink boundary on the page. It therefore grows as k when the
+ * same drawing arrives at k times the resolution, while the page area grows as
+ * k^2. The pre-S28 rule divided the one by the other, so the statistic it tested
+ * fell as 1/k and the guard became MORE likely to fire the LARGER the image —
+ * the opposite of what a starvation test should do.
+ *
+ * Measured, one page-spanning 3 px stroke on an otherwise blank page:
+ *
+ *          700x520     1400x1040    2800x2080
+ *   votes    4 200        8 400       16 800
+ *   /area    1.154 %      0.577 %      0.288 %   <- halves every doubling
+ *   /perim   1.721        1.721        1.721     <- bit-identical
+ *
+ * The consequence was not hypothetical. At 3x the old rule starved `clean-rect`
+ * and `thick-rect`; at 4x it starved **9 of the 22 legitimate fixtures**
+ * (clean-rect, thick-rect, two-room, apartment-bare, apartment-faint,
+ * angled-wall, hairline, tiny-rooms, studio-open) plus the `no-plan` null. It
+ * cost little on the corpus because on a clean two-tone page the two histograms
+ * agree anyway — only `apartment-faint` at 4x actually moved, and it moved in
+ * the right direction (73.9/83.5/92.2 % -> 85.7/93.8/96.5 % at the three UI
+ * levels). But the page where the two rules DISAGREE is precisely the page
+ * carrying a third tone mass, i.e. the one class gradient weighting exists to
+ * serve, so a guard that quietly hands that class back to the plain rule as the
+ * image gets bigger is a trap rather than a safety net.
+ *
+ * ## The constant, against the ENUMERATED protected set
+ *
+ * One page-spanning stroke scores 1.721, so 1.0 is "less than about half a
+ * single stroke's worth of boundary on the whole page". Measured over the 25
+ * corpus fixtures rasterised at 0.3x .. 4x, plus the owner's real plan through
+ * the app chain:
+ *
+ *   faintest LEGITIMATE reading    4.896  (`clean-rect` at 0.3x)     4.9x clear
+ *   faintest reading of any kind   3.197  (`no-plan-shelf` at 0.3x)  3.2x clear
+ *   owner's plan, app chain       23.907                            24x  clear
+ *   a 24-levels-of-contrast page   0.049                            20x  under
+ *   a 20-levels-of-contrast page   0.030                            34x  under
+ *   a 4-levels-of-contrast page    0.000                           fires, right
+ *
+ * Neither margin collapses with k, which is the whole point: under the old
+ * shape the low-side margin was 2.2x at 1x and had INVERTED by 4x. Nor does it
+ * collapse at the SMALL end, where perimeter normalisation might have been
+ * expected to bite — a 40x30 thumbnail of a rectangle with a 2 px stroke still
+ * measures 4.171.
+ *
+ * ONE legitimate reading in the whole sweep falls below 1.0, and it is not a
+ * counter-example: `apartment-faint` at 6x measures 0.538, because `scalePlan`
+ * scales the fixture's blur along with the plan, so a 6x rendering is an
+ * 82-level drawing behind a sigma-6 gaussian and its gradient genuinely has
+ * nothing to say. The guard's decision is INERT there — measured, the two cuts
+ * are 192 and 190, the masks differ over 0.113 % of the page, and all three UI
+ * levels refuse either way.
+ *
+ * `sqrt(width * height)` behaves identically on everything in evidence: every
+ * corpus page and the owner's plan sit at perimeter/sqrt(area) = 4.02-4.04, a
+ * 0.6 % spread, so the data cannot separate the two. Perimeter is chosen because
+ * it is the quantity the diagnosis names, which keeps this comment and the code
+ * it describes talking about the same thing.
+ *
+ * ## It is still load-bearing under the candidate set — measured, not assumed
+ *
+ * The tempting argument is that the candidate set makes this guard redundant: a
+ * starved page gives `otsuThreshold` zero votes, it falls through to its 127
+ * initialiser, the mask comes out EMPTY, the reading is refused for
+ * `too-few-lines` and the plain candidate rescues it anyway. That is true only
+ * when the page does not STRADDLE 127. `hollow-rect` compressed to an 11-level
+ * page spanning [125, 136] gives zero votes, and the accidental 127 cut then
+ * produces a non-empty, wrong mask that is ACCEPTED — so the plain candidate
+ * never runs. Measured: with this guard 4 walls at 100.0 %, without it 3 walls
+ * at 56.5 %, at all three UI levels. `mask.test.ts`'s faint-page case fails
+ * outright without it (240 ink pixels become 0).
  */
-const MIN_EDGE_FRACTION = 0.02;
+const MIN_EDGE_DENSITY = 1.0;
 
 /**
  * A histogram in which each pixel votes only if it lies on an intensity CHANGE.
@@ -180,57 +240,131 @@ export function edgeWeightedHistogram(img: GrayImage, gray: Uint8Array): Uint32A
   return out;
 }
 
+/** A page's luminance plus the cut points worth trying on it. */
+export interface InkThresholds {
+  /** Rec.601 luminance, computed once and shared by every candidate. */
+  gray: Uint8Array;
+  /**
+   * Candidate cut points, BEST GUESS FIRST and de-duplicated. Always at least
+   * one; at most two.
+   */
+  thresholds: number[];
+  /** True when too little of the page cleared `EDGE_GATE` to weight anything. */
+  starved: boolean;
+  /** Pixels whose local intensity change cleared `EDGE_GATE`. */
+  edgeVotes: number;
+  /** ...per unit of page PERIMETER, which is the form `MIN_EDGE_DENSITY` tests. */
+  edgeDensity: number;
+}
+
 /**
- * Luminance + Otsu -> ink mask. Ink is taken to be the MINORITY class, which is
- * what makes a white-on-dark blueprint work without a separate code path: a
- * plan is mostly page, whichever colour the page is.
+ * Where might ink end and page begin? — as a CANDIDATE SET, not one answer.
  *
- * The threshold is chosen on the EDGE-WEIGHTED histogram (see above), because
- * Otsu on a plain histogram is unstable whenever the page carries a third tone
- * mass. Its criterion is nearly flat across a wide band on any real page — the
- * owner's plan scores within 3 % of its optimum for every threshold in
- * [142, 219] — and where that band spans blank paper the choice inside it does
- * not matter, but where it spans an 11 %-of-the-page grey margin, one end of the
- * band gives 4.6 % ink and the other 17.4 %. Two rival optima within 2 % of each
- * other, and a 5 % tone-curve change swapping their order, is a coin toss
- * deciding whether a floorplan is read or refused. Measured: the owner's plan
- * went from REFUSED at 26 of 41 gamma steps to accepted at ALL 41, and the
- * corpus mean rose 94.57 % -> 95.26 % over the same 21 fixtures.
+ * Two rules disagree about this, each is right about a different page, and
+ * neither can be told from the other by looking at the histogram it was
+ * computed from:
  *
- * Two rules that did NOT work, recorded so they are not retried: breaking the
+ *   gradient-weighted   a pixel votes only if it lies on an intensity CHANGE
+ *                       (see `edgeWeightedHistogram`). Immune to a large flat
+ *                       third tone — a grey scan margin, a letterbox bar — which
+ *                       otherwise drags a plain Otsu across itself.
+ *   plain               every pixel votes. The only rule that survives ink whose
+ *                       weight is UNEVEN, because gradient weighting scales a
+ *                       tone's vote by its perimeter-over-area, i.e. by roughly
+ *                       1/thickness: it demotes thick strokes and promotes thin
+ *                       ones. On the ordinary architectural convention of walls
+ *                       poche'd in a light grey and dimension lines drawn in
+ *                       thin dark ink, the linework captures the threshold and
+ *                       every wall falls on the page side of it.
+ *
+ * That second failure is not hypothetical and not marginal. Measured on a
+ * 700x520 plan with ten walls at stroke 14 / ink 175 on paper 246, adding as few
+ * as FOUR thin (stroke 3, ink 26) dimension lines took the gradient-weighted
+ * reading from a 57-73 % detection to structure 0.000 and a refusal, on 5 of 5
+ * seeds — the user told "this image doesn't have enough clear straight lines"
+ * about ten unmistakable walls.
+ *
+ * So the fix for one polarity must not be a replacement, or it is just the other
+ * polarity's bug. `detect.ts` runs the pipeline at `thresholds[0]` and falls
+ * back to the next only if that reading is REFUSED — which is why this returns a
+ * list rather than a decision. Measured consequences of ordering it this way:
+ *
+ *   - the two rules AGREE outright on 8 of the 25 corpus fixtures, so there is
+ *     only one candidate on those and the fallback is not merely unused, it does
+ *     not exist;
+ *   - on the other 17 every legitimate fixture is accepted at `thresholds[0]` at
+ *     all three UI levels, so the fallback never runs and the corpus result is
+ *     byte-identical to the single-candidate engine.
+ *
+ * Ink is taken to be the MINORITY class at whichever cut is used, which is what
+ * makes a white-on-dark blueprint work without a separate code path: a plan is
+ * mostly page, whichever colour the page is.
+ *
+ * Two rules that did NOT work, recorded so they are not retried: breaking a
  * near-tie toward the smaller minority class moved 13 of 24 corpus masks (on a
  * clean page the criterion is a flat plateau spanning an EMPTY histogram valley,
  * so plateau noise satisfies any local-maximum test and "least ink" walks into
  * the anti-aliased edge of the stroke); and picking the emptiest cut within the
- * band moved 21 of 24.
+ * band moved 21 of 24. Note both of those are *unbounded* candidate sets — any
+ * near-tied peak qualifies — which is why they leaked nulls where this does not.
  */
-export function inkMaskOf(img: GrayImage): Mask {
+export function inkThresholds(img: GrayImage): InkThresholds {
   const { gray, hist } = luminance(img);
   const n = img.width * img.height;
+  const plain = otsuThreshold(hist, n);
   const edges = edgeWeightedHistogram(img, gray);
   let edgeVotes = 0;
   for (let t = 0; t < 256; t++) edgeVotes += edges[t];
-  // Starved: a page too faint or too small for the gradient to say anything.
-  // Fall back to the plain histogram.
+  // Starved: a page too faint for the gradient to say anything at all. There is
+  // then only one rule, and it is the plain one — offering a cut derived from a
+  // handful of votes as a candidate would be offering noise, and `otsuThreshold`
+  // on ZERO votes does not even return noise, it returns its 127 initialiser.
   //
-  // ⚠️ This is NOT a safe default, and an earlier version of this comment said it
-  // was. The plain histogram is exactly the pre-S27 engine, which is known broken
-  // on a page carrying a third tone mass — so on that class of image the fallback
-  // re-arms the defect this whole change exists to remove, silently, with nothing
-  // in `DetectionQuality` recording which rule decided the ink. Measured: forcing
-  // `scan-letterbox` down this path reproduces the pre-fix numbers bit for bit
-  // (4 of 9 tone steps refused), and a plan photographed on a grey desk filling
-  // less than ~40 % of the frame reaches it. See docs/ideas.md Section 13d.
-  const thresh =
-    edgeVotes < n * MIN_EDGE_FRACTION
-      ? otsuThreshold(hist, n)
-      : otsuThreshold(edges, edgeVotes);
+  // A zero-pixel image divides 0 by 0, so `edgeDensity` is NaN and `NaN < x` is
+  // false — not starved. That is DELIBERATELY the same answer the area rule gave
+  // (`0 < 0 * 0.02` is also false) and it costs nothing either way: with no
+  // votes and no pixels both histograms are empty, `otsuThreshold` returns 127
+  // from both, and the two candidates dedupe to one. Left identical rather than
+  // guarded, so this line changes no behaviour anywhere.
+  const edgeDensity = edgeVotes / (2 * (img.width + img.height));
+  const starved = edgeDensity < MIN_EDGE_DENSITY;
+  if (starved) return { gray, thresholds: [plain], starved, edgeVotes, edgeDensity };
+  const grad = otsuThreshold(edges, edgeVotes);
+  return {
+    gray,
+    thresholds: grad === plain ? [plain] : [grad, plain],
+    starved,
+    edgeVotes,
+    edgeDensity,
+  };
+}
+
+/** Binarise a page at one cut, ink = the minority class. */
+export function maskAtThreshold(
+  gray: Uint8Array,
+  width: number,
+  height: number,
+  thresh: number,
+): Mask {
+  const n = width * height;
   let darkCount = 0;
   for (let i = 0; i < n; i++) if (gray[i] <= thresh) darkCount++;
   const inkIsDark = darkCount <= n - darkCount;
-  const out = emptyMask(img.width, img.height);
+  const out = emptyMask(width, height);
   for (let i = 0; i < n; i++) out.data[i] = (gray[i] <= thresh) === inkIsDark ? 1 : 0;
   return out;
+}
+
+/**
+ * The single best-guess ink mask — `inkThresholds`' first candidate.
+ *
+ * Kept because "binarise this page" is the honest shape of the question for a
+ * caller that is not going to score the result and pick. `detect.ts` is not such
+ * a caller and deliberately does not use this.
+ */
+export function inkMaskOf(img: GrayImage): Mask {
+  const { gray, thresholds } = inkThresholds(img);
+  return maskAtThreshold(gray, img.width, img.height, thresholds[0]);
 }
 
 // ---------------------------------------------------------------------------
