@@ -2564,3 +2564,83 @@ floorplan. A page of four thin furniture OUTLINES is offered **27/27** readings 
 it. An incumbent-side structure floor is not the answer (its first step, 0.28, already refuses 24
 readings of the owner's own plan). Also still open: the `scalePlan` annotation-stroke gap (§2d of the
 S28 kickoff), and `npm run test:coverage` is still not clean.
+
+---
+
+## Session 29 — the Android home-screen gallery (2026-07-31) — **owner-requested, mid-session**
+
+The session opened on §13e (detection accepting images with no floorplan) and the owner redirected
+it in flight: *"i want to be able to grab a design and move it around and if i drag it on top of
+another one i am able to create a folder. copy the functinonality of android home screen with the
+desgins treated like apps."* The detection work was reproduced and archived
+(`docs/sessions/S29/bench/13e-reproduction.txt`) rather than lost, and §13e is unchanged at the head
+of the detection queue.
+
+Asked which shape they wanted, the owner chose **the true Android model** (a folder ICON appearing
+in place, drill-in) over the smaller "a new labelled row below", and chose **saved positions**.
+
+### What shipped
+
+ONE flat grid where a design card and a FOLDER TILE are peers. Drop a design on a design → a folder
+at the TARGET'S SLOT; on a tile → it joins; in a gap → it moves there; click a tile → drill in;
+Escape climbs back out. `Layout.order` / `Project.order` persist the arrangement, with an old-shape
+migration. Move mode is operable by keyboard AND by single pointer, because WCAG 2.2 SC 2.5.7 is
+explicit that a keyboard equivalent does not satisfy it.
+
+### Evidence block
+
+**Agents spawned (13 across 3 workflows):** 5 understanding (gallery surface · data model · a11y
+bar · drag idiom · Android spec) → 4 design (ordering model · home-invariant SKEPTIC · a11y contract
+· visual design) → 4 self-review (data loss · silent failure · a11y · correctness).
+**Verdicts:** the design skeptic REFUTED the draft's home identity (oldest-by-`createdAt` is
+stealable by an import and ties under `sanitizeProjects`' `Date.now()` default) → home became
+`projects[0]`. The ordering agent REFUTED three draft properties by measurement. The self-review
+found **1 CRITICAL + 4 HIGH + 2 MEDIUM**, all adjudicated against the tree; one proposed fix was
+measured worse than the alternative and NOT taken.
+
+**Test count:** 1407 → **1471** (+64). No test skipped, `.only`'d or weakened.
+- `engine/__tests__/order.test.ts` **33** — with FIVE negative controls built, run and restored
+  byte-identically (verified by `shasum`): index fallback · no re-stamp in `moveLayoutToProject` ·
+  none in `removeProject` · `touch:false` on mutations · merge appending instead of taking the
+  target's slot. Each caught exactly one test.
+- `components/gallery/__tests__/drag.test.ts` **23** (pure geometry — jsdom reports every rect 0×0).
+- `gallery.a11y.test.tsx` **15**, rewritten: four S20 assertions described the retired
+  section-per-folder IA; every property they protected still holds and is observed through the tile
+  and the drill-in.
+
+**Gates (literal):** `Tests 1471 passed (1471)`, `Test Files 69 passed (69)` · build
+`496.81 kB / 161.71 kB gzip` JS + `53.45 kB / 9.96 kB gz` CSS + `1.31 kB` HTML · `eslint .` clean ·
+`tsc --noEmit` clean.
+
+**Live:** fresh headless-Chrome profile (fresh origin ⇒ its own IndexedDB; asserted before anything
+ran, so the owner's real workspace was untouchable). **13/13 checks, 0 console errors.** Shots in
+`docs/sessions/S29/shots/` (01 home grid · 02 folder created · 03 drilled in · 04 reordered ·
+05 after reload).
+
+**Acceptance → outcome:** grab and move a design ✅ · drop on another to create a folder ✅ (in the
+target's slot, live) · folder as an icon with drill-in ✅ · saved arrangement ✅ (survives reload,
+live) · keyboard + single-pointer path ✅ · **touch DEFERRED to §14a** (unverified, and partly
+unsupported by construction) · **drag OUT of a folder DEFERRED to §14e** (the kebab route works and
+dissolves an emptied folder; no drag does).
+
+### What only the browser could find
+
+Two bugs invisible to the suite: a click-suppression FLAG stranded by the merge's own DOM removal,
+so the next click anywhere was eaten; and `absorb` proposed for a folder subject, announcing an
+action no commit branch performs.
+
+### What only the self-review could find
+
+**CRITICAL:** the arrangement was persisted for FOLDERS and not for DESIGNS. `saveMeta` rebuilds the
+meta row every cycle so `Project.order` was written; layouts are diff-gated on `updatedAt` and the
+load path correctly derives ranks without touching it, so `Layout.order` never was. On every
+pre-S29 store the two halves disagree on disk, `Infinity` sorts last, and on the **second** boot
+every folder jumps to the front of the grid with the user having done nothing — permanently. Fixed
+by putting `order` in the persistence diff key, seeded as unknown.
+
+### Honest limits
+
+One browser. No real screen reader. **No touch device has ever been driven on this project.**
+`npm run test:coverage` remains not clean (one pre-existing timeout, untouched).
+
+Residuals filed as `docs/ideas.md` §14a–14e. Next session: `docs/kickoff-session-30.md`.
