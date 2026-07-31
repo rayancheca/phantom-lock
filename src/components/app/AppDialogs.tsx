@@ -41,6 +41,9 @@ interface AppDialogsProps {
   onSubmitRenameProject: (id: string, name: string) => void;
   onDeleteProject: (id: string) => void;
   onMoveLayout: (layoutId: string, projectId: string) => void;
+  onDropLayout: (layoutId: string, projectId: string, index: number | null) => void;
+  onDropProject: (projectId: string, index: number) => void;
+  onMergeLayouts: (dragId: string, targetId: string) => void;
   onCloseGallery: () => void;
   onCloseCompare: () => void;
   onDismissToast: () => void;
@@ -135,6 +138,9 @@ export default function AppDialogs(p: AppDialogsProps) {
           onRenameProject={p.onRenameProject}
           onDeleteProject={p.onDeleteProject}
           onMoveLayout={p.onMoveLayout}
+          onDropLayout={p.onDropLayout}
+          onDropProject={p.onDropProject}
+          onMergeLayouts={p.onMergeLayouts}
           onClose={p.onCloseGallery}
         />
       )}

@@ -2,6 +2,8 @@
 
 export type IconName =
   | 'chevron-down'
+  | 'chevron-left'
+  | 'move'
   | 'check'
   | 'plus'
   | 'x'
@@ -37,6 +39,11 @@ export type IconName =
 /** Each icon is one or more path `d` strings drawn with round 1.7px strokes. */
 const PATHS: Record<IconName, string[]> = {
   'chevron-down': ['M6 9 l6 6 l6 -6'],
+  // The ONLY new glyphs S29 needs. `chevron-left` mirrors `chevron-down` rather
+  // than being a rotated copy of it — a transform hack inside a system that has
+  // never needed one. `move` is the four-way arrow every launcher uses for pick-up.
+  'chevron-left': ['M15 6 l-6 6 l6 6'],
+  move: ['M12 3 v18', 'M3 12 h18', 'M12 3 l-3 3', 'M12 3 l3 3', 'M12 21 l-3 -3', 'M12 21 l3 -3', 'M3 12 l3 -3', 'M3 12 l3 3', 'M21 12 l-3 -3', 'M21 12 l-3 3'],
   check: ['M5 12.5 l4.5 4.5 L19 7'],
   plus: ['M12 5 v14 M5 12 h14'],
   x: ['M6 6 l12 12 M18 6 L6 18'],

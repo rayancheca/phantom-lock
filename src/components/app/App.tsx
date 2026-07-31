@@ -388,7 +388,15 @@ function AppInner({ initialStore, persistMode, showFirstRun, droppedCount, proje
    *  in different projects are already covered by the layout count. */
   const canCompare = sceneListeners(scene).length >= 2 || store.layouts.length >= 2;
 
-  const { newProject, renameProjectTo, moveLayout, deleteProject } = useProjectActions({
+  const {
+    newProject,
+    renameProjectTo,
+    moveLayout,
+    deleteProject,
+    dropLayout,
+    dropProject,
+    mergeLayouts,
+  } = useProjectActions({
     store,
     setStore,
     setDialog,
@@ -1104,6 +1112,9 @@ function AppInner({ initialStore, persistMode, showFirstRun, droppedCount, proje
         onRenameProject={(id) => setDialog({ kind: 'project-name', projectId: id })}
         onDeleteProject={deleteProject}
         onMoveLayout={moveLayout}
+        onDropLayout={dropLayout}
+        onDropProject={dropProject}
+        onMergeLayouts={mergeLayouts}
         onCloseGallery={() => setGalleryOpen(false)}
         onCloseCompare={() => setCompare(null)}
         onDismissToast={dismissToast}

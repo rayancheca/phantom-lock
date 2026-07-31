@@ -2,7 +2,11 @@ import type { MutableRefObject } from 'react';
 import type { LayoutStore } from '../../../engine/types';
 import {
   addProject,
+  dissolveEmptyProject,
+  layoutsInProject,
+  mergeIntoNewProject,
   moveLayoutToProject,
+  moveProjectToSlot,
   removeProject,
   renameProject,
 } from '../../../engine/projects';
@@ -23,6 +27,12 @@ export interface ProjectActions {
   moveLayout: (layoutId: string, projectId: string) => void;
   deleteProject: (id: string) => void;
   undoDeleteProject: () => void;
+  /** A drag landed a design in a folder, or in a new slot. */
+  dropLayout: (layoutId: string, projectId: string, index: number | null) => void;
+  /** A drag repositioned a folder tile on the home grid. */
+  dropProject: (projectId: string, index: number) => void;
+  /** A design was dropped on another design: both into a new folder. */
+  mergeLayouts: (dragId: string, targetId: string) => void;
 }
 
 /**
@@ -120,5 +130,97 @@ export function useProjectActions(a: Args): ProjectActions {
     );
   };
 
-  return { newProject, renameProjectTo, moveLayout, deleteProject, undoDeleteProject };
+  /**
+   * A drag that empties a folder removes it — dragging the last icon out of an
+   * Android folder makes the folder disappear.
+   *
+   * Safe WITHOUT a confirm and without touching the shared undo slot precisely
+   * because it only ever fires at ZERO layouts: there is nothing to lose. A
+   * folder that merely drops to one design is left alone — Android dissolves at
+   * one, but here that would move a design the user did not touch.
+   */
+  const dropLayout = (layoutId: string, projectId: string, index: number | null) => {
+    const layout = a.store.layouts.find((l) => l.id === layoutId);
+    const from = layout?.projectId;
+    const target = a.store.projects.find((p) => p.id === projectId);
+    if (!layout || !target) return;
+    const leftBehind =
+      from && from !== projectId && layoutsInProject(a.store, from).length === 1 ? from : null;
+    const fromName = a.store.projects.find((p) => p.id === from)?.name;
+
+    a.setStore((st) => {
+      const moved = moveLayoutToProject(st, layoutId, projectId, index);
+      return leftBehind ? dissolveEmptyProject(moved, leftBehind) : moved;
+    });
+
+    // A reorder inside one folder is its own visible feedback — a toast for it
+    // would fire on every drag and say nothing the user cannot see.
+    if (from === projectId) return;
+    a.showToast(`Moved “${layout.name}” to “${target.name}”`, {
+      tone: 'ok',
+      action: from
+        ? {
+            label: 'Undo',
+            run: () =>
+              a.setStore((st) => {
+                // Re-create the folder the move dissolved, so undo restores the
+                // whole gesture rather than half of it.
+                const restored =
+                  leftBehind && !st.projects.some((p) => p.id === leftBehind)
+                    ? addProject(st, fromName ?? 'Folder')
+                    : st;
+                const home =
+                  leftBehind && restored !== st
+                    ? restored.projects[restored.projects.length - 1].id
+                    : from;
+                return moveLayoutToProject(restored, layoutId, home, null);
+              }),
+          }
+        : undefined,
+    });
+  };
+
+  const dropProject = (projectId: string, index: number) => {
+    a.setStore((st) => moveProjectToSlot(st, projectId, index));
+  };
+
+  const mergeLayouts = (dragId: string, targetId: string) => {
+    const drag = a.store.layouts.find((l) => l.id === dragId);
+    const target = a.store.layouts.find((l) => l.id === targetId);
+    if (!drag || !target) return;
+    const fromDrag = drag.projectId;
+    const fromTarget = target.projectId;
+    // Named after the design that was already standing there, which is the one
+    // the user aimed at. `uniqueName` inside `addProjectAt` keeps it distinct.
+    const made = mergeIntoNewProject(a.store, dragId, targetId, target.name);
+    if (!made) {
+      a.showToast('That is the most folders one workspace can hold.', { tone: 'bad' });
+      return;
+    }
+    a.setStore(() => made.store);
+    a.showToast(`Put “${drag.name}” and “${target.name}” in a new folder`, {
+      tone: 'ok',
+      action: {
+        label: 'Undo',
+        run: () =>
+          a.setStore((st) => {
+            let next = moveLayoutToProject(st, dragId, fromDrag, null);
+            next = moveLayoutToProject(next, targetId, fromTarget, null);
+            // The folder is empty again by construction, so this destroys nothing.
+            return dissolveEmptyProject(next, made.projectId);
+          }),
+      },
+    });
+  };
+
+  return {
+    newProject,
+    renameProjectTo,
+    moveLayout,
+    deleteProject,
+    undoDeleteProject,
+    dropLayout,
+    dropProject,
+    mergeLayouts,
+  };
 }

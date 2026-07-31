@@ -148,58 +148,241 @@
   }
 }
 
-/* --- Folders (S20) -------------------------------------------------------- */
+/* --- The home screen (S29) -------------------------------------------------
 
-.gallery-project {
-  padding: 0 var(--space-5);
+   ONE flat grid where a design card and a FOLDER TILE are peers. The tile
+   differs on exactly two axes — one elevation rung and a 2x2 mosaic instead of a
+   single miniature. Anything more (a different width, a header, a badge shape)
+   and the grid stops reading as one coordinate space, which is the whole point
+   of the redesign.
+   -------------------------------------------------------------------------- */
+
+/* `position: relative` so the reorder caret scrolls WITH the content. Measured
+   safe: it does NOT capture the `position: fixed` ghost. The top padding exists
+   because `.gallery-grid` has none, and `.is-absorb`'s outset ring would be
+   clipped on the first row. */
+.gallery-grid {
+  position: relative;
+  padding-top: var(--space-1);
+  list-style: none;
+  margin: 0;
 }
 
-.gallery-project + .gallery-project {
-  margin-top: var(--space-4);
+.gallery-empty-note {
+  grid-column: 1 / -1;
+  font-size: var(--text-sm);
+  color: var(--text-2);
 }
 
-.gallery-project-head {
+.gallery-crumb {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-2) 0;
-  border-bottom: 1px solid var(--surface-2);
-  margin-bottom: var(--space-3);
+  gap: var(--space-2);
+  min-width: 0;
 }
 
-.gallery-project-name {
+.gallery-crumb h2 {
   margin: 0;
-  font-size: var(--text-base);
+  font-size: var(--text-xl);
   font-weight: 600;
-  color: var(--text);
-  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* Mono + a tier drop so the count reads as metadata, not as a second title. */
-.gallery-project-count {
+/* The wrapper is ALWAYS in the DOM and only GAINS `role="application"` while a
+   move is in progress. Rendering it conditionally would change the flex tree
+   mid-gesture, and `display: contents` — the obvious alternative — has a history
+   of browsers stripping the role off such an element, which would silently undo
+   the one thing it is here for. It passes the grid's flex sizing straight
+   through instead. */
+.gallery-surface {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+
+/* --- the folder tile ----------------------------------------------------- */
+
+.folder-tile {
+  background: var(--surface-2);
+}
+
+.folder-tile:hover {
+  background: var(--surface-3);
+}
+
+.folder-mosaic {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 3px;
+  padding: 3px;
+  /* EXACTLY .gallery-thumb's band, so a tile and a card are the same height with
+     no second magic number to keep in sync. */
+  height: 130px;
+  margin-bottom: var(--space-2);
+  border-radius: var(--radius);
+  background: var(--surface-0);
+}
+
+/* LOAD-BEARING, not tidiness: a <canvas> is a replaced element with an intrinsic
+   300x150, and grid `stretch` does not apply to it. Without this the four
+   miniatures each report clientWidth 300 and blow the tile open. Same reason
+   `.gallery-thumb` sizes itself explicitly. */
+.folder-slot {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 4px;
+}
+
+/* An empty quadrant should read as "room for more", not as a broken thumbnail. */
+.folder-slot-empty {
+  background: repeating-linear-gradient(
+    135deg,
+    transparent 0 5px,
+    rgba(148, 163, 184, 0.07) 5px 6px
+  );
+}
+
+.folder-more {
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: rgba(5, 7, 12, 0.78);
   font-family: var(--font-mono);
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
+  /* --text-2, NOT --text-3: the contrast ratchet freezes --text-3 below 12px to
+     ten named sites and this is not one of them. */
   color: var(--text-2);
+}
+
+.folder-glyph {
+  margin-right: 5px;
+  color: var(--text-2);
+  vertical-align: -2px;
+}
+
+/* --- picking something up ------------------------------------------------ */
+
+/* THE SOURCE WELL. This, not the ghost, is what says "it has been picked up" —
+   and keeping the box rather than collapsing it means the grid does not reflow
+   on pick-up, so the only motion to track is the caret. */
+.gallery-card.is-source {
+  background: var(--surface-0);
+  outline: 1.5px dashed var(--text-3);
+  outline-offset: -1.5px;
+}
+
+.gallery-card.is-source > * {
+  opacity: 0.22;
+}
+
+/* THE GHOST.
+   `position: fixed` is the ONLY escape from the grid's clip: `.gallery-grid`
+   declares overflow-y:auto, so the USED overflow-x computes to auto too and it
+   clips BOTH axes — and `getBoundingClientRect` cannot see that, so an API
+   readback would report the ghost as perfectly placed while it was invisible.
+
+   A drop shadow cannot carry elevation here: measured, pure black tops out at
+   1.042:1 against the composited layer pixel. Elevation is a LUMINANCE STEP
+   (surface-1 -> surface-3) plus a lit --accent rim instead. */
+.drag-ghost {
+  position: fixed;
+  z-index: 70;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: var(--space-2);
+  border-radius: var(--radius-lg);
+  background: var(--surface-3);
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+  box-shadow: var(--shadow-3);
+  opacity: 0.96;
+  transform: scale(1.04);
+  transform-origin: 50% 50%;
+  will-change: transform;
+}
+
+.drag-ghost-name {
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.gallery-project-actions {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
+.drag-hint {
+  margin-top: 4px;
+  align-self: flex-start;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(5, 7, 12, 0.9);
+  border: 1px solid var(--accent);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--accent);
+  white-space: nowrap;
 }
 
-.gallery-project-empty {
-  margin: 0 0 var(--space-3);
-  font-size: var(--text-sm);
-  color: var(--text-2);
+/* --- the two drop states -------------------------------------------------
+
+   They MUST be distinguishable, because the same gesture does two different
+   things. Hue cannot do it: --ok/--warn/--bad are reserved for acoustic status
+   and --accent-r is channel-R identity, so --accent is the only chromatic token
+   a UI affordance may use. They are separated on STROKE (dashed inset vs solid
+   outset) and on a text label riding the ghost.
+   ------------------------------------------------------------------------- */
+
+.gallery-card.is-merge {
+  background: var(--accent-06);
+  outline: 1.5px dashed var(--accent);
+  outline-offset: -1.5px;
 }
 
-/* The grid already exists; inside a folder it must not re-pad. */
-.gallery-project .gallery-grid {
-  padding: 0;
+.folder-tile.is-absorb {
+  background: var(--surface-3);
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.folder-tile.is-absorb .folder-mosaic {
+  background: var(--accent-06);
+}
+
+/* --- the reorder caret ---------------------------------------------------- */
+
+.drop-caret {
+  /* `fixed`, matching the ghost: `.gallery-layer`'s backdrop-filter is the
+     containing block for both, and the hook subtracts the layer origin. */
+  position: fixed;
+  z-index: 69;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent-20);
+  pointer-events: none;
+  transition:
+    top var(--dur-2) var(--ease-out),
+    left var(--dur-2) var(--ease-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The drag stays fully usable — what goes is the SLIDE of the caret and the
+     scale of the ghost, not the affordances themselves. */
+  .drop-caret {
+    transition: none;
+  }
+
+  .drag-ghost {
+    transform: none;
+  }
 }
