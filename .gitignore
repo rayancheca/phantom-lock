@@ -10,11 +10,12 @@ IMG_*.jpeg
 IMG_*.jpg
 IMG_*.png
 
-# Finder/editor duplicates ("db 2.ts" and friends). One of these has been sitting
-# in src/engine/ since 2026-07-28 and is imported by nothing. Twice in S29 a
-# `git add src/` swept it into a LOCAL commit, and both times it was removed
-# before anything was pushed — it has never been in a published commit, and this
-# rule exists so a third time cannot happen. Ignored rather than deleted: it is
-# the owner's file to remove.
+# Finder/editor duplicates ("db 2.ts" and friends). One had been sitting in
+# src/engine/ since 2026-07-28, imported by nothing; twice in S29 a `git add src/`
+# swept it into a LOCAL commit, and both times it was removed before anything was
+# pushed, so it never reached a published commit. The owner had it deleted at the
+# end of S29. The rule stays because the editor can mint another one at any time,
+# and `tsconfig.include` is `["src"]` — a stray duplicate is inside the
+# `tsc --noEmit` program, so it is a gate hazard as well as a publishing one.
 *\ [0-9].ts
 *\ [0-9].tsx
