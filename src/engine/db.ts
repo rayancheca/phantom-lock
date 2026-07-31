@@ -22,7 +22,7 @@
  */
 import type { Layout, LayoutStore, Project, Scene, Underlay } from './types';
 import { defaultStore, sanitizeLayout, STORAGE_KEY } from './scene';
-import { assembleStore, defaultProject } from './projects';
+import { assembleStore, defaultProject, homeItems, layoutsInProject } from './projects';
 
 export const DB_NAME = 'phantom-lock';
 export const DB_VERSION = 1;
@@ -492,12 +492,35 @@ export interface ExportBundle {
 
 export function buildExportBundle(store: LayoutStore): ExportBundle {
   const nameOf = new Map(store.projects.map((p) => [p.id, p.name]));
+  // READING ORDER, not `store.layouts` array order.
+  //
+  // Since S29 the array order is NOT the display order — `order` is, and a
+  // mutation writes a new rank without moving the array element. `loadFromIDB`
+  // fills the array from `getAll()`, which is ascending by layout id, so mapping
+  // the array straight through would export a user's designs in id order and
+  // silently lose the arrangement the bundle is supposed to preserve.
+  //
+  // Walking the home grid and expanding each folder in place reproduces exactly
+  // what is on screen, top to bottom. `version` stays 2: the ORDER of the list
+  // was always the only ordering signal a bundle carried, so this changes what
+  // that list contains, not the format.
+  const ordered: Layout[] = [];
+  for (const item of homeItems(store)) {
+    if (item.kind === 'layout') ordered.push(item.layout);
+    else ordered.push(...layoutsInProject(store, item.project.id));
+  }
+  // Belt and braces: anything the walk could not reach (a pointer `assembleStore`
+  // has not repaired, on a hand-built store) is still exported. Losing a design
+  // from a BACKUP because its folder pointer was odd is the one outcome this
+  // file exists to prevent.
+  const seen = new Set(ordered.map((l) => l.id));
+  for (const l of store.layouts) if (!seen.has(l.id)) ordered.push(l);
   return {
     app: 'phantom-lock',
     kind: 'layout-bundle',
     version: 2,
     exportedAt: Date.now(),
-    layouts: store.layouts.map((l) => ({
+    layouts: ordered.map((l) => ({
       name: l.name,
       scene: l.scene,
       settings: l.settings,

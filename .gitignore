@@ -9,3 +9,10 @@ docs/sessions/
 IMG_*.jpeg
 IMG_*.jpg
 IMG_*.png
+
+# Finder/editor duplicates ("db 2.ts" and friends). One of these has been sitting
+# in src/engine/ since 2026-07-28, is imported by nothing, and was swept into a
+# commit twice by `git add src/` — on a PUBLIC repo. Ignored rather than deleted:
+# it is the owner's file to remove.
+*\ [0-9].ts
+*\ [0-9].tsx

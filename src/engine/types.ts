@@ -225,6 +225,15 @@ export interface Layout {
 }
 
 export interface LayoutStore {
+  /**
+   * ⚠️ ARRAY ORDER IS **NOT** DISPLAY ORDER — since S29 that is `Layout.order`.
+   *
+   * A mutation writes a new rank without moving the array element, and
+   * `loadFromIDB` fills this array from `getAll()`, which is ascending by layout
+   * id. So anything that shows layouts to the user must read them through
+   * `layoutsInProject` / `homeItems`, which sort. `buildExportBundle` had to be
+   * changed for exactly this reason.
+   */
   layouts: Layout[];
   activeId: string;
   /**

@@ -210,7 +210,10 @@ export function normalizeOrder(
   const now = Date.now();
   const layouts = store.layouts.map((l) => {
     const next = newOrder.get(l.id);
-    if (next === undefined || next === l.order) return l;
+    // `Object.is`, not `===`: a stored `-0` is `=== 0` and would survive as the
+    // canonical rank, so "every rank is a dense non-negative integer" would be
+    // true of the sort and false of the data.
+    if (next === undefined || Object.is(next, l.order)) return l;
     changed = true;
     return { ...l, order: next, updatedAt: opts.touch ? now : l.updatedAt };
   });
@@ -218,7 +221,7 @@ export function normalizeOrder(
     // The home project is the container, not an item in it. Pinned at 0 so the
     // field always holds a defined number and no consumer needs a branch.
     const next = i === 0 ? 0 : newOrder.get(p.id);
-    if (next === undefined || next === p.order) return p;
+    if (next === undefined || Object.is(next, p.order)) return p;
     changed = true;
     return { ...p, order: next };
   });
