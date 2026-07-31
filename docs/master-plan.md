@@ -2455,7 +2455,7 @@ by disabling the guard they protect and watching the verdict flip.
       Tests  1393 passed (1393)
    Duration  11.71s
 
-dist/index.html                   1.31 kB │ gzip:   0.63 kB
+dist/index.html                   1.31 kB │ gzip:   0.62 kB
 dist/assets/index-DL95iJRY.css   51.55 kB │ gzip:   9.56 kB
 dist/assets/index-CF22zYkB.js   480.36 kB │ gzip: 156.51 kB
 ✓ built in 516ms
@@ -2644,3 +2644,119 @@ One browser. No real screen reader. **No touch device has ever been driven on th
 `npm run test:coverage` remains not clean (one pre-existing timeout, untouched).
 
 Residuals filed as `docs/ideas.md` §14a–14e. Next session: `docs/kickoff-session-30.md`.
+
+---
+
+## Session 30 — finishing the home screen (2026-07-31) — `docs/ideas.md` §14a–14e
+
+S29 shipped the Android-style gallery and named five residuals. This session closed all five, and
+found three defects underneath them that were not on the list — two of which were in the path S29
+had designated as the WCAG-compliant one.
+
+### What shipped
+
+**§14b focus after a commit.** Every gallery commit destroys the element holding focus, so a drop
+ended with `document.activeElement === document.body`. `focusPlanFor`/`fallbackIndex` are pure and
+the hook applies them in ONE `useLayoutEffect` ladder, so the two input paths cannot disagree.
+`mergeLayouts` now returns the folder id it mints — it was computed and discarded one frame before
+the gallery needed it.
+
+**§14c the Escape ladder.** The gallery's Escape handler and `Menu`'s are both window-CAPTURE on the
+same node, so `stopPropagation` cannot stop the co-registered one; the gallery mounted first, ran
+first, and closed everything. New pure `escape.ts` is total over three booleans. `inFolder` reads
+the RESOLVED container, not the raw state — a folder can be deleted or dissolve while drilled into,
+after which the raw id is stale and Escape swallowed itself while announcing "Closed folder."
+
+**§14e drag a design OUT of a folder.** A fourth `DropIntent`, the breadcrumb as a drop target, `O`
+as the keyboard twin, and clicking the breadcrumb mid-move as the single-pointer path. The intent is
+UNCONSTRUCTIBLE on the home grid because the rect is absent rather than because a flag says so.
+
+**§14d a deleted folder's designs — owner decision.** Asked directly, the owner chose the HOME GRID
+over the adjacent folder. `removeProject` now re-homes at the tile's slot, rebuilding the sequence
+explicitly (the arithmetic version overshoots: the gap above a midpoint insert is only 0.5, so a
+fixed fractional step silently reorders the grid once a folder holds enough designs). It also now
+refuses the home project, and so does `deleteProject`, which was writing an undo snapshot and
+toasting "Deleted …" over a store `removeProject` had declined to change.
+
+**§14a touch — FIXED, not merely documented.** See the Evidence block.
+
+**§2e `npm run test:coverage` is GREEN for the first time.** Four tests straddled the 5 s per-test
+ceiling under v8 instrumentation with the code entirely correct; each was measured, then moved to
+module scope, which is evaluated during COLLECTION and is not timeout-bound. The largest was
+`corpusFixtures()`, which re-rasterised all 25 fixtures on EVERY call — `fixtureByName` calls it and
+discards all but one, so seven lookups cost 175 rasterisations.
+
+### The three defects that were not on the list
+
+1. **Move mode wasted a keypress and could not reach the last position.** It stepped ±1 through
+   DISPLAY space, where index `self` and `self + 1` are the same outcome. Measured against the real
+   engine: a subject at display 0 had `at=0` and `at=1` both no-ops, and the cap of `others.length`
+   put the final position out of reach entirely. This is the path S29 designated as the SC 2.5.7
+   mechanism, so it is the one that has to be exactly right. **The existing test froze the bug** by
+   asserting the callback ARGUMENT and never the outcome.
+2. **Move mode announced the wrong position.** Found by the a11y review, after the fix above: the
+   live region formatted the raw display index, which the fix deliberately inflates, so a subject at
+   display 0 heard "Position 2" for the slot it was already in and "Position 6" in a five-item grid.
+   The caret is `aria-hidden`, so that sentence is the ONLY feedback a non-visual user gets.
+3. **A click mid-move NAVIGATED instead of committing.** Clicking a folder tile drilled into it with
+   the move still armed, after which the breadcrumb committed an `exit` for a design that had never
+   been in that folder — a no-op write announced as "Moved X out. Y was empty and is gone." Clicking
+   a design opened it and closed the gallery, abandoning the move without a word. An item click is
+   now a DESTINATION, which is what move mode's own doc has always claimed, and what finally gives
+   `merge`/`absorb`/`slot` a single-pointer-without-dragging path at all.
+
+### Evidence block
+
+**Agents spawned (role → verdict).**
+- 4 × design (14a/14b/14c/14e) → each paired with an independent skeptic; **all four
+  SOUND_WITH_FIXES**, 20 defects between them. Acted on the load-bearing ones; the 14a design's
+  proposed "move bar" UI was REJECTED — out of its brief, and its own skeptic measured it as a focus
+  REGRESSION on the canonical path that also covered `.gallery-new`'s four buttons.
+- 3 × negative-control (21 wrong implementations) → **16 caught, 5 holes**, every hole a real
+  regression rather than a no-op. All five closed and re-verified against the same controls.
+- 4 × self-review (code-reviewer / silent-failure-hunter / a11y-architect / pr-test-analyzer) →
+  2 HIGH behavioural, 2 HIGH untested-contract (each proven by mutation), 4 MEDIUM, 3 LOW.
+  **Two findings adjudicated as NOT defects** and recorded in `ideas.md` §14f rather than actioned.
+
+**Test count: 1471 → 1536** (+65). Never dropped.
+
+**Coverage** (`npm run test:coverage`, green — 4 consecutive clean runs):
+`escape.ts` **100 / 100 / 100 / 100** · `drag.ts` **98.42 / 97.43 / 100 / 98.42** ·
+`projects.ts` **98.67 / 95.23 / 100 / 98.67** · `LayoutGallery.tsx` **91.06 / 84.72 / 51.21 / 91.06** ·
+`useGalleryDrag.ts` **58.86 / 81.42 / 50 / 58.86** — below 80, and structurally so: jsdom dispatches
+a plain `Event` for pointer events, so `button`/`pointerId`/`clientX` are `undefined`,
+`onItemPointerDown` bails at `e.button !== 0`, and a press is never registered. Measured `main` in an
+isolated worktree for a like-for-like comparison: **52.26 / 55.17 / 40 → 58.86 / 81.42 / 50**, so the
+figure improved. The decisions all live in `drag.ts`; the pointer half is covered live.
+
+**Gate.**
+```
+Tests  1536 passed (1536)      Test Files  70 passed (70)
+dist/index.html                   1.31 kB │ gzip:   0.62 kB
+dist/assets/index-CaouhDpz.css   53.65 kB │ gzip:  10.00 kB
+dist/assets/index-XVZZrUhb.js   500.75 kB │ gzip: 163.20 kB
+eslint .  →  (0 problems)
+```
+
+**Live (19/19, real headless Chrome, fresh profile):** `docs/sessions/S30/live-s30.mjs`, saved run
+in `bench/live-run.txt`, screenshots in `shots/` (01 home grid · 02 kebab open · 03 merged+focus ·
+04 drilled in · 05 after exit · 06 touch). Includes the two checks jsdom structurally cannot make:
+Escape during an UN-ARMED press, and touch.
+
+**§14a touch, measured.** `touch-action: pan-y` on `.gallery-card` confirmed. Before: a vertical
+touch drag gave `pointerdown → pointermove → pointercancel`. After: 12 uncancelled `pointermove`s.
+The regression check that matters more — an un-armed flick must still scroll — was VACUOUS at
+1440×900 (nothing overflows), so it was re-run at 390×700: **650 px of overflow, scrollTop 0 → 387**.
+
+**Acceptance → outcome.** Focus lands somewhere sensible after every gesture ✅ · Escape does the
+least surprising thing at every rung ✅ · a design can be dragged out of a folder ✅ · touch verified
+**and fixed** ✅ · §14d re-decided with the owner ✅ · `test:coverage` green ✅.
+
+### Honest limits
+
+One browser (Chrome). **No real screen reader has ever been driven on this project.** Touch is real
+CDP touch emulation, not a physical device — the events are genuine `Input.dispatchTouchEvent`
+streams through Chrome's real compositor, but a phone's own gesture recognisers are not in the loop.
+`useGalleryDrag`'s pointer path remains jsdom-blind by construction.
+
+Residuals filed as `docs/ideas.md` §14f (three, all P3). Next session: `docs/kickoff-session-31.md`.

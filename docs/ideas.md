@@ -969,36 +969,46 @@ root as `IMG_7421.jpeg` and is gitignored — do not commit it.
 </details>
 
 
-## 14. The Android home-screen gallery — ✅ **DONE (S29)**, and what it left
+## 14. The Android home-screen gallery — ✅ **DONE (S29)**, residuals ✅ **DONE (S30)**
 
 Owner-requested mid-session, and they chose the true Android model (a folder ICON appearing in
 place) over the smaller "a new labelled row" option, with saved positions.
 
-Delivered: one flat grid where a design and a folder tile are peers · drop-on-design creates a
-folder at the target's slot · drop-on-tile joins · drop-in-a-gap reorders · drill in and out ·
+Delivered in S29: one flat grid where a design and a folder tile are peers · drop-on-design creates
+a folder at the target's slot · drop-on-tile joins · drop-in-a-gap reorders · drill in and out ·
 `Layout.order`/`Project.order` persisted with an old-shape migration · a move mode that is both
-keyboard- and single-pointer-operable (WCAG 2.2 SC 2.5.7) · 64 new tests · 13/13 live checks in
-real Chrome.
+keyboard- and single-pointer-operable (WCAG 2.2 SC 2.5.7) · 64 new tests · 13/13 live checks.
 
-**Residuals, honestly:**
+**S30 closed all five residuals**, and found three defects underneath them that were not on the
+list — see `docs/master-plan.md` Session 30 for the evidence.
 
-- **14a — touch drag is UNVERIFIED, and partly unsupported.** `touch-action: pan-y` keeps the grid
-  scrollable, but the browser fixes `touch-action` at touchstart, so it cannot be switched to
-  `none` once a long press has armed: a touch drag that moves mainly VERTICALLY will scroll and
-  fire `pointercancel` instead of dragging. Horizontal drags work. The complete non-dragging path
-  on touch is the "Move…" menu item. No touch device was driven this session. **P2.**
-- **14b — focus after a merge.** The focused card is REMOVED from the DOM when two designs merge,
-  and nothing re-homes focus to the new tile, so it falls to `<body>`. Same for an auto-dissolve.
-  Reported by the a11y review; not fixed. **P2, small.**
-- **14c — Escape with a kebab menu open closes the whole gallery** *and* strands focus on `<body>`
-  (`Menu`'s `close()` focuses a button in a subtree React is unmounting). PRE-EXISTING on `main`,
-  but S29 promotes that menu to the canonical move entry point, so it is hit far more often.
-  **P2, small** — add a menu rung to the Escape ladder, or have `Menu` use
-  `stopImmediatePropagation`.
-- **14d — `removeProject` still files a deleted folder's designs into the ADJACENT folder**, not
-  onto the home grid. Pre-existing S20 behaviour whose meaning changed with the IA; the toast does
-  name the destination, so it is disclosed rather than silent. Worth re-deciding. **P3.**
-- **14e — no drag takes a design OUT of a folder.** The drill-in view shows only that folder's
-  contents and the breadcrumb is not a drop target, so the only way out is the kebab "Move to X"
-  (which S29 routed through `dropLayout`, so it does dissolve an emptied folder). Making the
-  breadcrumb a drop target would complete the gesture. **P2.**
+- **14a — touch. FIXED, not merely documented.** The recorded claim was right and is now measured:
+  with `touch-action: pan-y` a mainly-VERTICAL touch drag produced `pointerdown → pointermove →
+  pointercancel`, the scroller taking the gesture. `touch-action` is latched at touchstart, but
+  `preventDefault` on a non-passive `touchmove` is evaluated per event — and an armed long press
+  sits exactly in the window before a pan has begun. Guarded on `press.current?.armed`, so an
+  ordinary swipe never reaches it. Both directions verified in Chrome at a 390×700 viewport: 12
+  uncancelled moves when armed, and an un-armed flick still scrolls 387 px of 650 px of overflow.
+- **14b — focus after a commit. DONE.** `focusPlanFor`/`fallbackIndex` are pure; the hook applies
+  them in one `useLayoutEffect` ladder, so the pointer and keyboard paths cannot disagree.
+  `mergeLayouts` now returns the id it mints instead of discarding it.
+- **14c — the Escape ladder. DONE.** `escape.ts` is a total function over three booleans, and
+  `inFolder` reads the RESOLVED container so a stale drill-in cannot swallow the key.
+- **14d — a deleted folder's designs. DONE, by owner decision:** they land on the HOME GRID at the
+  tile's slot, not in the adjacent folder. `removeProject` now also refuses the home project.
+- **14e — drag a design OUT of a folder. DONE.** The breadcrumb is a drop target, `O` is the
+  keyboard twin, and clicking it mid-move is the single-pointer path.
+
+### 14f — what S30 left open (all P3, none owner-facing)
+
+- **The focus ladder re-homes after a crumb-click exit even though focus was legitimately on the
+  crumb.** Adjudicated as a taste call rather than a defect: the design has just left the view, so
+  landing on the neighbour is defensible, and tightening the guard risks the merge/absorb focus
+  that IS verified live. Recorded because a future reader will meet the same question.
+- **The `undo` after an exit that dissolved the source folder is a silent no-op at `MAX_PROJECTS`**
+  — `addProject` no-ops, so the restore targets a folder that no longer exists. Pre-existing;
+  S30 made that gesture the headline feature rather than a kebab corner case.
+- **`useGalleryDrag.ts` is 58.9 % line-covered** and structurally cannot go much higher: jsdom
+  dispatches a plain `Event` for pointer events, so `button`/`pointerId`/`clientX` are `undefined`,
+  `onItemPointerDown` bails at `e.button !== 0`, and a press is never registered. The decisions all
+  live in `drag.ts` (98.4 %). The pointer half is covered live instead.
