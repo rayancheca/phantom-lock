@@ -42,7 +42,15 @@ const L = (name: string, projectId: string, id?: string): Layout => ({
   projectId,
 });
 
-const P = (id: string, name = id): Project => ({ id, name, createdAt: 1 });
+/** `order: Infinity` = UNPLACED, which is what a project that has never been
+ *  dragged actually is. A finite literal here would pin a tile ahead of layouts
+ *  that are themselves unplaced and quietly change what every case measures. */
+const P = (id: string, name = id): Project => ({
+  id,
+  name,
+  createdAt: 1,
+  order: Number.POSITIVE_INFINITY,
+});
 
 describe('defaultProject', () => {
   it('is a fixed literal id so two cold boots agree', () => {

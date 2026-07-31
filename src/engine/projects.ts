@@ -55,7 +55,198 @@ export const MAX_PROJECT_NAME_LEN = 48;
 export const MAX_PROJECTS = 200;
 
 export function defaultProject(): Project {
-  return { id: DEFAULT_PROJECT_ID, name: DEFAULT_PROJECT_NAME, createdAt: Date.now() };
+  return { id: DEFAULT_PROJECT_ID, name: DEFAULT_PROJECT_NAME, createdAt: Date.now(), order: 0 };
+}
+
+// ---------------------------------------------------------------------------
+// Ordering (S29) — the Android home screen.
+//
+// `order` is a coordinate WITHIN A CONTAINER, and there are exactly two kinds:
+//
+//   HOME     the home project's own layouts, PLUS every other project as a
+//            folder tile. One shared coordinate space, which is the whole point:
+//            it is what lets a folder tile sit BETWEEN two designs.
+//   a folder the layouts inside it.
+//
+// `normalizeOrder` is the ONLY writer, and it canonicalises each container to
+// dense integer ranks 0..n-1. Everything else expresses an intent as a
+// FRACTIONAL order (2.5 to land between ranks 2 and 3, or max+1 to append) and
+// lets normalisation make it integral again — so no caller ever has to reason
+// about collisions, and a collision cannot survive a mutation.
+
+/**
+ * The home surface. It has to BE a project, because every `Layout.projectId`
+ * must resolve (invariant 2) and there is therefore no "unfiled" state.
+ *
+ * `projects[0]`, deliberately — NOT the oldest by `createdAt`, which was the
+ * first design and which an adversarial pass broke: `sanitizeProjects` defaults
+ * a missing `createdAt` to `Date.now()`, so one old record can tie every project
+ * at once, and `findOrCreateProject` lets an IMPORT mint a project that steals
+ * the identity. Array order is already persisted verbatim in the meta row,
+ * already documented as the display order (`types.ts`), and is the one thing the
+ * user can deliberately rearrange.
+ */
+export function homeProject(store: LayoutStore): Project {
+  return store.projects[0];
+}
+
+/** Is this project the home surface (rendered AS the grid, never as a tile)? */
+export function isHomeProject(store: LayoutStore, projectId: string): boolean {
+  return store.projects[0]?.id === projectId;
+}
+
+const rank = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : Infinity);
+
+/**
+ * An item on the home grid: either one of the home project's designs, or another
+ * project shown as a folder tile. Enumerated layouts-first, which is what breaks
+ * a tie between a layout and a folder (see `normalizeOrder`).
+ */
+export type HomeItem =
+  | { kind: 'layout'; layout: Layout }
+  | { kind: 'project'; project: Project; count: number };
+
+/**
+ * The home grid, in display order. Layouts and folder tiles interleaved by their
+ * shared `order`, which `normalizeOrder` has already made a dense integer rank —
+ * so this is a merge of two already-sorted lists, not a re-sort.
+ */
+export function homeItems(store: LayoutStore): HomeItem[] {
+  const home = homeProject(store);
+  if (!home) return [];
+  const items: HomeItem[] = [];
+  for (const l of store.layouts) {
+    if (l.projectId === home.id) items.push({ kind: 'layout', layout: l });
+  }
+  for (let i = 1; i < store.projects.length; i++) {
+    const project = store.projects[i];
+    items.push({
+      kind: 'project',
+      project,
+      // DERIVED, never stored — a stored count is a second source of truth that
+      // drifts the moment a layout is deleted through any of several paths.
+      count: store.layouts.reduce((n, l) => n + (l.projectId === project.id ? 1 : 0), 0),
+    });
+  }
+  return items.sort((a, b) => {
+    const d = orderOf(a) - orderOf(b);
+    return d !== 0 ? d : 0;
+  });
+}
+
+const orderOf = (i: HomeItem): number =>
+  i.kind === 'layout' ? rank(i.layout.order) : rank(i.project.order);
+
+/**
+ * Canonicalise every container to dense integer ranks 0..n-1. THE single seam
+ * for ordering, exactly as `assembleStore` is the single seam for structure.
+ *
+ * Sort key is `(rank(order), enumerationIndex)`, where the enumeration puts every
+ * layout before every project. Three properties, each measured rather than
+ * assumed:
+ *
+ *   - A store where NOTHING has an order is the IDENTITY. Every key is `Infinity`,
+ *     so the enumeration index decides, and that index is the array order the
+ *     caller handed in. This is what makes the S29 migration a no-op on a
+ *     pre-S29 store rather than a reshuffle.
+ *   - The fallback is `Infinity` and NOT the array index, which was the draft's
+ *     bug. Sharing one numeric space with stored orders means a partially
+ *     persisted container comes back in a THIRD order that is neither the old nor
+ *     the new one — measured, 24 of 32 write subsets of a 5-item container. With
+ *     `Infinity` an unwritten item goes to the END: still wrong, but predictable,
+ *     and `touch` below is what stops it happening at all.
+ *   - Hostile values cannot drop or duplicate anything: `rank()` maps NaN,
+ *     strings, null and objects to `Infinity` BEFORE the comparator sees them, so
+ *     `a - b` can never itself be NaN. The index tiebreak is written out rather
+ *     than resting on ES2019 sort stability.
+ *
+ * `touch` bumps `updatedAt` on every layout whose rank actually MOVED, and is
+ * the difference between a saved arrangement and a lost one: `usePersistence`
+ * diffs on `updatedAt` alone, so a drag that bumps only the dragged card leaves
+ * every other card unwritten. It must be FALSE on the load path — rewriting the
+ * user's timestamps as a side effect of reading is the "load never mangles" line.
+ *
+ * Returns the SAME store reference when nothing moved (the no-op rule).
+ */
+export function normalizeOrder(
+  store: LayoutStore,
+  opts: { touch?: boolean } = {},
+): LayoutStore {
+  const home = store.projects[0];
+  if (!home) return store;
+
+  // container id -> the entries in it, in enumeration order.
+  type Entry = { seq: number; key: number; layout?: Layout; project?: Project };
+  const containers = new Map<string, Entry[]>();
+  const bucket = (id: string): Entry[] => {
+    const found = containers.get(id);
+    if (found) return found;
+    const made: Entry[] = [];
+    containers.set(id, made);
+    return made;
+  };
+  // Every project gets a bucket even when empty, so a container that exists but
+  // holds nothing is still a defined (empty) sequence rather than absent.
+  for (const p of store.projects) bucket(p.id);
+
+  let seq = 0;
+  for (const l of store.layouts) {
+    // A dangling pointer is `assembleStore`'s job, not this function's; bucket it
+    // under its own id so nothing is silently dropped if the two ever disagree.
+    bucket(l.projectId).push({ seq: seq++, key: rank(l.order), layout: l });
+  }
+  for (let i = 1; i < store.projects.length; i++) {
+    const p = store.projects[i];
+    bucket(home.id).push({ seq: seq++, key: rank(p.order), project: p });
+  }
+
+  const newOrder = new Map<string, number>();
+  for (const entries of containers.values()) {
+    entries.sort((a, b) => (a.key !== b.key ? a.key - b.key : a.seq - b.seq));
+    entries.forEach((e, i) => newOrder.set(e.layout ? e.layout.id : e.project!.id, i));
+  }
+
+  let changed = false;
+  const now = Date.now();
+  const layouts = store.layouts.map((l) => {
+    const next = newOrder.get(l.id);
+    if (next === undefined || next === l.order) return l;
+    changed = true;
+    return { ...l, order: next, updatedAt: opts.touch ? now : l.updatedAt };
+  });
+  const projects = store.projects.map((p, i) => {
+    // The home project is the container, not an item in it. Pinned at 0 so the
+    // field always holds a defined number and no consumer needs a branch.
+    const next = i === 0 ? 0 : newOrder.get(p.id);
+    if (next === undefined || next === p.order) return p;
+    changed = true;
+    return { ...p, order: next };
+  });
+  return changed ? { ...store, layouts, projects } : store;
+}
+
+/** Highest rank currently used in a container, or -1 when it is empty. */
+function maxRankIn(store: LayoutStore, projectId: string): number {
+  let max = -1;
+  for (const l of store.layouts) {
+    if (l.projectId === projectId) max = Math.max(max, rank(l.order) === Infinity ? -1 : l.order);
+  }
+  if (isHomeProject(store, projectId)) {
+    for (let i = 1; i < store.projects.length; i++) {
+      const o = rank(store.projects[i].order);
+      if (o !== Infinity) max = Math.max(max, o);
+    }
+  }
+  return max;
+}
+
+/**
+ * The fractional order that lands an item at visual index `at` in a container
+ * whose ranks are already dense integers: `at - 0.5` sits strictly between
+ * `at - 1` and `at`. `null` appends.
+ */
+function slotOrder(store: LayoutStore, projectId: string, at: number | null): number {
+  return at === null ? maxRankIn(store, projectId) + 1 : at - 0.5;
 }
 
 /**
@@ -103,6 +294,12 @@ export function sanitizeProjects(raw: unknown, seen: Set<string> = new Set()): P
       name: cleanName(p.name, `Project ${out.length + 1}`),
       createdAt:
         typeof p.createdAt === 'number' && Number.isFinite(p.createdAt) ? p.createdAt : Date.now(),
+      // Absent on every pre-S29 record, and junk on a hostile one. `Infinity`
+      // rather than a made-up integer: it means "unplaced", and `normalizeOrder`
+      // sends unplaced items to the end of their container in array order —
+      // which for an all-old store is the identity.
+      order:
+        typeof p.order === 'number' && Number.isFinite(p.order) ? p.order : Number.POSITIVE_INFINITY,
     });
   }
   return out;
@@ -189,7 +386,12 @@ export function assembleStore(
       ? rawActiveId
       : (finalLayouts[0]?.id ?? '');
 
-  return { layouts: finalLayouts, activeId, projects };
+  // 5 — every container is a dense integer rank sequence. `touch: false` is
+  // load-path discipline: re-deriving the arrangement must not rewrite the
+  // user's `updatedAt` timestamps, which is both the S8 "load never mangles"
+  // line and pointless (`persistedRef` is seeded from this already-repaired
+  // store, so the autosave diff would see no change anyway).
+  return normalizeOrder({ layouts: finalLayouts, activeId, projects }, { touch: false });
 }
 
 // ---------------------------------------------------------------------------
@@ -215,13 +417,89 @@ function uniqueName(taken: Project[], name: string): string {
 }
 
 export function addProject(store: LayoutStore, name: string): LayoutStore {
-  if (store.projects.length >= MAX_PROJECTS) return store;
+  const next = addProjectAt(store, name, null);
+  return next ? next.store : store;
+}
+
+/**
+ * `addProject` that reports the id it minted, and can place the tile at a given
+ * slot on the home grid.
+ *
+ * The id matters: `addProject` mints it INSIDE itself and returns only the
+ * store, so a caller running inside a `setStore` updater can never learn it —
+ * which is why a merge could not name its own folder in a toast or open the
+ * rename dialog. `findOrCreateProject` already digs it out with
+ * `next.projects[next.projects.length - 1]`; this is that pattern made honest.
+ *
+ * Returns `null` at `MAX_PROJECTS` rather than the same store, so the caller can
+ * say WHY nothing happened. A silent no-op behind a drag reads as a broken drop.
+ */
+export function addProjectAt(
+  store: LayoutStore,
+  name: string,
+  at: number | null,
+): { store: LayoutStore; projectId: string } | null {
+  if (store.projects.length >= MAX_PROJECTS) return null;
+  const home = store.projects[0];
   const project: Project = {
     id: createId('project'),
     name: uniqueName(store.projects, cleanName(name, `Project ${store.projects.length + 1}`)),
     createdAt: Date.now(),
+    order: home ? slotOrder(store, home.id, at) : 0,
   };
-  return { ...store, projects: [...store.projects, project] };
+  const next = normalizeOrder(
+    { ...store, projects: [...store.projects, project] },
+    { touch: true },
+  );
+  return { store: next, projectId: project.id };
+}
+
+/**
+ * Drop one design onto another: BOTH move into a brand-new folder, which takes
+ * the target's slot on the home grid — the Android gesture, where the folder
+ * appears exactly where the icon you dropped onto was.
+ *
+ * ATOMIC on purpose. Built out of `addProject` + two `moveLayoutToProject`s it
+ * would be three store writes with two visible intermediate states (a folder
+ * that exists and is empty, then one holding a single design), and an
+ * interruption between them leaves the empty folder behind for ever.
+ *
+ * `null` when the folder cap is reached or the two ids do not name two distinct
+ * real layouts — never a silent same-store return, for the reason above.
+ */
+export function mergeIntoNewProject(
+  store: LayoutStore,
+  dragId: string,
+  targetId: string,
+  name: string,
+): { store: LayoutStore; projectId: string } | null {
+  if (dragId === targetId) return null;
+  const drag = store.layouts.find((l) => l.id === dragId);
+  const target = store.layouts.find((l) => l.id === targetId);
+  if (!drag || !target) return null;
+  // The new tile inherits the TARGET's slot. Read before anything moves: once
+  // both layouts leave the home container that rank is free, so the tile lands
+  // exactly where the design the user aimed at was standing.
+  const home = store.projects[0];
+  const at = target.projectId === home?.id ? rank(target.order) : null;
+  const made = addProjectAt(store, name, Number.isFinite(at as number) ? (at as number) : null);
+  if (!made) return null;
+  const now = Date.now();
+  const moved = made.store.layouts.map((l) => {
+    if (l.id !== dragId && l.id !== targetId) return l;
+    // The target keeps precedence — it was already there and the dragged design
+    // joined it, which is the order Android shows in the folder preview too.
+    return {
+      ...l,
+      projectId: made.projectId,
+      order: l.id === targetId ? 0 : 1,
+      updatedAt: now,
+    };
+  });
+  return {
+    store: normalizeOrder({ ...made.store, layouts: moved }, { touch: true }),
+    projectId: made.projectId,
+  };
 }
 
 export function renameProject(store: LayoutStore, id: string, name: string): LayoutStore {
@@ -257,15 +535,26 @@ export function removeProject(store: LayoutStore, id: string): LayoutStore {
 
   const projects = store.projects.filter((p) => p.id !== id);
   const target = projects[Math.max(0, index - 1)];
-  return {
-    ...store,
-    projects,
-    layouts: store.layouts.map((l) =>
-      // updatedAt MUST bump: it is the entire IndexedDB autosave change detector,
-      // so without it the re-home renders correctly and vanishes on reload.
-      l.projectId === id ? { ...l, projectId: target.id, updatedAt: Date.now() } : l,
-    ),
-  };
+  // APPEND the re-homed designs rather than carrying their old ranks across.
+  // Measured on the pre-S29 tree: without this, two independently-arranged
+  // sequences land in one container with colliding ranks and are RIFFLE-SHUFFLED
+  // — `A1 B1 A2 B2 A3 B3` — because `order` is a coordinate in a container and
+  // this function is one of the three writers of `projectId`.
+  let next = maxRankIn({ ...store, projects }, target.id) + 1;
+  return normalizeOrder(
+    {
+      ...store,
+      projects,
+      layouts: store.layouts.map((l) =>
+        // updatedAt MUST bump: it is the entire IndexedDB autosave change detector,
+        // so without it the re-home renders correctly and vanishes on reload.
+        l.projectId === id
+          ? { ...l, projectId: target.id, order: next++, updatedAt: Date.now() }
+          : l,
+      ),
+    },
+    { touch: true },
+  );
 }
 
 /**
@@ -293,21 +582,82 @@ export function findOrCreateProject(
   return { store: next, projectId: next.projects[next.projects.length - 1].id };
 }
 
-/** Move one layout into another folder. The ONLY writer of `projectId`. */
+/**
+ * Move one layout into another folder, appending it there.
+ *
+ * `order` is RE-STAMPED, and that is not tidiness. Measured on the pre-S29
+ * tree, carrying the old rank across means where a design lands is decided by
+ * its position in the folder it LEFT: moving a design that was first in its old
+ * folder into `{A1:0, A2:1}` put it at the FRONT, ahead of designs the user had
+ * deliberately arranged.
+ */
 export function moveLayoutToProject(
   store: LayoutStore,
   layoutId: string,
   projectId: string,
+  at: number | null = null,
 ): LayoutStore {
   const layout = store.layouts.find((l) => l.id === layoutId);
-  if (!layout || layout.projectId === projectId) return store;
+  if (!layout) return store;
   if (!store.projects.some((p) => p.id === projectId)) return store;
-  return {
-    ...store,
-    layouts: store.layouts.map((l) =>
-      l.id === layoutId ? { ...l, projectId, updatedAt: Date.now() } : l,
-    ),
-  };
+  // Same folder AND no explicit slot is the only true no-op; a same-folder move
+  // WITH a slot is a reorder, which is a real change.
+  if (layout.projectId === projectId && at === null) return store;
+  const order = slotOrder(store, projectId, at);
+  return normalizeOrder(
+    {
+      ...store,
+      layouts: store.layouts.map((l) =>
+        l.id === layoutId ? { ...l, projectId, order, updatedAt: Date.now() } : l,
+      ),
+    },
+    { touch: true },
+  );
+}
+
+/**
+ * Reposition a folder TILE on the home grid. The mirror of a layout reorder, and
+ * it shares the same coordinate space — that shared space is what lets a tile
+ * sit between two designs.
+ *
+ * The home project itself has no tile (it IS the grid), so it cannot be moved.
+ */
+export function moveProjectToSlot(store: LayoutStore, projectId: string, at: number): LayoutStore {
+  const home = store.projects[0];
+  if (!home || projectId === home.id) return store;
+  if (!store.projects.some((p) => p.id === projectId)) return store;
+  const order = slotOrder(store, home.id, at);
+  return normalizeOrder(
+    {
+      ...store,
+      projects: store.projects.map((p) => (p.id === projectId ? { ...p, order } : p)),
+    },
+    { touch: true },
+  );
+}
+
+/**
+ * Remove a folder that a drag has just emptied — the Android behaviour where
+ * dragging the last icon out makes the folder disappear.
+ *
+ * Refuses unless the folder is genuinely EMPTY, which is what makes it safe:
+ * at zero layouts there is nothing to lose, so this can run without a confirm
+ * and without contending for the single shared undo slot that `deleteProject`
+ * needs. It also refuses on the home project and at one folder, mirroring
+ * `removeProject`.
+ *
+ * Deliberately NOT called when a folder merely drops to one design: Android
+ * dissolves at one, but a one-design folder here is a container the user may be
+ * filling, and dissolving it would move a design they did not touch.
+ */
+export function dissolveEmptyProject(store: LayoutStore, projectId: string): LayoutStore {
+  if (isHomeProject(store, projectId) || store.projects.length <= 1) return store;
+  if (!store.projects.some((p) => p.id === projectId)) return store;
+  if (store.layouts.some((l) => l.projectId === projectId)) return store;
+  return normalizeOrder(
+    { ...store, projects: store.projects.filter((p) => p.id !== projectId) },
+    { touch: true },
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -332,7 +682,22 @@ export function activeProject(store: LayoutStore): Project {
   return projectOf(store, activeLayout(store));
 }
 
-/** The layouts in one folder, in store order (which is the display order). */
+/**
+ * The layouts in one folder, in DISPLAY order.
+ *
+ * Sorted by `order` rather than trusting `store.layouts` array position: a
+ * mutation writes a new rank without moving the array element, so the two agree
+ * only by accident. `normalizeOrder` has already made the ranks dense integers,
+ * and the array index breaks a tie so the result is total even on a hand-built
+ * fixture that never went through it.
+ */
 export function layoutsInProject(store: LayoutStore, projectId: string): Layout[] {
-  return store.layouts.filter((l) => l.projectId === projectId);
+  return store.layouts
+    .map((l, i) => ({ l, i }))
+    .filter((e) => e.l.projectId === projectId)
+    .sort((a, b) => {
+      const d = rank(a.l.order) - rank(b.l.order);
+      return d !== 0 ? d : a.i - b.i;
+    })
+    .map((e) => e.l);
 }

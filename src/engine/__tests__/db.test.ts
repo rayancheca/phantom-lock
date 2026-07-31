@@ -137,7 +137,7 @@ describe('layout persistence', () => {
 describe('migration', () => {
   it('migrates a localStorage-shaped store into IDB idempotently', async () => {
     const store: LayoutStore = {
-      projects: [{ id: 'p1', name: 'Home', createdAt: 1 }],
+      projects: [{ id: 'p1', name: 'Home', createdAt: 1, order: 0 }],
       layouts: [
         makeLayout('Maple Court', apartmentScene()),
         makeLayout('Photo', { ...blankScene(), underlay: underlay(PNG_1PX) }),

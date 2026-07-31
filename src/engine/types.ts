@@ -130,6 +130,15 @@ export interface Project {
   name: string;
   /** Minted once, never rewritten — the one fact that cannot be backfilled. */
   createdAt: number;
+  /**
+   * Slot on the HOME grid, where folder tiles sit alongside the home project's
+   * own designs. See `Layout.order` — this is the same coordinate space, which
+   * is exactly what lets a folder tile live BETWEEN two designs.
+   *
+   * REQUIRED in memory, absent on every pre-S29 record (`StoredProject`).
+   * `normalizeOrder` re-derives it on load, so a missing value is not an error.
+   */
+  order: number;
 }
 
 export interface Scene {
@@ -192,6 +201,27 @@ export interface Layout {
    * that forgets it renders perfectly and vanishes on reload.
    */
   projectId: string;
+  /**
+   * Slot within this layout's CONTAINER — the home grid when `projectId` is the
+   * home project, otherwise the inside of that folder. A dense integer rank,
+   * canonicalised by `normalizeOrder`, which is the ONLY writer.
+   *
+   * REQUIRED in memory so a `setStore` literal that forgets it is a compile
+   * error; OPTIONAL on disk (`LayoutRecord.order`), because every record written
+   * before S29 genuinely has no such key.
+   *
+   * It exists because display order is otherwise `getAll()` key order, i.e.
+   * LEXICOGRAPHIC BY ID — measured, the seeded demo re-sorts itself on its first
+   * reload before the user has done anything.
+   *
+   * ⚠️ Reordering must bump `updatedAt` on EVERY layout whose rank moved, not
+   * just the dragged one: `usePersistence` diffs on `updatedAt` alone, so the
+   * others are never written and the container comes back in a THIRD order that
+   * is neither the old one nor the new one. `normalizeOrder(store, {touch:true})`
+   * is what does this; `{touch:false}` is for the load path, which must never
+   * rewrite the user's timestamps.
+   */
+  order: number;
 }
 
 export interface LayoutStore {

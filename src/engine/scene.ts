@@ -797,7 +797,18 @@ export function makeLayout(
   settings = DEFAULT_SETTINGS,
   projectId: string = DEFAULT_PROJECT_ID,
 ): Layout {
-  return { id: createId('layout'), name, scene, settings, updatedAt: Date.now(), projectId };
+  // `order: Infinity` means "unplaced" — `normalizeOrder` sends it to the end of
+  // its container, which is where a newly created design belongs. A literal 0
+  // would put every new design in front of the ones already arranged.
+  return {
+    id: createId('layout'),
+    name,
+    scene,
+    settings,
+    updatedAt: Date.now(),
+    projectId,
+    order: Number.POSITIVE_INFINITY,
+  };
 }
 
 export function defaultStore(): LayoutStore {
@@ -820,6 +831,16 @@ export function sanitizeLayout(raw: unknown): Layout | null {
     // user into localStorage mode over their FROZEN pre-migration snapshot. An
     // unresolvable id here is re-homed by `assembleStore` a moment later.
     projectId: typeof l.projectId === 'string' && l.projectId ? l.projectId : DEFAULT_PROJECT_ID,
+    // THE THIRD SILENT-DROP SITE. `saveLayout`'s record literal and
+    // `loadFromIDB`'s `raw` literal are the two `db.ts` names; this is the trust
+    // boundary `loadFromIDB` runs `raw` through, so a field added to those two
+    // and not to this one round-trips to disk and is erased on EVERY read.
+    //
+    // `Infinity` for a missing or hostile value: it means "unplaced", and
+    // `normalizeOrder` orders unplaced items by array position — which on a
+    // pre-S29 store (where nothing has an order) is the identity, so the
+    // migration changes no arrangement.
+    order: isNum(l.order) ? l.order : Number.POSITIVE_INFINITY,
   };
 }
 

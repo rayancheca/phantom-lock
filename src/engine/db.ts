@@ -33,6 +33,8 @@ const META_KEY = 'root';
 
 /** Underlay minus the heavy `src` — the bytes live in the `underlays` store. */
 type StoredUnderlay = Omit<Underlay, 'src'>;
+/** A folder as it exists ON DISK: `order` is absent on every pre-S29 row. */
+type StoredProject = Omit<Project, 'order'> & { order?: number };
 interface StoredScene extends Omit<Scene, 'underlay'> {
   underlay?: StoredUnderlay | null;
 }
@@ -51,6 +53,13 @@ interface LayoutRecord {
    * in both `saveLayout`'s literal and `loadFromIDB`'s `raw`.)
    */
   projectId?: string;
+  /**
+   * Slot within this layout's container. OPTIONAL for the same reason
+   * `projectId` is: every record written before S29 genuinely has no such key.
+   * `sanitizeLayout` defaults it to `Infinity` ("unplaced") and `normalizeOrder`
+   * re-derives a dense rank, so a missing value costs nothing.
+   */
+  order?: number;
 }
 interface UnderlayRecord {
   id: string; // == layout id
@@ -68,8 +77,14 @@ interface MetaRecord {
    *  the user through `bootstrapPersistence`'s catch into localStorage mode —
    *  where autosave then overwrites the FROZEN pre-migration snapshot. Adding a
    *  field to an existing record needs no schema change at all: IndexedDB stores
-   *  structured clones with no declared schema. Absent on pre-S20 rows. */
-  projects?: Project[];
+   *  structured clones with no declared schema. Absent on pre-S20 rows.
+   *
+   *  Typed as `StoredProject[]`, not `Project[]`: `Project.order` is REQUIRED in
+   *  memory and genuinely absent on every pre-S29 row, and claiming otherwise
+   *  would let a reader dereference a field that is not there. Nothing reads
+   *  this as a `Project` anyway — `loadFromIDB` hands it to `assembleStore` as
+   *  `unknown` and `sanitizeProjects` is the trust boundary. */
+  projects?: StoredProject[];
   schemaVersion: number;
   updatedAt: number;
   migratedFromLocalStorage: boolean;
@@ -201,6 +216,11 @@ export async function saveLayout(layout: Layout, writeImage = true): Promise<voi
     settings: layout.settings,
     updatedAt: layout.updatedAt,
     projectId: layout.projectId,
+    // `Infinity` does not survive a structured clone as a number the reader can
+    // use, and an unplaced layout has no rank worth storing anyway — omit the
+    // key entirely so the record is indistinguishable from a pre-S29 one, which
+    // is exactly what `sanitizeLayout` already handles.
+    order: Number.isFinite(layout.order) ? layout.order : undefined,
   };
   const underlay = layout.scene.underlay;
   // Encode the image BEFORE opening the write transaction. A malformed data URL
@@ -328,6 +348,9 @@ export async function loadFromIDB(
         // `undefined` on every pre-S20 record — sanitizeLayout defaults it and
         // assembleStore re-homes it below. The second silent-drop site.
         projectId: rec.projectId,
+        // ...and `undefined` on every pre-S29 record. `normalizeOrder` (invariant
+        // 5, inside `assembleStore`) re-derives the rank.
+        order: rec.order,
       };
       const clean = sanitizeLayout(raw);
       if (clean) layouts.push(clean);

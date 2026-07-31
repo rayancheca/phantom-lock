@@ -18,7 +18,13 @@ import type { ToastData } from '../../../ui/Toast';
  * own to restore.
  */
 
-const P = (id: string, name = id, createdAt = 1): Project => ({ id, name, createdAt });
+/** `order: Infinity` = UNPLACED — see the note in engine/__tests__/projects.test.ts. */
+const P = (id: string, name = id, createdAt = 1): Project => ({
+  id,
+  name,
+  createdAt,
+  order: Number.POSITIVE_INFINITY,
+});
 const L = (name: string, projectId: string, id: string): Layout => ({
   ...makeLayout(name, blankScene()),
   id,

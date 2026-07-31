@@ -94,7 +94,7 @@ describe('useGenerateDesign', () => {
 
   it('ADDS a layout on keep — never overwrites, and files it in the folder it was opened from', () => {
     const base = defaultStore();
-    const other = { id: 'p-other', name: 'Other', createdAt: 1 };
+    const other = { id: 'p-other', name: 'Other', createdAt: 1, order: Number.POSITIVE_INFINITY };
     const store: LayoutStore = { ...base, projects: [...base.projects, other] };
     const h = harness(store);
     const before = h.read().layouts.length;

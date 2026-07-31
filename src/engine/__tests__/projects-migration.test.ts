@@ -242,8 +242,8 @@ describe('OLD-SHAPE IndexedDB records upgrade on read', () => {
     const store: LayoutStore = {
       ...base,
       projects: [
-        { id: 'p1', name: 'Home', createdAt: 10 },
-        { id: 'p2', name: 'Studio', createdAt: 20 },
+        { id: 'p1', name: 'Home', createdAt: 10, order: Number.POSITIVE_INFINITY },
+        { id: 'p2', name: 'Studio', createdAt: 20, order: Number.POSITIVE_INFINITY },
       ],
       layouts: [
         { ...base.layouts[0], projectId: 'p2' },
@@ -286,7 +286,7 @@ describe('OLD-SHAPE localStorage blob upgrades on read', () => {
   it('round-trips projects through the localStorage path (degraded mode writes the whole store)', () => {
     const withProjects: LayoutStore = {
       ...defaultStore(),
-      projects: [{ id: 'p-alpha', name: 'Alpha', createdAt: 3 }],
+      projects: [{ id: 'p-alpha', name: 'Alpha', createdAt: 3, order: 0 }],
     };
     const store2: LayoutStore = {
       ...withProjects,
@@ -331,7 +331,7 @@ describe('the export bundle carries the folder, by NAME', () => {
     const base = defaultStore();
     const store: LayoutStore = {
       ...base,
-      projects: [{ id: 'p1', name: 'Maple Court', createdAt: 1 }],
+      projects: [{ id: 'p1', name: 'Maple Court', createdAt: 1, order: 0 }],
       layouts: [{ ...base.layouts[0], projectId: 'p1' }],
     };
     const bundle = buildExportBundle(store);
@@ -368,8 +368,8 @@ describe('a folder ROUND-TRIPS through the single-layout export/import path', ()
   it('lands in the SAME folder when one of that name already exists', () => {
     const base = assembleStore(
       [
-        { id: 'p1', name: 'Maple Court', createdAt: 1 },
-        { id: 'p2', name: 'Sketches', createdAt: 2 },
+        { id: 'p1', name: 'Maple Court', createdAt: 1, order: 0 },
+        { id: 'p2', name: 'Sketches', createdAt: 2, order: 0 },
       ],
       [makeLayout('Existing', blankScene(), undefined, 'p1')],
       undefined,
@@ -385,7 +385,7 @@ describe('a folder ROUND-TRIPS through the single-layout export/import path', ()
 
   it('CREATES the folder when the receiving store has never heard of it', () => {
     const base = assembleStore(
-      [{ id: 'p1', name: 'Mine', createdAt: 1 }],
+      [{ id: 'p1', name: 'Mine', createdAt: 1, order: 0 }],
       [makeLayout('Existing', blankScene(), undefined, 'p1')],
       undefined,
     );
@@ -401,7 +401,7 @@ describe('a folder ROUND-TRIPS through the single-layout export/import path', ()
 
   it('ignores a foreign projectId — no phantom folder, no dangling pointer', () => {
     const base = assembleStore(
-      [{ id: 'p1', name: 'Mine', createdAt: 1 }],
+      [{ id: 'p1', name: 'Mine', createdAt: 1, order: 0 }],
       [makeLayout('Existing', blankScene(), undefined, 'p1')],
       undefined,
     );
@@ -419,7 +419,7 @@ describe('a folder ROUND-TRIPS through the single-layout export/import path', ()
 
   it('a PRE-S20 file (no project key at all) still imports, into the current folder', () => {
     const base = assembleStore(
-      [{ id: 'p1', name: 'Mine', createdAt: 1 }],
+      [{ id: 'p1', name: 'Mine', createdAt: 1, order: 0 }],
       [makeLayout('Existing', blankScene(), undefined, 'p1')],
       undefined,
     );
