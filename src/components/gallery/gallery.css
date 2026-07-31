@@ -38,6 +38,14 @@
 
 .gallery-card {
   position: relative;
+  /* Vertical scrolling of the grid must keep working, so only the horizontal
+     axis is surrendered to the drag. NOTE, and it is a real limit rather than a
+     detail: the browser fixes `touch-action` at touchstart, so this cannot be
+     switched to `none` once a long press has armed — a touch drag that moves
+     mainly VERTICALLY will scroll and fire `pointercancel` instead of dragging.
+     Horizontal drags work. The complete non-dragging path for touch is the
+     "Move…" menu item, which is what WCAG 2.2 SC 2.5.7 actually asks for. */
+  touch-action: pan-y;
   border-radius: var(--radius-lg);
   background: var(--surface-1);
   transition: background var(--dur-1) var(--ease-out);

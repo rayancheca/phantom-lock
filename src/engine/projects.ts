@@ -228,28 +228,71 @@ export function normalizeOrder(
   return changed ? { ...store, layouts, projects } : store;
 }
 
-/** Highest rank currently used in a container, or -1 when it is empty. */
-function maxRankIn(store: LayoutStore, projectId: string): number {
-  let max = -1;
+/**
+ * A container's members in DISPLAY order, with one item optionally taken out —
+ * the sequence a drop is being positioned against.
+ *
+ * Ranks are dense only immediately after `normalizeOrder`, and several ordinary
+ * paths write `layouts` directly without it (a delete leaves a hole, a newly
+ * created design carries `Infinity`). So nothing here may assume rank == index.
+ */
+function containerRanks(store: LayoutStore, projectId: string, excludeId?: string): number[] {
+  const out: number[] = [];
   for (const l of store.layouts) {
-    if (l.projectId === projectId) max = Math.max(max, rank(l.order) === Infinity ? -1 : l.order);
+    if (l.projectId === projectId && l.id !== excludeId) out.push(rank(l.order));
   }
   if (isHomeProject(store, projectId)) {
     for (let i = 1; i < store.projects.length; i++) {
-      const o = rank(store.projects[i].order);
-      if (o !== Infinity) max = Math.max(max, o);
+      const p = store.projects[i];
+      if (p.id !== excludeId) out.push(rank(p.order));
     }
   }
-  return max;
+  return out.sort((a, b) => a - b);
 }
 
 /**
- * The fractional order that lands an item at visual index `at` in a container
- * whose ranks are already dense integers: `at - 0.5` sits strictly between
- * `at - 1` and `at`. `null` appends.
+ * The order value that lands an item at visual index `at` in a container.
+ *
+ * MIDPOINT insertion against the container's real sequence, NOT `at - 0.5`.
+ * The subtraction was only correct while every rank was a dense integer and the
+ * index space matched, and neither holds in general: `useLayoutActions` deletes
+ * a layout without re-ranking (leaving a hole, so index 2 is rank 3 and the drop
+ * silently does nothing), and a freshly created design carries `Infinity` until
+ * something normalises it (so "append" landed FIRST).
+ *
+ * `at` is an index in the container AS THE USER SEES IT, with the moving item
+ * already removed. `null` appends.
  */
-function slotOrder(store: LayoutStore, projectId: string, at: number | null): number {
-  return at === null ? maxRankIn(store, projectId) + 1 : at - 0.5;
+function slotOrder(
+  store: LayoutStore,
+  projectId: string,
+  at: number | null,
+  excludeId?: string,
+): number {
+  const ranks = containerRanks(store, projectId, excludeId).filter((r) => Number.isFinite(r));
+  const last = ranks.length > 0 ? ranks[ranks.length - 1] : -1;
+  if (at === null || at >= ranks.length) return last + 1;
+  const hi = ranks[Math.max(0, at)];
+  if (at <= 0) return hi - 1;
+  return (ranks[at - 1] + hi) / 2;
+}
+
+/**
+ * Convert a visual index in the container the user is LOOKING at (which still
+ * shows the item being moved) into an index in the sequence without it.
+ */
+function withoutSelf(at: number | null, selfIndex: number): number | null {
+  if (at === null || selfIndex < 0) return at;
+  return at > selfIndex ? at - 1 : at;
+}
+
+/** Where an item currently sits in its container's display order, or -1. */
+function indexInContainer(store: LayoutStore, projectId: string, id: string): number {
+  const mine = rank(
+    store.layouts.find((l) => l.id === id)?.order ??
+      store.projects.find((p) => p.id === id)?.order,
+  );
+  return containerRanks(store, projectId, id).filter((r) => r < mine).length;
 }
 
 /**
@@ -543,7 +586,7 @@ export function removeProject(store: LayoutStore, id: string): LayoutStore {
   // sequences land in one container with colliding ranks and are RIFFLE-SHUFFLED
   // — `A1 B1 A2 B2 A3 B3` — because `order` is a coordinate in a container and
   // this function is one of the three writers of `projectId`.
-  let next = maxRankIn({ ...store, projects }, target.id) + 1;
+  let next = slotOrder({ ...store, projects }, target.id, null);
   return normalizeOrder(
     {
       ...store,
@@ -606,7 +649,12 @@ export function moveLayoutToProject(
   // Same folder AND no explicit slot is the only true no-op; a same-folder move
   // WITH a slot is a reorder, which is a real change.
   if (layout.projectId === projectId && at === null) return store;
-  const order = slotOrder(store, projectId, at);
+  // `at` counts the container as the user sees it, which still shows this
+  // layout when it is a same-container reorder. Without the conversion, index k
+  // and k+1 both mean "stay put" and the LAST slot is unreachable.
+  const same = layout.projectId === projectId;
+  const target = withoutSelf(at, same ? indexInContainer(store, projectId, layoutId) : -1);
+  const order = slotOrder(store, projectId, target, layoutId);
   return normalizeOrder(
     {
       ...store,
@@ -629,7 +677,8 @@ export function moveProjectToSlot(store: LayoutStore, projectId: string, at: num
   const home = store.projects[0];
   if (!home || projectId === home.id) return store;
   if (!store.projects.some((p) => p.id === projectId)) return store;
-  const order = slotOrder(store, home.id, at);
+  const target = withoutSelf(at, indexInContainer(store, home.id, projectId));
+  const order = slotOrder(store, home.id, target, projectId);
   return normalizeOrder(
     {
       ...store,

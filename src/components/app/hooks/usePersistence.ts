@@ -18,10 +18,33 @@ export function usePersistence({ store, persistMode, showToast }: Args): { expor
   /** What we last wrote per layout, so autosave rewrites only what changed and
    *  only re-encodes the (large) photo blob when the image itself changed. Seeded
    *  from the first render's store (= the initial store). */
-  const persistedRef = useRef<Map<string, { updatedAt: number; underlaySrc: string | null }> | null>(null);
+  const persistedRef = useRef<Map<
+    string,
+    { updatedAt: number; underlaySrc: string | null; order: number | undefined }
+  > | null>(null);
   if (!persistedRef.current) {
     persistedRef.current = new Map(
-      store.layouts.map((l) => [l.id, { updatedAt: l.updatedAt, underlaySrc: l.scene.underlay?.src ?? null }]),
+      // `order: undefined` — deliberately NOT `l.order`, and this is a data fix
+      // rather than a nicety.
+      //
+      // `assembleStore` derives a dense rank for every layout on LOAD and does so
+      // with `touch: false`, so no `updatedAt` moves and this diff would see
+      // nothing to write. Meanwhile `saveMeta` below rebuilds the whole meta row
+      // EVERY cycle, so `Project.order` IS written. On any store saved before
+      // S29 the two halves of one shared coordinate space then disagree on disk:
+      // the folder tiles have real ranks and the designs have none, `Infinity`
+      // sorts last, and on the SECOND boot every folder jumps to the front of the
+      // grid with the user having done nothing. Measured end-to-end against a
+      // real IndexedDB, and it is permanent once it happens.
+      //
+      // Seeding the rank as unknown makes the first autosave cycle write each
+      // layout exactly once, after which the recorded rank matches and the diff
+      // goes quiet again. `underlaySrc` is still seeded truthfully, so that write
+      // does NOT re-encode anybody's photo.
+      store.layouts.map((l) => [
+        l.id,
+        { updatedAt: l.updatedAt, underlaySrc: l.scene.underlay?.src ?? null, order: undefined },
+      ]),
     );
   }
   const saveFailedRef = useRef(false);
@@ -94,10 +117,13 @@ export function usePersistence({ store, persistMode, showToast }: Args): { expor
       for (const l of st.layouts) {
         const prev = seen.get(l.id);
         const src = l.scene.underlay?.src ?? null;
-        if (!prev || prev.updatedAt !== l.updatedAt) {
+        // `order` is part of the key: a rank can change without `updatedAt`
+        // moving (the load-path derivation above), and an arrangement that is
+        // never written is an arrangement the user loses on reload.
+        if (!prev || prev.updatedAt !== l.updatedAt || prev.order !== l.order) {
           try {
             await saveLayout(l, !prev || prev.underlaySrc !== src);
-            seen.set(l.id, { updatedAt: l.updatedAt, underlaySrc: src });
+            seen.set(l.id, { updatedAt: l.updatedAt, underlaySrc: src, order: l.order });
           } catch {
             anyFailed = true; // isolate: keep persisting the other layouts
           }

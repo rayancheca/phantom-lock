@@ -90,9 +90,21 @@ export function slotIndexAt(p: Point, items: ItemRect[]): number {
   const ordered = [...items].sort((a, b) => a.index - b.index);
   // The last item whose row starts above the pointer — i.e. the row it is on, or
   // the last row when the pointer is below everything.
-  const onRow = ordered.filter((r) => p.y >= r.top && p.y <= r.bottom);
-  const row = onRow.length > 0 ? onRow : ordered.filter((r) => r.bottom < p.y);
-  if (row.length === 0) return ordered[0].index; // above the first row
+  const row = ordered.filter((r) => p.y >= r.top && p.y <= r.bottom);
+  if (row.length === 0) {
+    // NOT on any row — the gap between two rows, the space under the grid, or
+    // above the first row. Here the horizontal midpoint must NOT decide: in a
+    // single-column grid every gap is "not on a row", and the x-scan then
+    // answered "before the card above" for a pointer clearly BELOW it. Vertical
+    // position is the only meaningful signal, so the drop goes after the last
+    // item of the last row above — which for the space under the grid is an
+    // append, and above the first row is slot 0.
+    const above = ordered.filter((r) => r.bottom < p.y);
+    if (above.length === 0) return ordered[0].index;
+    const lastTop = above.reduce((m, r) => Math.max(m, r.top), -Infinity);
+    const lastRow = above.filter((r) => r.top === lastTop);
+    return lastRow[lastRow.length - 1].index + 1;
+  }
   for (const r of row) {
     if (p.x < (r.left + r.right) / 2) return r.index;
   }
@@ -107,6 +119,13 @@ export function resolveDrop(
   p: Point,
   items: ItemRect[],
   dragged: { kind: 'layout' | 'project'; id: string },
+  /**
+   * May a design-on-design drop create a folder here? FALSE inside a drilled-in
+   * folder: the model is flat, so `mergeIntoNewProject` would put the new folder
+   * on the HOME grid and pull both designs out of the folder the user is looking
+   * at, leaving that view empty. Measured on the real store before it shipped.
+   */
+  canMerge = true,
 ): DropIntent {
   const others = items.filter((r) => !(r.kind === dragged.kind && r.id === dragged.id));
   const over = others.find((r) => contains(r, p));
@@ -122,7 +141,7 @@ export function resolveDrop(
     // not need dividing the way a design card does.
     if (over.kind === 'project') return { kind: 'absorb', projectId: over.id };
     // A design merges only from its core, leaving an edge lane for reordering.
-    if (over.kind === 'layout' && inMergeCore(over, p)) {
+    if (over.kind === 'layout' && canMerge && inMergeCore(over, p)) {
       return { kind: 'merge', targetId: over.id };
     }
   }
@@ -143,8 +162,15 @@ export function caretRect(
   const ordered = [...items].sort((a, b) => a.index - b.index);
   const at = ordered.find((r) => r.index === index);
   if (at) return { x: at.left - gap / 2, top: at.top, height: at.bottom - at.top };
-  const last = ordered[ordered.length - 1];
-  return { x: last.right + gap / 2, top: last.top, height: last.bottom - last.top };
+  // No item holds that index — either the drop appends, or the index is the
+  // DRAGGED item's own (the caller filters the subject out, and `slotIndexAt`
+  // legitimately returns it whenever the pointer sits just before its own slot).
+  // Anchoring to the global last item put the caret rows away from the drop on
+  // the single most common gesture in the feature; the nearest PRECEDING item is
+  // where the drop actually lands.
+  const before = ordered.filter((r) => r.index < index);
+  const anchor = before.length > 0 ? before[before.length - 1] : ordered[ordered.length - 1];
+  return { x: anchor.right + gap / 2, top: anchor.top, height: anchor.bottom - anchor.top };
 }
 
 /**

@@ -121,6 +121,57 @@ describe('resolveDrop', () => {
   });
 });
 
+describe('the review fixes — each pinned so it cannot silently regress', () => {
+  const others = GRID.filter((r) => r.id !== 'a');
+
+  it('a drop BELOW the grid appends; it does not land near the front', () => {
+    // The bug: "every item above the pointer" kept row 0 too, and the scan then
+    // returned a row-0 index. Measured, a drop in the empty space under the grid
+    // sent the card to slot 1.
+    expect(slotIndexAt({ x: 10, y: 10_000 }, others)).toBe(6);
+    expect(slotIndexAt({ x: 320, y: 10_000 }, others)).toBe(6);
+  });
+
+  it('a drop in the GAP between two rows lands on the upper row, not row 0', () => {
+    // In a gap the VERTICAL position is the whole answer: the drop lands after
+    // the last item of the row above, whatever x is. Letting x decide is what
+    // broke the single-column case below.
+    const gapY = GRID[2].bottom + 5; // between row 0 and row 1
+    expect(slotIndexAt({ x: 10, y: gapY }, others)).toBe(3);
+    expect(slotIndexAt({ x: 10_000, y: gapY }, others)).toBe(3);
+  });
+
+  it('a single-column grid resolves every inter-card gap correctly', () => {
+    const col: ItemRect[] = [0, 1, 2].map((i) => ({
+      kind: 'layout', id: `c${i}`, index: i,
+      left: 0, right: 300, top: i * 170, bottom: i * 170 + 150,
+    }));
+    expect(slotIndexAt({ x: 50, y: 160 }, col)).toBe(1);
+    expect(slotIndexAt({ x: 50, y: 330 }, col)).toBe(2);
+    expect(slotIndexAt({ x: 50, y: 5000 }, col)).toBe(3);
+  });
+
+  it('the caret anchors to the PRECEDING item, not the far end of the grid', () => {
+    // `slotIndexAt` legitimately returns the dragged item's OWN index when the
+    // pointer sits just before its slot, and the caller has filtered it out — so
+    // `caretRect` gets an index no item holds. Anchoring to the global last item
+    // drew the caret rows away from where the drop would land.
+    const withoutD = GRID.filter((r) => r.id !== 'd'); // 'd' is index 3, row 1 start
+    const r = caretRect(3, withoutD, GAP)!;
+    expect(r.top).toBe(GRID[2].top); // end of ROW 0, where the drop lands
+    expect(r.x).toBe(GRID[2].right + GAP / 2);
+  });
+
+  it('refuses to MERGE inside a folder, where the flat model cannot express it', () => {
+    // With canMerge false a design-on-design drop reorders instead. Measured on
+    // the real store: merging inside a folder pulled BOTH designs onto the home
+    // grid and left the view the user was looking at empty.
+    const dragA = { kind: 'layout' as const, id: 'a' };
+    expect(resolveDrop(centre(GRID[1]), GRID, dragA, true).kind).toBe('merge');
+    expect(resolveDrop(centre(GRID[1]), GRID, dragA, false).kind).toBe('slot');
+  });
+});
+
 describe('slotIndexAt — reading order, not raw distance', () => {
   const others = GRID.filter((r) => r.id !== 'a');
 

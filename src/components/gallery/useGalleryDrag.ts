@@ -71,6 +71,9 @@ interface Args {
   /** The element the ghost is positioned inside (`.gallery-layer`). */
   layerRef: React.RefObject<HTMLElement | null>;
   onCommit: (c: DropCommit) => void;
+  /** False inside a drilled-in folder: the model is FLAT, so a merge there would
+   *  yank both designs OUT onto the home grid. Measured before it shipped. */
+  canMerge: boolean;
   /** Narrated to the live region on every meaningful change. */
   announce: (message: string) => void;
   describe: (intent: DropIntent, subject: DragSubject) => string;
@@ -232,7 +235,7 @@ export function useGalleryDrag(a: Args): GalleryDrag {
         height: p.size.height,
       });
       const rects = measure();
-      applyIntent(resolveDrop(point, rects, p.subject), p.subject, rects);
+      applyIntent(resolveDrop(point, rects, p.subject, live.current.canMerge), p.subject, rects);
     };
 
     const up = (e: PointerEvent) => {
@@ -265,7 +268,7 @@ export function useGalleryDrag(a: Args): GalleryDrag {
       window.addEventListener('click', swallow, true);
       setTimeout(() => window.removeEventListener('click', swallow, true), 0);
       const rects = measure();
-      const finalIntent = resolveDrop({ x: e.clientX, y: e.clientY }, rects, subj);
+      const finalIntent = resolveDrop({ x: e.clientX, y: e.clientY }, rects, subj, live.current.canMerge);
       clear();
       live.current.onCommit({ subject: subj, intent: finalIntent });
     };
@@ -298,6 +301,13 @@ export function useGalleryDrag(a: Args): GalleryDrag {
       setSubject(subj);
       setMoving(true);
       setDragging(false);
+      // FOCUS THE ITEM. Move mode is entered from a kebab MENU item, and when
+      // that menu closes it returns focus to the kebab button — where the arrow
+      // keys are not handled. Without this the canonical (and WCAG 2.5.7) path
+      // enters a mode the user then cannot drive at all.
+      const el = els.current.get(keyOf(subj.kind, subj.id));
+      const opener = el?.querySelector<HTMLElement>('.gallery-open');
+      if (opener) opener.focus();
       const start = live.current.items.findIndex((i) => i.kind === subj.kind && i.id === subj.id);
       const next: DropIntent = { kind: 'slot', index: Math.max(0, start) };
       setIntent(next);
@@ -334,12 +344,18 @@ export function useGalleryDrag(a: Args): GalleryDrag {
         // only way to reach half the feature.
         const at = others[Math.min(cur, others.length - 1)];
         if (!at) return true;
+        // Mirrors `resolveDrop` EXACTLY, including the flat-model guard. It did
+        // not, and that was the keyboard twin of the pointer bug fixed in
+        // e5c0d3b: a folder subject announced "Drop to move Alpha into Beta" and
+        // then committed nothing, because no branch absorbs a project. The two
+        // input methods must propose the same set of actions or the canonical
+        // (keyboard/menu) path is the broken one.
         next =
-          at.kind === 'project'
-            ? { kind: 'absorb', projectId: at.id }
-            : subject.kind === 'layout'
-              ? { kind: 'merge', targetId: at.id }
-              : { kind: 'slot', index: cur };
+          subject.kind !== 'layout' || (at.kind === 'layout' && !live.current.canMerge)
+            ? { kind: 'slot', index: cur }
+            : at.kind === 'project'
+              ? { kind: 'absorb', projectId: at.id }
+              : { kind: 'merge', targetId: at.id };
       }
       if (!next) return false;
       setIntent(next);

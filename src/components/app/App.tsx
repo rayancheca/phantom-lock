@@ -391,7 +391,10 @@ function AppInner({ initialStore, persistMode, showFirstRun, droppedCount, proje
   const {
     newProject,
     renameProjectTo,
-    moveLayout,
+    // `moveLayout` is deliberately NOT destructured: every move now goes through
+    // `dropLayout` so the emptied-folder dissolve is reachable. The primitive
+    // stays on the hook (and tested) because it is the plain move with no
+    // lifecycle side effects.
     deleteProject,
     dropLayout,
     dropProject,
@@ -1111,7 +1114,12 @@ function AppInner({ initialStore, persistMode, showFirstRun, droppedCount, proje
         onSubmitRenameProject={renameProjectTo}
         onRenameProject={(id) => setDialog({ kind: 'project-name', projectId: id })}
         onDeleteProject={deleteProject}
-        onMoveLayout={moveLayout}
+        // Routed through `dropLayout`, not `moveLayout`: this is the ONLY gesture
+        // that takes a design OUT of a folder, so it is also the only one that can
+        // leave a folder empty. Without it `dissolveEmptyProject` is unreachable
+        // and the "drag the last design out and the folder disappears" behaviour
+        // is a claim with no code path.
+        onMoveLayout={(layoutId, projectId) => dropLayout(layoutId, projectId, null)}
         onDropLayout={dropLayout}
         onDropProject={dropProject}
         onMergeLayouts={mergeLayouts}

@@ -179,6 +179,8 @@ export default function LayoutGallery(p: GalleryProps) {
     onCommit,
     announce: setAnnouncement,
     describe,
+    // Inside a folder there is nothing a merge could correctly produce.
+    canMerge: !folder,
   });
 
   // Escape is a LADDER, and it has to live inside this one handler.
@@ -253,13 +255,13 @@ export default function LayoutGallery(p: GalleryProps) {
         className={`gallery-card${layout.id === p.activeId ? ' gallery-card-active' : ''}${
           isSubject('layout', layout.id) ? ' is-source' : ''
         }${dropClass('layout', layout.id)}`}
+        onKeyDown={(e) => onItemKeyDown(e, subject)}
       >
         <button
           type="button"
           className="gallery-open"
           aria-describedby="gallery-move-help"
           onPointerDown={(e) => drag.onItemPointerDown(subject, e)}
-          onKeyDown={(e) => onItemKeyDown(e, subject)}
           // The click a drag synthesises is swallowed at the window by the hook,
           // so this only ever runs for a genuine click.
           onClick={() => p.onOpen(layout.id)}
@@ -335,6 +337,7 @@ export default function LayoutGallery(p: GalleryProps) {
           'project',
           project.id,
         )}`}
+        onKeyDown={(e) => onItemKeyDown(e, subject)}
       >
         <button
           type="button"
@@ -342,7 +345,6 @@ export default function LayoutGallery(p: GalleryProps) {
           aria-describedby="gallery-move-help"
           aria-label={`Open folder ${project.name}, ${n} design${n === 1 ? '' : 's'}`}
           onPointerDown={(e) => drag.onItemPointerDown(subject, e)}
-          onKeyDown={(e) => onItemKeyDown(e, subject)}
           onClick={() => {
             setOpenFolder(project.id);
             setAnnouncement(`Opened folder ${project.name}, ${n} design${n === 1 ? '' : 's'}.`);
