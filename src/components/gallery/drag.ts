@@ -110,12 +110,19 @@ export function resolveDrop(
 ): DropIntent {
   const others = items.filter((r) => !(r.kind === dragged.kind && r.id === dragged.id));
   const over = others.find((r) => contains(r, p));
-  if (over) {
-    // A folder tile absorbs across its whole area.
+  // BOTH container proposals require the dragged item to be a DESIGN. The model
+  // is flat — `Layout.projectId` points one way and a `Project` has no parent —
+  // so a folder can never go inside anything. Getting this wrong for `absorb`
+  // was a real bug found live: a folder dragged onto another folder announced
+  // "Drop to move X into Y", and then the commit silently did nothing, because
+  // no branch handles a project being absorbed. A drag that proposes an action
+  // must either perform it or not propose it.
+  if (over && dragged.kind === 'layout') {
+    // A folder tile absorbs across its whole area — it is one target, so it does
+    // not need dividing the way a design card does.
     if (over.kind === 'project') return { kind: 'absorb', projectId: over.id };
-    // A design merges only from its core, and only with another DESIGN — a
-    // folder dropped on a design would have to nest, and the model is flat.
-    if (over.kind === 'layout' && dragged.kind === 'layout' && inMergeCore(over, p)) {
+    // A design merges only from its core, leaving an edge lane for reordering.
+    if (over.kind === 'layout' && inMergeCore(over, p)) {
       return { kind: 'merge', targetId: over.id };
     }
   }

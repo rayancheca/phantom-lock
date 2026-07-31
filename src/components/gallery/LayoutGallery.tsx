@@ -260,12 +260,9 @@ export default function LayoutGallery(p: GalleryProps) {
           aria-describedby="gallery-move-help"
           onPointerDown={(e) => drag.onItemPointerDown(subject, e)}
           onKeyDown={(e) => onItemKeyDown(e, subject)}
-          onClick={() => {
-            // A drag ends with a click on the surface it started from; without
-            // this the drop would ALSO switch layout and close the gallery.
-            if (drag.consumedClick()) return;
-            p.onOpen(layout.id);
-          }}
+          // The click a drag synthesises is swallowed at the window by the hook,
+          // so this only ever runs for a genuine click.
+          onClick={() => p.onOpen(layout.id)}
         >
           <Thumb scene={layout.scene} />
           <span className="gallery-name">{layout.name}</span>
@@ -347,7 +344,6 @@ export default function LayoutGallery(p: GalleryProps) {
           onPointerDown={(e) => drag.onItemPointerDown(subject, e)}
           onKeyDown={(e) => onItemKeyDown(e, subject)}
           onClick={() => {
-            if (drag.consumedClick()) return;
             setOpenFolder(project.id);
             setAnnouncement(`Opened folder ${project.name}, ${n} design${n === 1 ? '' : 's'}.`);
           }}

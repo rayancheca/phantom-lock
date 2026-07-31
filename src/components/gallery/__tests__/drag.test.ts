@@ -99,6 +99,22 @@ describe('resolveDrop', () => {
     expect(resolveDrop(centre(GRID[1]), GRID, dragF).kind).toBe('slot');
   });
 
+  it('refuses to ABSORB a folder into a folder — found live, not in review', () => {
+    // The bug this pins: `absorb` was proposed for ANY dragged item, so dropping
+    // a folder on a folder announced "Drop to move Sketches into Bed" and then
+    // committed nothing at all, because no branch handles absorbing a project.
+    // A drag must never propose an action it cannot perform.
+    const tile2: ItemRect = { ...card(0, 'project', 'G'), index: 6 };
+    const grid = [...GRID, tile2];
+    const dragG = { kind: 'project' as const, id: 'G' };
+    expect(resolveDrop(centre(GRID[4]), grid, dragG).kind).toBe('slot');
+    // ...while a DESIGN dropped on that same tile still absorbs.
+    expect(resolveDrop(centre(GRID[4]), grid, { kind: 'layout', id: 'a' })).toEqual({
+      kind: 'absorb',
+      projectId: 'F',
+    });
+  });
+
   it('proposes a slot over empty space', () => {
     const below = { x: 10, y: 10_000 };
     expect(resolveDrop(below, GRID, dragA).kind).toBe('slot');

@@ -53,8 +53,6 @@ export interface GalleryDrag {
   register: (key: string, el: HTMLElement | null) => void;
   /** `onPointerDown` for an item's draggable surface. */
   onItemPointerDown: (subject: DragSubject, e: React.PointerEvent) => void;
-  /** True when the last gesture became a drag — the click must then be swallowed. */
-  consumedClick: () => boolean;
   beginMove: (subject: DragSubject) => void;
   /** Arrow-key stepping in move mode. Returns false when it did not handle the key. */
   stepMove: (key: string) => boolean;
@@ -101,8 +99,6 @@ export function useGalleryDrag(a: Args): GalleryDrag {
     grab: Point;
     size: { width: number; height: number };
   } | null>(null);
-  /** Survives past pointerup so the click that follows can be swallowed. */
-  const consumed = useRef(false);
   // The commit callback is read through a ref: the window listeners below are
   // installed once per gesture and must not be torn down and rebuilt whenever a
   // parent re-renders mid-drag.
@@ -189,7 +185,6 @@ export function useGalleryDrag(a: Args): GalleryDrag {
       if (e.button !== 0) return;
       const target = e.currentTarget as HTMLElement;
       const rect = target.getBoundingClientRect();
-      consumed.current = false;
       press.current = {
         subject: subj,
         at: { x: e.clientX, y: e.clientY },
@@ -215,7 +210,6 @@ export function useGalleryDrag(a: Args): GalleryDrag {
       if (!p.armed) {
         if (!dragArmed(p.at, point, performance.now() - p.startedAt, p.coarse)) return;
         p.armed = true;
-        consumed.current = true;
         // Capture so the gesture survives the pointer leaving the card. NOTE:
         // capture RETARGETS every later event to this element, so hit-testing
         // below must use the pure geometry, never `e.target`.
@@ -253,6 +247,23 @@ export function useGalleryDrag(a: Args): GalleryDrag {
       }
       press.current = null;
       if (!armed) return; // a plain click; the card's own onClick runs
+      // Swallow the click the browser is about to synthesise for THIS gesture,
+      // and only that one.
+      //
+      // A flag consulted by each card cannot do this: a merge REMOVES the
+      // dragged card from the DOM, so the click never arrives, the flag stays
+      // set, and the next click on any item — the new folder tile, typically —
+      // is silently eaten. Found by driving the real browser; jsdom cannot
+      // produce the click-after-pointerup sequence at all.
+      //
+      // `click` is dispatched synchronously with the same input batch, so a
+      // macrotask is guaranteed to run after it and never before.
+      const swallow = (ev: MouseEvent) => {
+        ev.stopPropagation();
+        ev.preventDefault();
+      };
+      window.addEventListener('click', swallow, true);
+      setTimeout(() => window.removeEventListener('click', swallow, true), 0);
       const rects = measure();
       const finalIntent = resolveDrop({ x: e.clientX, y: e.clientY }, rects, subj);
       clear();
@@ -279,12 +290,6 @@ export function useGalleryDrag(a: Args): GalleryDrag {
       window.removeEventListener('pointercancel', cancelled);
     };
   }, [applyIntent, clear, layerOrigin, measure]);
-
-  const consumedClick = useCallback(() => {
-    const was = consumed.current;
-    consumed.current = false;
-    return was;
-  }, []);
 
   // --- move mode (the SC 2.5.7 path) --------------------------------------
 
@@ -368,7 +373,6 @@ export function useGalleryDrag(a: Args): GalleryDrag {
     caret,
     register,
     onItemPointerDown,
-    consumedClick,
     beginMove,
     stepMove,
     commitMove,
