@@ -13,6 +13,7 @@ effort — a small high-value item beats a large one.
 | 13 | ✅ **Detection refuses the owner's floorplan** — **REFUTED S26** (measured at a resolution the app never uses) | ~~P0~~ done | — |
 | 13d | ✅ **S27's fix had a MIRROR regression** — **DONE S28** (both threshold rules kept as candidates; polarity case REFUSED → 14/16/26 walls live) | ~~P0~~ done | — |
 | 13b | ✅ **Detection's verdict was unstable under a tone curve** — **DONE S27, LANDED S28** (owner 38/138 → 0/138; corpus 94.82 % → 95.48 %) | ~~P1~~ done | — |
+| 14 | **Gallery home screen (owner-requested)** — ✅ **DONE S29**: flat grid, folders as tiles, drag to merge/reorder, persisted arrangement. Residuals below. | ~~P1~~ done | — |
 | 13e | **The refusal gates accept images with no floorplan** — a page of furniture OUTLINES is offered 27/27 at confidence 1.00. Pre-existing on `main`; no threshold rule can reach it. | **P1** | ½–1 session |
 | 1 | ✅ **Auto-detect walls accuracy overhaul** — **DONE S22** (52.1 % → 95.6 %, and it refuses) | ~~P0~~ done | — |
 | 2 | ✅ **Grid-loop iteration cap** — **DONE S18** (safety half; slowness half → 2b) | ~~P0~~ done | — |
@@ -28,7 +29,7 @@ effort — a small high-value item beats a large one.
 | 6 | Component/hook tests | P2 | 1 session |
 | 10 | ✅ **Projects (folders) + N-up compare** (owner-requested) — **DONE S20** | ~~P1~~ done | — |
 | 10b | Bundle IMPORTER (read an export-all backup back in, folders included) | P2 | ½ session |
-| 10c | Layout ORDER within a folder (drag to reorder; today `getAll()` key order) | P3 | small |
+| 10c | ✅ **Layout ORDER** — **DONE S29** (persisted `Layout.order`/`Project.order`; the gallery is now an Android-style home screen) | ~~P3~~ done | — |
 | 10d | Multi-tab: `saveMeta` overwrites the folder list wholesale (last-writer-wins) | P2 | ½ session |
 | 12b | ✅ **`rooms.ts` flood fill walked THROUGH walls** — **DONE S25** (19 → 0 unsealed) | ~~P1~~ done | — |
 | 7 | Drag-release wall splitting | P3 | small |
@@ -966,3 +967,38 @@ root as `IMG_7421.jpeg` and is gitignored — do not commit it.
 
 
 </details>
+
+
+## 14. The Android home-screen gallery — ✅ **DONE (S29)**, and what it left
+
+Owner-requested mid-session, and they chose the true Android model (a folder ICON appearing in
+place) over the smaller "a new labelled row" option, with saved positions.
+
+Delivered: one flat grid where a design and a folder tile are peers · drop-on-design creates a
+folder at the target's slot · drop-on-tile joins · drop-in-a-gap reorders · drill in and out ·
+`Layout.order`/`Project.order` persisted with an old-shape migration · a move mode that is both
+keyboard- and single-pointer-operable (WCAG 2.2 SC 2.5.7) · 64 new tests · 13/13 live checks in
+real Chrome.
+
+**Residuals, honestly:**
+
+- **14a — touch drag is UNVERIFIED, and partly unsupported.** `touch-action: pan-y` keeps the grid
+  scrollable, but the browser fixes `touch-action` at touchstart, so it cannot be switched to
+  `none` once a long press has armed: a touch drag that moves mainly VERTICALLY will scroll and
+  fire `pointercancel` instead of dragging. Horizontal drags work. The complete non-dragging path
+  on touch is the "Move…" menu item. No touch device was driven this session. **P2.**
+- **14b — focus after a merge.** The focused card is REMOVED from the DOM when two designs merge,
+  and nothing re-homes focus to the new tile, so it falls to `<body>`. Same for an auto-dissolve.
+  Reported by the a11y review; not fixed. **P2, small.**
+- **14c — Escape with a kebab menu open closes the whole gallery** *and* strands focus on `<body>`
+  (`Menu`'s `close()` focuses a button in a subtree React is unmounting). PRE-EXISTING on `main`,
+  but S29 promotes that menu to the canonical move entry point, so it is hit far more often.
+  **P2, small** — add a menu rung to the Escape ladder, or have `Menu` use
+  `stopImmediatePropagation`.
+- **14d — `removeProject` still files a deleted folder's designs into the ADJACENT folder**, not
+  onto the home grid. Pre-existing S20 behaviour whose meaning changed with the IA; the toast does
+  name the destination, so it is disclosed rather than silent. Worth re-deciding. **P3.**
+- **14e — no drag takes a design OUT of a folder.** The drill-in view shows only that folder's
+  contents and the breadcrumb is not a drop target, so the only way out is the kebab "Move to X"
+  (which S29 routed through `dropLayout`, so it does dissolve an emptied folder). Making the
+  breadcrumb a drop target would complete the gesture. **P2.**
