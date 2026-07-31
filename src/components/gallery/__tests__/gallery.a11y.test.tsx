@@ -645,7 +645,11 @@ describe('S30 §14e — taking a design OUT of a folder', () => {
     fireEvent.keyDown(openerIn(itemFor(only.name)), { key: 'm' });
     expect(document.querySelector('[role="application"]')).not.toBeNull();
 
-    fireEvent.click(screen.getByRole('button', { name: /all layouts/i }));
+    // While moving, the crumb's ACCESSIBLE NAME is the action, not "All
+    // layouts" — that is the WCAG 4.1.2 fix, and finding it by the new name is
+    // what proves the name actually changed.
+    const crumb = screen.getByRole('button', { name: rx(`Move ${only.name} out`) });
+    fireEvent.click(crumb);
 
     expect(onDropLayout).toHaveBeenCalledWith(only.id, homeProject(store).id, null);
     expect(document.querySelector('[role="application"]')).toBeNull();
@@ -693,5 +697,80 @@ describe('S30 §14a — a touch drag may refuse the scroller, but only once ARME
     const e = new Event('touchmove', { cancelable: true, bubbles: true });
     window.dispatchEvent(e);
     expect(e.defaultPrevented).toBe(false);
+  });
+});
+
+describe('S30 — while moving, an item click is a DESTINATION, not navigation', () => {
+  /**
+   * Until this, an item's idle action still ran mid-move and every consequence
+   * was silent: clicking a folder tile drilled INTO it with the move still
+   * armed, after which the breadcrumb committed an `exit` for a design that had
+   * never been in that folder — a no-op write announced as "Moved X out. Y was
+   * empty and is gone." Clicking a design opened it and closed the gallery,
+   * abandoning the move without a word.
+   *
+   * It is also what makes SC 2.5.7 real: move mode has always claimed to be
+   * "driven by arrow keys or by clicking a destination", and until now only the
+   * breadcrumb implemented that half.
+   */
+  it('clicking a FOLDER TILE absorbs into it instead of drilling in', () => {
+    const store = withFolder();
+    const onDropLayout = vi.fn();
+    const folder = store.projects[store.projects.length - 1];
+    const first = layoutsInProject(store, homeProject(store).id)[0];
+    render(<LayoutGallery {...props(store)} onDropLayout={onDropLayout} />);
+
+    fireEvent.keyDown(openerIn(itemFor(first.name)), { key: 'm' });
+    fireEvent.click(screen.getByRole('button', { name: rx(`Open folder ${folder.name}`) }));
+
+    expect(onDropLayout).toHaveBeenCalledWith(first.id, folder.id, null);
+    // ...and it did NOT drill in, which is what used to strand the move.
+    expect(screen.getByRole('heading').textContent).toBe('Your layouts');
+    expect(document.querySelector('[role="application"]')).toBeNull();
+  });
+
+  it('clicking another DESIGN merges with it instead of opening it', () => {
+    const store = withFolder();
+    const onMergeLayouts = vi.fn(() => null);
+    const onOpen = vi.fn();
+    const home = layoutsInProject(store, homeProject(store).id);
+    render(
+      <LayoutGallery {...props(store)} onMergeLayouts={onMergeLayouts} onOpen={onOpen} />,
+    );
+
+    fireEvent.keyDown(openerIn(itemFor(home[0].name)), { key: 'm' });
+    fireEvent.click(openerIn(itemFor(home[1].name)));
+
+    expect(onMergeLayouts).toHaveBeenCalledWith(home[0].id, home[1].id);
+    // Opening would switch layout AND close the gallery, silently losing the move.
+    expect(onOpen).not.toHaveBeenCalled();
+  });
+
+  it('opens normally when NOTHING is being moved', () => {
+    const store = withFolder();
+    const onOpen = vi.fn();
+    const first = layoutsInProject(store, homeProject(store).id)[0];
+    render(<LayoutGallery {...props(store)} onOpen={onOpen} />);
+    fireEvent.click(openerIn(itemFor(first.name)));
+    expect(onOpen).toHaveBeenCalledWith(first.id);
+  });
+});
+
+describe('S30 — a committed move SAYS so', () => {
+  it('announces the position it landed at, not the internal display index', () => {
+    // Cancelling said "Move cancelled."; succeeding said nothing at all, and a
+    // same-container reorder has no toast either — so a screen-reader user could
+    // not tell "it worked" from "the key did nothing".
+    const store = withFolder();
+    const first = layoutsInProject(store, homeProject(store).id)[0];
+    render(<LayoutGallery {...props(store)} />);
+    const opener = openerIn(itemFor(first.name));
+    fireEvent.keyDown(opener, { key: 'm' });
+    fireEvent.keyDown(opener, { key: 'ArrowRight' });
+    // The step is 1, so the item lands SECOND — "Position 2", not the display
+    // index's "Position 3".
+    expect(screen.getByRole('status').textContent).toBe('Position 2');
+    fireEvent.keyDown(opener, { key: 'Enter' });
+    expect(screen.getByRole('status').textContent).toBe(`Moved ${first.name} to position 2.`);
   });
 });

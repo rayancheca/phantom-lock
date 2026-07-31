@@ -199,16 +199,16 @@ export function resolveDrop(
   // "Drop to move X into Y", and then the commit silently did nothing, because
   // no branch handles a project being absorbed. A drag that proposes an action
   // must either perform it or not propose it.
-  if (over && dragged.kind === 'layout') {
-    // A folder tile absorbs across its whole area — it is one target, so it does
-    // not need dividing the way a design card does.
-    if (over.kind === 'project') return { kind: 'absorb', projectId: over.id };
-    // A design merges only from its core, leaving an edge lane for reordering.
-    if (over.kind === 'layout' && canMerge && inMergeCore(over, p)) {
-      return { kind: 'merge', targetId: over.id };
+  const slot: DropIntent = { kind: 'slot', index: slotIndexAt(p, others) };
+  if (over) {
+    // A folder tile absorbs across its whole AREA — it is one target. A design
+    // merges only from its CORE, leaving an edge lane for reordering, so the
+    // shared decision is consulted only inside that core.
+    if (over.kind === 'project' || inMergeCore(over, p)) {
+      return containerIntentFor(dragged, over, canMerge, slot);
     }
   }
-  return { kind: 'slot', index: slotIndexAt(p, others) };
+  return slot;
 }
 
 /**
@@ -316,6 +316,16 @@ export function describeIntent(
   intent: DropIntent,
   nameOf: (kind: 'layout' | 'project', id: string) => string,
   movingName: string,
+  /**
+   * The subject's own display index, or -1 when it is not in this container.
+   *
+   * Needed because a `slot` index is in DISPLAY space, which is inflated by one
+   * for every position at or after the subject so the engine's without-self
+   * conversion can undo it. Announcing that raw number was off by one for every
+   * such step, and said "Position 6" in a five-item grid — and since the caret
+   * is `aria-hidden`, this sentence is the ONLY feedback a non-visual user gets.
+   */
+  selfIndex = -1,
 ): string {
   switch (intent.kind) {
     case 'merge':
@@ -328,10 +338,36 @@ export function describeIntent(
       // announcement and the toast that follows it agree.
       return `Drop to move ${movingName} out to ${nameOf('project', intent.projectId)}`;
     case 'slot':
-      return `Position ${intent.index + 1}`;
+      // STEP space, not display space: the number a user hears must be the
+      // position the item will actually land at.
+      return `Position ${toStepIndex(intent.index, selfIndex) + 1}`;
     default:
       return 'No drop here';
   }
+}
+
+/**
+ * What dropping the subject ONTO `target` should do — the one definition shared
+ * by the pointer hit-test, the keyboard `F` key, and a click on a destination.
+ *
+ * There were three copies of this decision and S29 shipped the same bug twice by
+ * fixing one and not its twin; `resolveDrop` calls it, `stepMove` calls it, and
+ * the click handlers call it, so they cannot drift.
+ *
+ * `fallbackSlot` is what to do when the drop is not expressible — a folder
+ * subject (the model is flat, so nothing can go inside it), or a design-on-design
+ * drop inside a folder where a merge would yank both designs out to the home grid.
+ */
+export function containerIntentFor(
+  subject: { kind: 'layout' | 'project'; id: string },
+  target: { kind: 'layout' | 'project'; id: string },
+  canMerge: boolean,
+  fallbackSlot: DropIntent,
+): DropIntent {
+  if (subject.kind !== 'layout') return fallbackSlot;
+  if (target.kind === 'project') return { kind: 'absorb', projectId: target.id };
+  if (!canMerge) return fallbackSlot;
+  return { kind: 'merge', targetId: target.id };
 }
 
 // ---------------------------------------------------------------------------

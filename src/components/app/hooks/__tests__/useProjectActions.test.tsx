@@ -171,10 +171,13 @@ describe('deleteProject — a folder delete must destroy no design', () => {
   });
 
   it('leaves the active layout alone — it still exists, in another folder', () => {
-    const h = harness(base());
-    act(() => h.actions.deleteProject('p1'));
-    expect(h.store().activeId).toBe('la1');
-    expect(h.store().layouts.some((l) => l.id === 'la1')).toBe(true);
+    // Deletes p2 and makes ITS design active first. Deleting p1 would be vacuous
+    // now: p1 is the home project, so S30 refuses it and nothing moves at all.
+    const h = harness({ ...base(), activeId: 'lb1' });
+    act(() => h.actions.deleteProject('p2'));
+    expect(h.store().activeId).toBe('lb1');
+    const moved = h.store().layouts.find((l) => l.id === 'lb1')!;
+    expect(moved.projectId).toBe('p1');
   });
 });
 
@@ -256,5 +259,55 @@ describe('every folder action leaves the store INVARIANT-clean', () => {
     act(() => h.actions.moveLayout('la1', 'p3'));
     for (const t of h.toasts) expect(t.message.trim().length).toBeGreaterThan(0);
     expect(vi.isMockFunction(h.actions.newProject)).toBe(false);
+  });
+});
+
+describe('S30 — the two contracts the mutation review found untested', () => {
+  it('UNDO restores designs to the folder, even when it was not adjacent to home', () => {
+    // `undoDeleteProject` reads the destination as `st.projects[0]` (home) to
+    // match S30's `removeProject`. MEASURED: reverting that one line to the
+    // pre-S30 `projects[index - 1]` left all 1524 tests green — because the only
+    // undo test deleted `p2`, where "adjacent to home" and "home" are the same
+    // place. Deleting p3 is the case that tells them apart.
+    const h = harness(
+      assembleStore(
+        [P('p1', 'Alpha', 1), P('p2', 'Beta', 2), P('p3', 'Gamma', 3)],
+        [L('a1', 'p1', 'la1'), L('b1', 'p2', 'lb1'), L('g1', 'p3', 'lg1')],
+        'la1',
+      ),
+    );
+    act(() => h.actions.deleteProject('p3'));
+    expect(h.store().layouts.find((l) => l.id === 'lg1')!.projectId).toBe('p1');
+
+    act(() => h.toasts[0].opts!.action!.run());
+    expect(h.store().projects.map((p) => p.id)).toEqual(['p1', 'p2', 'p3']);
+    expect(h.store().layouts.find((l) => l.id === 'lg1')!.projectId).toBe('p3');
+  });
+
+  it('mergeLayouts RETURNS the id it minted — the whole focus feature rides on it', () => {
+    // The hook is what `App.tsx` actually wires into the gallery, and nothing
+    // tested its new return value. MEASURED: replacing `return made.projectId`
+    // with `return null` left all 1524 tests green, because the one integration
+    // test for focus-after-merge drives a hand-rolled Host that reimplements the
+    // merge inline and never renders this hook.
+    const h = harness(base());
+    let made: string | null = 'unset';
+    act(() => {
+      made = h.actions.mergeLayouts('la1', 'la2');
+    });
+    expect(made).not.toBeNull();
+    expect(h.store().projects.some((p) => p.id === made)).toBe(true);
+    // ...and it names the folder the two designs actually went into.
+    expect(h.store().layouts.find((l) => l.id === 'la1')!.projectId).toBe(made);
+    expect(h.store().layouts.find((l) => l.id === 'la2')!.projectId).toBe(made);
+  });
+
+  it('mergeLayouts returns NULL when it mints nothing, so focus does not chase a ghost', () => {
+    const h = harness(base());
+    let made: string | null = 'unset';
+    act(() => {
+      made = h.actions.mergeLayouts('la1', 'nope');
+    });
+    expect(made).toBeNull();
   });
 });

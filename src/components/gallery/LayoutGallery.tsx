@@ -11,7 +11,7 @@ import { drawMiniPlan } from '../canvas/thumb';
 import Icon from '../ui/Icon';
 import Menu, { MenuItem, MenuSeparator } from '../ui/Menu';
 import { useGalleryDrag, type DragSubject, type ItemKind } from './useGalleryDrag';
-import { describeIntent, focusPlanOn, type DropIntent } from './drag';
+import { containerIntentFor, describeIntent, focusPlanOn, type DropIntent } from './drag';
 import { escapeAction } from './escape';
 import './gallery.css';
 
@@ -164,8 +164,13 @@ export default function LayoutGallery(p: GalleryProps) {
     [p.store],
   );
 
+  // `selfIndex` is threaded, not defaulted: a `slot` index is in DISPLAY space,
+  // and announcing it raw was off by one for every position at or after the
+  // subject. TypeScript cannot catch dropping it — a two-parameter function is
+  // assignable where three are expected — so it has to be written out.
   const describe = useCallback(
-    (intent: DropIntent, subject: DragSubject) => describeIntent(intent, nameOf, subject.name),
+    (intent: DropIntent, subject: DragSubject, selfIndex: number) =>
+      describeIntent(intent, nameOf, subject.name, selfIndex),
     [nameOf],
   );
 
@@ -331,6 +336,39 @@ export default function LayoutGallery(p: GalleryProps) {
 
   const isSubject = (kind: ItemKind, id: string) =>
     drag.subject?.kind === kind && drag.subject.id === id;
+
+  /**
+   * While a move is armed, clicking an item is a DESTINATION, not navigation.
+   *
+   * Without this, an item's idle action still ran mid-move, and the consequences
+   * were all silent: clicking a folder tile drilled INTO it with the move still
+   * armed, after which the breadcrumb committed an `exit` for a design that was
+   * never in that folder — a no-op write announced as "Moved X out. Y was empty
+   * and is gone." Enter after the same drill-in applied a HOME-grid index to the
+   * folder. And clicking a design opened it, closing the gallery and abandoning
+   * the move without a word.
+   *
+   * It is also what the mode has always claimed to be: `useGalleryDrag`'s own
+   * comment says move mode is "driven by arrow keys or by clicking a
+   * destination", and until now only the breadcrumb implemented that — so
+   * `merge`, `absorb` and `slot` had no single-pointer-without-dragging
+   * destination at all, which is what SC 2.5.7 actually asks for.
+   *
+   * Returns true when it consumed the click.
+   */
+  const clickAsDestination = (kind: ItemKind, id: string, index: number): boolean => {
+    if (!drag.moving || !drag.subject) return false;
+    if (isSubject(kind, id)) {
+      // Dropping an item on itself means "put it back": commit the no-op rather
+      // than leaving the user in a mode with no obvious way out.
+      drag.commitOn({ kind: 'slot', index });
+      return true;
+    }
+    drag.commitOn(
+      containerIntentFor(drag.subject, { kind, id }, !folder, { kind: 'slot', index }),
+    );
+    return true;
+  };
   const dropClass = (kind: ItemKind, id: string) => {
     if (drag.intent.kind === 'merge' && kind === 'layout' && drag.intent.targetId === id) {
       return ' is-merge';
@@ -341,7 +379,7 @@ export default function LayoutGallery(p: GalleryProps) {
     return '';
   };
 
-  const renderCard = (layout: Layout) => {
+  const renderCard = (layout: Layout, index: number) => {
     const walls = layout.scene.objects.filter((o) => o.kind === 'wall').length;
     const others = p.store.projects.filter((x) => x.id !== layout.projectId);
     const subject: DragSubject = { kind: 'layout', id: layout.id, name: layout.name };
@@ -362,7 +400,10 @@ export default function LayoutGallery(p: GalleryProps) {
           onPointerDown={(e) => drag.onItemPointerDown(subject, e)}
           // The click a drag synthesises is swallowed at the window by the hook,
           // so this only ever runs for a genuine click.
-          onClick={() => p.onOpen(layout.id)}
+          onClick={() => {
+            if (clickAsDestination('layout', layout.id, index)) return;
+            p.onOpen(layout.id);
+          }}
         >
           <Thumb scene={layout.scene} />
           <span className="gallery-name">{layout.name}</span>
@@ -423,7 +464,7 @@ export default function LayoutGallery(p: GalleryProps) {
     );
   };
 
-  const renderTile = (project: Project, layouts: Layout[]) => {
+  const renderTile = (project: Project, layouts: Layout[], index: number) => {
     const n = layouts.length;
     const subject: DragSubject = { kind: 'project', id: project.id, name: project.name };
     return (
@@ -444,6 +485,7 @@ export default function LayoutGallery(p: GalleryProps) {
           aria-label={`Open folder ${project.name}, ${n} design${n === 1 ? '' : 's'}`}
           onPointerDown={(e) => drag.onItemPointerDown(subject, e)}
           onClick={() => {
+            if (clickAsDestination('project', project.id, index)) return;
             setOpenFolder(project.id);
             setAnnouncement(`Opened folder ${project.name}, ${n} design${n === 1 ? '' : 's'}.`);
           }}
@@ -503,8 +545,10 @@ export default function LayoutGallery(p: GalleryProps) {
 
   const grid = (
     <ul className="gallery-grid" id={gridId} role="list" aria-labelledby={headingId}>
-      {items.map((it) =>
-        it.kind === 'layout' ? renderCard(it.layout) : renderTile(it.project, it.layouts),
+      {items.map((it, i) =>
+        it.kind === 'layout'
+          ? renderCard(it.layout, i)
+          : renderTile(it.project, it.layouts, i),
       )}
       {items.length === 0 && (
         <li role="listitem" className="gallery-empty-note">
@@ -528,6 +572,17 @@ export default function LayoutGallery(p: GalleryProps) {
               className={`btn gallery-exit${drag.subject?.kind === 'layout' ? ' can-exit' : ''}${
                 drag.intent.kind === 'exit' ? ' is-exit' : ''
               }`}
+              // While a design is being moved this button MEANS something else:
+              // activating it moves the design out. Saying so is WCAG 4.1.2 —
+              // otherwise a screen-reader user hears "All layouts, button",
+              // presses Enter, and moves their design instead of going back.
+              // The pointer path already gets words ("Move out", on the ghost);
+              // move mode renders no ghost, so it got none.
+              aria-label={
+                drag.moving && drag.subject?.kind === 'layout'
+                  ? `Move ${drag.subject.name} out to ${home.name}`
+                  : undefined
+              }
               onClick={() => {
                 // While moving, the breadcrumb is the DESTINATION, not the way
                 // back. Without this the exit action's only non-dragging path
@@ -621,8 +676,11 @@ export default function LayoutGallery(p: GalleryProps) {
           intent exists to avoid. `O` only works inside a folder. */}
       <p id="gallery-move-help" className="sr-only">
         Press M, or choose “Move…” from this item’s actions menu, to move it. Then use the arrow
-        keys to choose a place, F to put it inside the item at that place,{' '}
-        {folder ? 'O to move it out of this folder, ' : ''}Enter to drop it, and Escape to cancel.
+        keys to choose a place,{' '}
+        {folder
+          ? 'O to move it out of this folder, '
+          : 'F to put it inside the item at that place, '}
+        Enter to drop it, and Escape to cancel.
       </p>
       <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">
         {announcement}

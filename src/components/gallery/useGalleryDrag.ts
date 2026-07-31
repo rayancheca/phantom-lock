@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   caretRect,
+  containerIntentFor,
   dragArmed,
   fallbackIndex,
   focusPlanFor,
@@ -118,7 +119,7 @@ interface Args {
   canMerge: boolean;
   /** Narrated to the live region on every meaningful change. */
   announce: (message: string) => void;
-  describe: (intent: DropIntent, subject: DragSubject) => string;
+  describe: (intent: DropIntent, subject: DragSubject, selfIndex: number) => string;
 }
 
 const keyOf = (kind: ItemKind, id: string) => `${kind}:${id}`;
@@ -195,6 +196,13 @@ export function useGalleryDrag(a: Args): GalleryDrag {
       rect: { left: r.left, top: r.top, right: r.right, bottom: r.bottom },
     };
   }, []);
+
+  /** The subject's own display index in the container on screen, or -1. */
+  const selfIndexOf = useCallback(
+    (s: { kind: ItemKind; id: string }) =>
+      live.current.items.findIndex((i) => i.kind === s.kind && i.id === s.id),
+    [],
+  );
 
   const clear = useCallback(() => {
     press.current = null;
@@ -286,7 +294,7 @@ export function useGalleryDrag(a: Args): GalleryDrag {
         (prev as { targetId?: string }).targetId === (next as { targetId?: string }).targetId &&
         (prev as { projectId?: string }).projectId === (next as { projectId?: string }).projectId &&
         (prev as { index?: number }).index === (next as { index?: number }).index;
-      if (!same) live.current.announce(live.current.describe(next, subj));
+      if (!same) live.current.announce(live.current.describe(next, subj, selfIndexOf(subj)));
       return same ? prev : next;
     });
     if (next.kind !== 'slot') {
@@ -300,7 +308,7 @@ export function useGalleryDrag(a: Args): GalleryDrag {
     );
     const o = layerOrigin();
     setCaret(raw ? { x: raw.x - o.x, top: raw.top - o.y, height: raw.height } : null);
-  }, [layerOrigin]);
+  }, [layerOrigin, selfIndexOf]);
 
   // --- pointer -------------------------------------------------------------
 
@@ -475,21 +483,29 @@ export function useGalleryDrag(a: Args): GalleryDrag {
       // that menu closes it returns focus to the kebab button — where the arrow
       // keys are not handled. Without this the canonical (and WCAG 2.5.7) path
       // enters a mode the user then cannot drive at all.
-      focusItem({ kind: subj.kind, id: subj.id });
-      const start = live.current.items.findIndex((i) => i.kind === subj.kind && i.id === subj.id);
-      // Seed at the subject's OWN position, expressed in display space so the
-      // caret and the commit agree with the pointer path. `toDisplayIndex` of
-      // its own step index is the identity here, and is written out rather than
-      // simplified so the two spaces stay visibly distinct.
+      // Branch on the result the same way the post-commit ladder does: a silent
+      // failure here would start move mode with focus somewhere else, so the
+      // announced subject and the actually-focused control would disagree.
+      if (!focusItem({ kind: subj.kind, id: subj.id })) {
+        live.current.fallbackRef.current?.focus();
+      }
+      const start = selfIndexOf(subj);
+      // Seed at the subject's OWN position. NOTE, because the arithmetic is not
+      // what it looks like: this is `self + 1`, NOT `self` — `toDisplayIndex`
+      // inflates every step at or after the subject so the engine's without-self
+      // conversion can undo it, and both encodings collapse to the same no-op
+      // outcome. Written out rather than simplified so the two spaces stay
+      // visibly distinct, and so a later "obviously this is just self" does not
+      // quietly change which space the caret and the commit are in.
       const self = Math.max(0, start);
       const next: DropIntent = { kind: 'slot', index: toDisplayIndex(toStepIndex(self, self), self) };
       setIntent(next);
       lastStep.current = toStepIndex(self, self);
-      live.current.announce(
-        `Moving ${subj.name}. Arrow keys choose a place, Enter drops it, Escape cancels.`,
-      );
+      // The key map is already on the focused button via `aria-describedby`, and
+      // AT reads it on focus — so repeating it here spoke the whole thing twice.
+      live.current.announce(`Moving ${subj.name}.`);
     },
-    [focusItem],
+    [focusItem, selfIndexOf],
   );
 
   const stepMove = useCallback(
@@ -497,7 +513,7 @@ export function useGalleryDrag(a: Args): GalleryDrag {
       if (!moving || !subject) return false;
       const items = live.current.items;
       const others = items.filter((i) => !(i.kind === subject.kind && i.id === subject.id));
-      const self = items.findIndex((i) => i.kind === subject.kind && i.id === subject.id);
+      const self = selfIndexOf(subject);
       // Step through DISTINCT OUTCOMES, not display slots. Display index `self`
       // and `self + 1` are the same outcome, so stepping in display space wasted
       // the first keypress and left the last position unreachable — measured
@@ -541,25 +557,17 @@ export function useGalleryDrag(a: Args): GalleryDrag {
         // position clamped back onto the last item.
         const onto = others[Math.min(cur, others.length - 1)];
         if (!onto) return true;
-        // Mirrors `resolveDrop` EXACTLY, including the flat-model guard. It did
-        // not, and that was the keyboard twin of the pointer bug fixed in
-        // e5c0d3b: a folder subject announced "Drop to move Alpha into Beta" and
-        // then committed nothing, because no branch absorbs a project. The two
-        // input methods must propose the same set of actions or the canonical
-        // (keyboard/menu) path is the broken one.
-        next =
-          subject.kind !== 'layout' || (onto.kind === 'layout' && !live.current.canMerge)
-            ? at(cur)
-            : onto.kind === 'project'
-              ? { kind: 'absorb', projectId: onto.id }
-              : { kind: 'merge', targetId: onto.id };
+        // ONE definition, shared with the pointer hit-test and with a click on a
+        // destination, so the three cannot drift — S29 shipped the same bug
+        // twice by fixing one path and not its twin.
+        next = containerIntentFor(subject, onto, live.current.canMerge, at(cur));
       }
       if (!next) return false;
       setIntent(next);
-      live.current.announce(live.current.describe(next, subject));
+      live.current.announce(live.current.describe(next, subject, self));
       return true;
     },
-    [exitTarget, intent, moving, subject],
+    [exitTarget, intent, moving, selfIndexOf, subject],
   );
 
   /**
@@ -573,14 +581,26 @@ export function useGalleryDrag(a: Args): GalleryDrag {
     (next: DropIntent) => {
       if (!moving || !subject) return;
       const subj = subject;
-      const index = live.current.items.findIndex(
-        (i) => i.kind === subj.kind && i.id === subj.id,
-      );
+      const index = selfIndexOf(subj);
+      // A move mode COMMIT must say so. Cancelling announced "Move cancelled."
+      // and succeeding announced nothing at all, so a screen-reader user could
+      // not tell "it worked" from "the key did nothing" — and for a same-container
+      // reorder there is no toast either (`dropLayout` returns before its toast
+      // when the folder is unchanged, and `dropProject` has none), nor any
+      // incidental re-announcement, because focus does not move.
+      const said =
+        next.kind === 'slot'
+          ? `Moved ${subj.name} to position ${toStepIndex(next.index, index) + 1}.`
+          : `Moved ${subj.name}.`;
       clear();
       const made = live.current.onCommit({ subject: subj, intent: next });
       requestFocus(focusPlanFor(subj, next, made, index));
+      // AFTER the commit, so it cannot be overwritten by an intent change, and
+      // only for the kinds whose own handler stays silent — merge, absorb and
+      // exit all reach a toast or a dedicated sentence of their own.
+      if (next.kind === 'slot') live.current.announce(said);
     },
-    [clear, moving, requestFocus, subject],
+    [clear, moving, requestFocus, selfIndexOf, subject],
   );
 
   const commitMove = useCallback(() => commitOn(intent), [commitOn, intent]);

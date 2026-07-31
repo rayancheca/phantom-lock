@@ -4,6 +4,7 @@ import {
   EXIT_PAD_PX,
   LONG_PRESS_MS,
   caretRect,
+  containerIntentFor,
   dragArmed,
   describeIntent,
   fallbackIndex,
@@ -15,6 +16,7 @@ import {
   toDisplayIndex,
   toStepIndex,
   type ExitTarget,
+  type DropIntent,
   type ItemRect,
 } from '../drag';
 
@@ -469,5 +471,62 @@ describe('fallbackIndex', () => {
     // predictable place rather than to a NaN index that reads as `undefined`.
     expect(fallbackIndex(Number.POSITIVE_INFINITY, 4)).toBe(0);
     expect(fallbackIndex(Number.NaN, 4)).toBe(0);
+  });
+});
+
+describe('describeIntent — the position it SPEAKS is the position it LANDS at', () => {
+  const nameOf = (kind: 'layout' | 'project', id: string) =>
+    kind === 'project' ? `folder ${id}` : `design ${id}`;
+
+  it('narrates step space, not the inflated display index', () => {
+    // The caret is `aria-hidden`, so this sentence is the ONLY feedback a
+    // non-visual user gets while stepping. MEASURED on the broken version: a
+    // subject at display 0 heard "Position 2" for the slot it was already in,
+    // and "Position 6" in a five-item grid.
+    for (let self = 0; self < 5; self += 1) {
+      for (let step = 0; step <= 4; step += 1) {
+        const display = toDisplayIndex(step, self);
+        expect(describeIntent({ kind: 'slot', index: display }, nameOf, 'design a', self)).toBe(
+          `Position ${step + 1}`,
+        );
+      }
+    }
+  });
+
+  it('never announces a position past the end of the container', () => {
+    const n = 5;
+    for (let self = 0; self < n; self += 1) {
+      const last = toDisplayIndex(maxStepIndex(n), self);
+      expect(describeIntent({ kind: 'slot', index: last }, nameOf, 'design a', self)).toBe(
+        `Position ${n}`,
+      );
+    }
+  });
+});
+
+describe('containerIntentFor — ONE decision for three input paths', () => {
+  const design = { kind: 'layout' as const, id: 'a' };
+  const other = { kind: 'layout' as const, id: 'b' };
+  const tile = { kind: 'project' as const, id: 'F' };
+  const slot: DropIntent = { kind: 'slot', index: 7 };
+
+  it('absorbs into a folder tile, and merges with a design', () => {
+    expect(containerIntentFor(design, tile, true, slot)).toEqual({ kind: 'absorb', projectId: 'F' });
+    expect(containerIntentFor(design, other, true, slot)).toEqual({ kind: 'merge', targetId: 'b' });
+  });
+
+  it('falls back to the slot for a FOLDER subject — the model is flat', () => {
+    expect(containerIntentFor(tile, other, true, slot)).toBe(slot);
+    expect(containerIntentFor(tile, { kind: 'project', id: 'G' }, true, slot)).toBe(slot);
+  });
+
+  it('falls back to the slot for design-on-design when merging is refused', () => {
+    // Inside a folder a merge would yank BOTH designs out to the home grid.
+    expect(containerIntentFor(design, other, false, slot)).toBe(slot);
+    // ...but a folder tile is still absorbable, because that is a real move.
+    expect(containerIntentFor(design, tile, false, slot)).toEqual({
+      kind: 'absorb',
+      projectId: 'F',
+    });
   });
 });
