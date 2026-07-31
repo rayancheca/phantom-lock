@@ -561,14 +561,26 @@ export function renameProject(store: LayoutStore, id: string, name: string): Lay
 }
 
 /**
- * Remove a folder. Its layouts are RE-HOMED to the adjacent project — deleting a
- * folder is a pure regrouping and never destroys a design.
+ * Remove a folder. Its layouts are RE-HOMED onto the HOME GRID, taking the slot
+ * the folder's tile occupied — deleting a folder is a pure regrouping and never
+ * destroys a design.
  *
  * The owner's standing rule is that their saved layouts are never deleted. A
  * cascade delete would remove N layouts behind ONE auto-dismissing undo toast: an
  * unbounded blast radius behind a single time-limited affordance. The app's only
  * destructive layout primitive stays `deleteLayout`, one at a time, each with its
  * own undo.
+ *
+ * **The destination changed in S30, by explicit owner decision.** Until then the
+ * designs went to the ADJACENT project — sensible under the S20 sectioned-list
+ * IA, where "the folder above" was a place the user could see. Under S29's home
+ * screen it reads as the designs leaping into an unrelated folder the user never
+ * opened, and they have to go looking. Home is where the tile was, so putting
+ * them there is the Android behaviour and the only one that keeps them visible.
+ *
+ * They land AT THE TILE'S SLOT rather than appended, for the same reason
+ * `mergeIntoNewProject` puts a new folder at its target's slot: the eye is
+ * already there.
  *
  * `activeId` is untouched — the active layout still exists, just in another
  * folder — so there is no view reset and `useSceneHistory`'s buckets (keyed on
@@ -578,26 +590,57 @@ export function removeProject(store: LayoutStore, id: string): LayoutStore {
   const index = store.projects.findIndex((p) => p.id === id);
   // Never below one project (mirrors `removeListener`'s ≥1-seat rule).
   if (index < 0 || store.projects.length <= 1) return store;
+  // The home project cannot be removed: it IS the grid, and re-homing its own
+  // designs onto itself is not a thing. `deleteProject` never offers it (a tile
+  // is only rendered for a non-home project) but the guard is what makes that
+  // a property of this function rather than of its one caller.
+  if (isHomeProject(store, id)) return store;
 
   const projects = store.projects.filter((p) => p.id !== id);
-  const target = projects[Math.max(0, index - 1)];
-  // APPEND the re-homed designs rather than carrying their old ranks across.
-  // Measured on the pre-S29 tree: without this, two independently-arranged
-  // sequences land in one container with colliding ranks and are RIFFLE-SHUFFLED
-  // — `A1 B1 A2 B2 A3 B3` — because `order` is a coordinate in a container and
-  // this function is one of the three writers of `projectId`.
-  let next = slotOrder({ ...store, projects }, target.id, null);
+  const target = projects[0];
+  const moved = layoutsInProject(store, id);
+
+  // Home's display sequence, with the deleted tile replaced IN PLACE by the
+  // designs it held, then renumbered 0..n-1.
+  //
+  // Built as an explicit SEQUENCE rather than by interpolating between the
+  // neighbouring ranks, because the arithmetic version is quietly wrong: the gap
+  // above a midpoint insertion point is only 0.5, so any fixed fractional step
+  // overshoots the next item once the folder holds enough designs, and the grid
+  // silently reorders. A list of ids cannot overshoot anything.
+  //
+  // Re-stamping at all is load-bearing. Measured on the pre-S29 tree: carrying
+  // the old ranks across lands two independently-arranged sequences in one
+  // container with colliding ranks and RIFFLE-SHUFFLES them — `A1 B1 A2 B2 A3
+  // B3` — because `order` is a coordinate in a container and this function is
+  // one of the three writers of `projectId`.
+  const seq: string[] = [];
+  for (const it of homeItems(store)) {
+    if (it.kind === 'layout') seq.push(`layout:${it.layout.id}`);
+    else if (it.project.id !== id) seq.push(`project:${it.project.id}`);
+    else for (const l of moved) seq.push(`layout:${l.id}`);
+  }
+  const rankOf = new Map(seq.map((key, i) => [key, i]));
+  const movedIds = new Set(moved.map((l) => l.id));
+
   return normalizeOrder(
     {
       ...store,
-      projects,
-      layouts: store.layouts.map((l) =>
-        // updatedAt MUST bump: it is the entire IndexedDB autosave change detector,
-        // so without it the re-home renders correctly and vanishes on reload.
-        l.projectId === id
-          ? { ...l, projectId: target.id, order: next++, updatedAt: Date.now() }
-          : l,
+      projects: projects.map((p) =>
+        rankOf.has(`project:${p.id}`) ? { ...p, order: rankOf.get(`project:${p.id}`)! } : p,
       ),
+      layouts: store.layouts.map((l) => {
+        const at = rankOf.get(`layout:${l.id}`);
+        if (at === undefined) return l;
+        // updatedAt MUST bump for a design that CHANGED FOLDER: it is the entire
+        // IndexedDB autosave change detector, so without it the re-home renders
+        // correctly and vanishes on reload. `normalizeOrder({touch:true})` bumps
+        // the rest — but only those whose rank actually moved, which is why the
+        // re-homed ones are stamped here rather than left to it.
+        return movedIds.has(l.id)
+          ? { ...l, projectId: target.id, order: at, updatedAt: Date.now() }
+          : { ...l, order: at };
+      }),
     },
     { touch: true },
   );

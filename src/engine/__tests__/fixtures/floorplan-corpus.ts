@@ -1057,9 +1057,26 @@ export const CORPUS: CorpusEntry[] = [
   },
 ];
 
-/** Rasterise the whole corpus. Deterministic — same bytes on every machine. */
+/**
+ * Rasterise the whole corpus. Deterministic — same bytes on every machine.
+ *
+ * MEMOISED, and not as a micro-optimisation: this used to rasterise all 25
+ * fixtures on EVERY call, and `fixtureByName` below calls it and then throws
+ * away all but one — so seven named lookups in `detect.test.ts` cost 175
+ * rasterisations where 25 would do. Under `npm run test:coverage` the v8
+ * instrumentation multiplies that and pushed the corpus test over the per-test
+ * 5 s timeout with the code entirely correct.
+ *
+ * ⚠️ THE FIXTURES ARE NOW SHARED, SO TREAT THEM AS IMMUTABLE. Every existing
+ * caller only READS `img.data` (verified: there is no assignment to
+ * `.img.data[...]` anywhere in the suite, and the two tone-transform sites build
+ * a fresh output array). A test that wants to perturb an image must copy it
+ * first, or it will silently corrupt every later test in the run.
+ */
+let rasterised: Array<Fixture & { entry: CorpusEntry }> | null = null;
 export function corpusFixtures(): Array<Fixture & { entry: CorpusEntry }> {
-  return CORPUS.map((entry) => ({ ...rasterize(entry.spec), entry }));
+  if (!rasterised) rasterised = CORPUS.map((entry) => ({ ...rasterize(entry.spec), entry }));
+  return rasterised;
 }
 
 export function fixtureByName(name: string): Fixture & { entry: CorpusEntry } {

@@ -1,9 +1,17 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { useState } from 'react';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import LayoutGallery from '../LayoutGallery';
 import { expectNoAxeViolationsOnPage } from '../../../test/axe';
 import { seededDefaultStore } from '../../../engine/seed';
-import { addProject, homeProject, layoutsInProject, moveLayoutToProject } from '../../../engine/projects';
+import {
+  addProject,
+  dissolveEmptyProject,
+  homeProject,
+  layoutsInProject,
+  mergeIntoNewProject,
+  moveLayoutToProject,
+} from '../../../engine/projects';
 import type { LayoutStore } from '../../../engine/types';
 
 /**
@@ -44,7 +52,10 @@ const props = (store: LayoutStore) => ({
   onMoveLayout: noop,
   onDropLayout: noop,
   onDropProject: noop,
-  onMergeLayouts: noop,
+  // Returns the id of the folder it minted. `null` is the honest default for a
+  // stub: it is what a refused merge returns, so a test that wants focus to land
+  // on the new tile has to say so explicitly rather than inherit it.
+  onMergeLayouts: () => null,
   onClose: noop,
 });
 
@@ -206,16 +217,77 @@ describe('move mode — the non-dragging path WCAG 2.5.7 requires', () => {
     expect(document.querySelector('[role="application"]')).not.toBeNull();
   });
 
-  it('COMMITS a reorder with Enter, through the same callback a drag uses', () => {
+  it('COMMITS a reorder with Enter, and ONE ArrowRight really moves it', () => {
+    // Asserts the OUTCOME, not the argument. The argument alone is what let the
+    // pre-S30 bug hide: a subject at display 0 emitted `at = 1`, this test froze
+    // that number, and `moveLayoutToProject` mapped it straight back to display
+    // 0 — so the live region said "Position 2" and nothing moved. Feeding the
+    // recorded index through the REAL engine is the only anchor outside the code
+    // under test (the S24 lesson).
     const store = withFolder();
     const onDropLayout = vi.fn();
-    const first = layoutsInProject(store, homeProject(store).id)[0];
+    const home = homeProject(store).id;
+    const before = layoutsInProject(store, home);
+    const first = before[0];
     render(<LayoutGallery {...props(store)} onDropLayout={onDropLayout} />);
     const opener = openerIn(itemFor(first.name));
     fireEvent.keyDown(opener, { key: 'm' });
     fireEvent.keyDown(opener, { key: 'ArrowRight' });
     fireEvent.keyDown(opener, { key: 'Enter' });
-    expect(onDropLayout).toHaveBeenCalledWith(first.id, homeProject(store).id, 1);
+
+    expect(onDropLayout).toHaveBeenCalledTimes(1);
+    const [id, projectId, at] = onDropLayout.mock.calls[0];
+    expect(id).toBe(first.id);
+    expect(projectId).toBe(home);
+    const after = layoutsInProject(moveLayoutToProject(store, id, projectId, at), home);
+    expect(after.map((l) => l.id).indexOf(first.id)).toBe(1);
+    // And it is genuinely a move, not a coincidence about a one-item container.
+    expect(before.map((l) => l.id).indexOf(first.id)).toBe(0);
+  });
+
+  it('reaches the LAST position — the old cap left it unreachable', () => {
+    // `max` used to be `others.length`, one short of the number of distinct
+    // outcomes, so the final slot could not be selected at all. End must reach
+    // it, and this is the assertion that fails if the cap regresses.
+    const store = withFolder();
+    const onDropLayout = vi.fn();
+    const home = homeProject(store).id;
+    const items = layoutsInProject(store, home);
+    const first = items[0];
+    render(<LayoutGallery {...props(store)} onDropLayout={onDropLayout} />);
+    const opener = openerIn(itemFor(first.name));
+    fireEvent.keyDown(opener, { key: 'm' });
+    fireEvent.keyDown(opener, { key: 'End' });
+    fireEvent.keyDown(opener, { key: 'Enter' });
+
+    const [id, projectId, at] = onDropLayout.mock.calls[0];
+    const after = layoutsInProject(moveLayoutToProject(store, id, projectId, at), home);
+    expect(after[after.length - 1].id).toBe(first.id);
+  });
+
+  it('every arrow step lands somewhere NEW — no keypress is a no-op', () => {
+    // The general property behind both tests above. Walking Home then stepping
+    // right once per remaining position must visit every position exactly once;
+    // the pre-S30 index space repeated one and omitted another.
+    const store = withFolder();
+    const home = homeProject(store).id;
+    const items = layoutsInProject(store, home);
+    const first = items[0];
+    const seen: number[] = [];
+    for (let steps = 0; steps < items.length; steps += 1) {
+      const onDropLayout = vi.fn();
+      const view = render(<LayoutGallery {...props(store)} onDropLayout={onDropLayout} />);
+      const opener = openerIn(itemFor(first.name));
+      fireEvent.keyDown(opener, { key: 'm' });
+      fireEvent.keyDown(opener, { key: 'Home' });
+      for (let i = 0; i < steps; i += 1) fireEvent.keyDown(opener, { key: 'ArrowRight' });
+      fireEvent.keyDown(opener, { key: 'Enter' });
+      const [id, projectId, at] = onDropLayout.mock.calls[0];
+      const after = layoutsInProject(moveLayoutToProject(store, id, projectId, at), home);
+      seen.push(after.map((l) => l.id).indexOf(first.id));
+      view.unmount();
+    }
+    expect(seen).toEqual(items.map((_, i) => i));
   });
 
   it('makes a FOLDER from the keyboard with F, so the path is not half a feature', () => {
@@ -253,5 +325,262 @@ describe('move mode — the non-dragging path WCAG 2.5.7 requires', () => {
     render(<LayoutGallery {...props(store)} />);
     fireEvent.click(screen.getByRole('button', { name: rx(`${first.name} actions`) }));
     expect(screen.getByRole('menuitem', { name: /^Move…$/ })).toBeTruthy();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// S30 — the four S29 residuals.
+
+/**
+ * A gallery wired to a REAL store, so a commit actually changes the grid.
+ *
+ * The `props()` stub above is right for testing what the gallery calls; it
+ * cannot test what happens AFTER, because nothing re-renders. Focus and the
+ * dissolve both live entirely in that second render.
+ */
+function Host({
+  initial,
+  onClose = noop,
+}: {
+  initial: LayoutStore;
+  onClose?: () => void;
+}) {
+  const [store, setStore] = useState(initial);
+  return (
+    <LayoutGallery
+      {...props(store)}
+      store={store}
+      onClose={onClose}
+      onDropLayout={(layoutId, projectId, index) =>
+        setStore((s) => {
+          const from = s.layouts.find((l) => l.id === layoutId)?.projectId;
+          const emptied =
+            from && from !== projectId && layoutsInProject(s, from).length === 1 ? from : null;
+          const moved = moveLayoutToProject(s, layoutId, projectId, index);
+          return emptied ? dissolveEmptyProject(moved, emptied) : moved;
+        })
+      }
+      onMergeLayouts={(dragId, targetId) => {
+        const target = store.layouts.find((l) => l.id === targetId);
+        const made = mergeIntoNewProject(store, dragId, targetId, target?.name ?? 'Folder');
+        if (!made) return null;
+        setStore(made.store);
+        return made.projectId;
+      }}
+    />
+  );
+}
+
+/** Drill into the folder tile named `name`. */
+const openFolder = (name: string) => fireEvent.click(openerIn(itemFor(name)));
+
+describe('S30 §14c — Escape is a LADDER, and a menu is the innermost rung', () => {
+  it('closes only the MENU, leaving the gallery open and focus inside it', () => {
+    // The shipped bug: both handlers are window-CAPTURE on the same node, so the
+    // gallery's `stopPropagation()` cannot stop Menu's co-registered listener —
+    // and the gallery, having mounted first, ran first and closed everything.
+    const store = withFolder();
+    const onClose = vi.fn();
+    render(<LayoutGallery {...props(store)} onClose={onClose} />);
+    const first = layoutsInProject(store, homeProject(store).id)[0];
+    fireEvent.click(within(itemFor(first.name)).getByRole('button', { name: /actions/i }));
+    expect(screen.getByRole('menu')).toBeTruthy();
+
+    pressEscape();
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(document.activeElement).not.toBe(document.body);
+  });
+
+  it('still closes when a role=menu exists OUTSIDE the gallery layer', () => {
+    // Pins the SCOPING of the detector. The unscoped
+    // `document.querySelector('[role="menu"]')` passes every other test here and
+    // fails this one — it would let any menu anywhere in the app disable Escape.
+    const store = withFolder();
+    const onClose = vi.fn();
+    render(
+      <>
+        <div role="menu" aria-label="somewhere else" />
+        <LayoutGallery {...props(store)} onClose={onClose} />
+      </>,
+    );
+    pressEscape();
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('CLOSES rather than swallowing itself when the open folder has vanished', () => {
+    // `openFolder` goes stale when the folder is deleted or auto-dissolves under
+    // the drill-in: the view has already fallen back to home, but the raw state
+    // still holds the id. Feeding that to the ladder made Escape do nothing and
+    // announce "Closed folder." about a folder that was already gone.
+    const store = withFolder();
+    const folderId = store.projects[store.projects.length - 1].id;
+    const folderName = store.projects[store.projects.length - 1].name;
+    const onClose = vi.fn();
+    const view = render(<LayoutGallery {...props(store)} onClose={onClose} />);
+    openFolder(folderName);
+    expect(screen.getByRole('heading').textContent).toBe(folderName);
+
+    // The folder disappears underneath the drilled-in view.
+    const without = {
+      ...store,
+      projects: store.projects.filter((p) => p.id !== folderId),
+      layouts: store.layouts.map((l) =>
+        l.projectId === folderId ? { ...l, projectId: homeProject(store).id } : l,
+      ),
+    };
+    view.rerender(<LayoutGallery {...props(without)} store={without} onClose={onClose} />);
+    expect(screen.getByRole('heading').textContent).toBe('Your layouts');
+
+    pressEscape();
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('status').textContent).not.toMatch(/closed folder/i);
+  });
+});
+
+describe('S30 §14b — focus survives a commit', () => {
+  it('lands on the NEW FOLDER after a merge', () => {
+    // NON-DEGENERATE pairing on purpose. Merging home[0] onto home[1] vacates
+    // slot 0 and puts the new tile at slot 0 too, so an implementation that
+    // ignores the merge branch entirely and falls through to the vacated-slot
+    // fallback passes. Dragging home[1] onto home[0] separates them.
+    const store = withFolder();
+    const home = layoutsInProject(store, homeProject(store).id);
+    render(<Host initial={store} />);
+    const opener = openerIn(itemFor(home[1].name));
+    fireEvent.keyDown(opener, { key: 'm' });
+    fireEvent.keyDown(opener, { key: 'ArrowLeft' });
+    fireEvent.keyDown(opener, { key: 'f' });
+    fireEvent.keyDown(opener, { key: 'Enter' });
+
+    const active = document.activeElement as HTMLElement;
+    expect(active).not.toBe(document.body);
+    // The new tile is named after the design that was standing there.
+    expect(active.textContent).toContain(home[0].name);
+    expect(active.closest('.folder-tile')).not.toBeNull();
+  });
+
+  it('does not fall to <body> when a design is moved OUT of a folder', () => {
+    // The folder KEEPS a design, so it does not dissolve and the view stays
+    // drilled in — the moved card simply unmounts. This is the case the
+    // dissolve-only reasoning misses.
+    const base = withFolder();
+    const folderId = base.projects[base.projects.length - 1].id;
+    const folderName = base.projects[base.projects.length - 1].name;
+    const home = layoutsInProject(base, homeProject(base).id);
+    // Give the folder a second design so it survives the exit.
+    const store = moveLayoutToProject(base, home[0].id, folderId);
+
+    render(<Host initial={store} />);
+    openFolder(folderName);
+    const inside = layoutsInProject(store, folderId);
+    expect(inside.length).toBeGreaterThan(1);
+
+    const opener = openerIn(itemFor(inside[0].name));
+    fireEvent.keyDown(opener, { key: 'm' });
+    fireEvent.keyDown(opener, { key: 'o' });
+    fireEvent.keyDown(opener, { key: 'Enter' });
+
+    expect(document.activeElement).not.toBe(document.body);
+  });
+});
+
+describe('S30 §14e — taking a design OUT of a folder', () => {
+  it('commits an exit with O, and the emptied folder disappears', () => {
+    const store = withFolder();
+    const folderId = store.projects[store.projects.length - 1].id;
+    const folderName = store.projects[store.projects.length - 1].name;
+    render(<Host initial={store} />);
+    openFolder(folderName);
+    const only = layoutsInProject(store, folderId);
+    expect(only).toHaveLength(1);
+
+    const opener = openerIn(itemFor(only[0].name));
+    fireEvent.keyDown(opener, { key: 'm' });
+    fireEvent.keyDown(opener, { key: 'o' });
+    fireEvent.keyDown(opener, { key: 'Enter' });
+
+    // Back on the home grid, with the design on it and the folder gone.
+    expect(screen.getByRole('heading').textContent).toBe('Your layouts');
+    expect(itemFor(only[0].name)).toBeTruthy();
+    expect(screen.queryAllByRole('button', { name: rx(`Open folder ${folderName}`) })).toHaveLength(
+      0,
+    );
+  });
+
+  it('does NOT offer O on the home grid, where there is nothing to leave', () => {
+    // The key is not handled at all rather than swallowed-and-ignored: proposing
+    // an action that cannot be performed is the bug this whole feature is
+    // careful about, and the help text does not promise O here.
+    const store = withFolder();
+    const onDropLayout = vi.fn();
+    const first = layoutsInProject(store, homeProject(store).id)[0];
+    render(<LayoutGallery {...props(store)} onDropLayout={onDropLayout} />);
+    const opener = openerIn(itemFor(first.name));
+    fireEvent.keyDown(opener, { key: 'm' });
+    fireEvent.keyDown(opener, { key: 'o' });
+    fireEvent.keyDown(opener, { key: 'Enter' });
+    // It committed the plain reorder it was already pointing at, unchanged.
+    const [, , at] = onDropLayout.mock.calls[0];
+    expect(at).toBe(1);
+  });
+
+  it('publishes O in the key map only while inside a folder', () => {
+    const store = withFolder();
+    const folderName = store.projects[store.projects.length - 1].name;
+    render(<Host initial={store} />);
+    const help = () => document.getElementById('gallery-move-help')!.textContent ?? '';
+    expect(help()).not.toMatch(/move it out of this folder/i);
+    openFolder(folderName);
+    expect(help()).toMatch(/move it out of this folder/i);
+  });
+
+  it('ignores a MODIFIED O, so Cmd+O stays the browser’s', () => {
+    const store = withFolder();
+    const folderId = store.projects[store.projects.length - 1].id;
+    const folderName = store.projects[store.projects.length - 1].name;
+    const onDropLayout = vi.fn();
+    render(<LayoutGallery {...props(store)} onDropLayout={onDropLayout} />);
+    openFolder(folderName);
+    const only = layoutsInProject(store, folderId)[0];
+    const opener = openerIn(itemFor(only.name));
+    fireEvent.keyDown(opener, { key: 'm' });
+    fireEvent.keyDown(opener, { key: 'o', metaKey: true });
+    fireEvent.keyDown(opener, { key: 'Enter' });
+    // Still the reorder it was pointing at — the chord did not retarget it.
+    expect(onDropLayout).toHaveBeenCalledWith(only.id, folderId, expect.any(Number));
+  });
+
+  it('commits from a single POINTER on the breadcrumb, and leaves move mode', () => {
+    // SC 2.5.7 needs the alternative to work "by a single pointer without
+    // dragging". Asserting move mode ended too: an onClick that called
+    // onDropLayout directly would satisfy the call assertion while leaving
+    // role="application" stuck on and a second Enter able to commit again.
+    const store = withFolder();
+    const folderId = store.projects[store.projects.length - 1].id;
+    const folderName = store.projects[store.projects.length - 1].name;
+    const onDropLayout = vi.fn();
+    render(<LayoutGallery {...props(store)} onDropLayout={onDropLayout} />);
+    openFolder(folderName);
+    const only = layoutsInProject(store, folderId)[0];
+    fireEvent.keyDown(openerIn(itemFor(only.name)), { key: 'm' });
+    expect(document.querySelector('[role="application"]')).not.toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: /all layouts/i }));
+
+    expect(onDropLayout).toHaveBeenCalledWith(only.id, homeProject(store).id, null);
+    expect(document.querySelector('[role="application"]')).toBeNull();
+  });
+
+  it('still just LEAVES the folder when nothing is being moved', () => {
+    const store = withFolder();
+    const folderName = store.projects[store.projects.length - 1].name;
+    const onDropLayout = vi.fn();
+    render(<LayoutGallery {...props(store)} onDropLayout={onDropLayout} />);
+    openFolder(folderName);
+    fireEvent.click(screen.getByRole('button', { name: /all layouts/i }));
+    expect(onDropLayout).not.toHaveBeenCalled();
+    expect(screen.getByRole('heading').textContent).toBe('Your layouts');
   });
 });

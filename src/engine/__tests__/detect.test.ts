@@ -684,6 +684,26 @@ const PHOTOS = ['apartment-bare', 'apartment-annotated', 'tiny-rooms', 'oblique-
   return { name, work, res, d };
 });
 
+/**
+ * The poché clamp demonstration, run ONCE — same fix, same reason as `PHOTOS`.
+ *
+ * Two full `detectWalls` passes over a 1750 px page plus the 2.5x rasterise is a
+ * single heavy computation rather than shared work, and it measured 4.5-5.8 s
+ * under `--coverage` — straddling the 5 s per-test ceiling, with the code
+ * entirely correct. Module scope is evaluated during COLLECTION, which is not
+ * timeout-bound.
+ */
+const POCHE_UNSHRUNK = rasterize(
+  scalePlan(CORPUS.find((e) => e.spec.name === 'heavy-poche')!.spec, 2.5),
+);
+const POCHE = {
+  maxDim: Math.max(POCHE_UNSHRUNK.img.width, POCHE_UNSHRUNK.img.height),
+  /** The photo as it arrives, too big: the clamp bites and the plan is refused. */
+  refusedRaw: detectWalls(POCHE_UNSHRUNK.img).quality.refusal,
+  /** The same photo once the app has shrunk it to WORK_MAX: it reads fine. */
+  refusedShrunk: detectWalls(downscale(POCHE_UNSHRUNK.img, WORK_MAX)).quality.refusal,
+};
+
 describe('the ink reading — which candidate answered', () => {
   /**
    * The candidate set is only measurable if the result says which cut it used.
@@ -889,12 +909,10 @@ describe('resolution — the app downscales before the pipeline ever runs', () =
 
     // ...and demonstrate the failure it is holding back, so the bound above is
     // a measured guard rather than an assertion about arithmetic.
-    const poche = CORPUS.find((e) => e.spec.name === 'heavy-poche')!;
-    const unshrunk = rasterize(scalePlan(poche.spec, 2.5));
-    expect(Math.max(unshrunk.img.width, unshrunk.img.height)).toBeGreaterThan(CLAMP_BITES_AT);
-    expect(detectWalls(unshrunk.img).quality.refusal).not.toBeNull();
+    expect(POCHE.maxDim).toBeGreaterThan(CLAMP_BITES_AT);
+    expect(POCHE.refusedRaw).not.toBeNull();
     // The same photo, once the app has shrunk it, reads fine.
-    expect(detectWalls(downscale(unshrunk.img, WORK_MAX)).quality.refusal).toBeNull();
+    expect(POCHE.refusedShrunk).toBeNull();
   });
 });
 

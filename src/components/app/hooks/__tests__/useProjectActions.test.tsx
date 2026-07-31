@@ -121,13 +121,39 @@ describe('deleteProject — a folder delete must destroy no design', () => {
     expect(h.store().layouts.find((l) => l.id === 'lb1')!.projectId).toBe('p1');
   });
 
-  it('names the destination folder CORRECTLY when deleting the FIRST one', () => {
-    // The bug: reading the target off the unfiltered array made this read
-    // "moved to “Alpha”" — the folder the user had just deleted.
+  it('sends the designs to the HOME GRID, not to the adjacent folder (S30)', () => {
+    // The owner's decision. Under the S20 sectioned-list IA "the folder above"
+    // was a place the user could see; on the S29 home screen it reads as the
+    // designs leaping into an unrelated folder they never opened.
+    //
+    // MUST delete the LAST folder, not `base()`'s p2. Deleting p2 sends designs
+    // to `projects.filter(≠p2)[0]` under the old rule and to `projects[0]` under
+    // the new one — and both are p1, so that case cannot tell the two apart. For
+    // p3 the old rule says "Beta" and the new one says home/"Alpha".
+    const h = harness(
+      assembleStore(
+        [P('p1', 'Alpha', 1), P('p2', 'Beta', 2), P('p3', 'Gamma', 3)],
+        [L('a1', 'p1', 'la1'), L('b1', 'p2', 'lb1'), L('g1', 'p3', 'lg1')],
+        'la1',
+      ),
+    );
+    act(() => h.actions.deleteProject('p3'));
+    expect(h.store().layouts.find((l) => l.id === 'lg1')!.projectId).toBe('p1');
+    expect(h.store().layouts.find((l) => l.id === 'lg1')!.projectId).not.toBe('p2');
+    expect(h.toasts[0].message).toMatch(/Deleted “Gamma” — 1 design moved to the home screen/);
+  });
+
+  it('REFUSES the home project — it is the grid, and has nowhere to re-home to', () => {
+    // Not reachable from the gallery (a tile is only rendered for a non-home
+    // project), which is precisely why the guard belongs in the action rather
+    // than in its caller. Without it this wrote an undo snapshot and toasted
+    // "Deleted …" over a store `removeProject` had refused to change.
     const h = harness(base());
     act(() => h.actions.deleteProject('p1'));
-    expect(h.toasts[0].message).toMatch(/Deleted “Alpha” — 2 designs moved to “Beta”/);
-    expect(h.store().layouts.filter((l) => l.projectId === 'p2')).toHaveLength(3);
+    expect(h.store().projects.map((p) => p.id)).toEqual(['p1', 'p2', 'p3']);
+    expect(h.store().layouts.find((l) => l.id === 'la1')!.projectId).toBe('p1');
+    expect(h.toasts).toHaveLength(0);
+    expect(h.deleted.current).toBeNull();
   });
 
   it('singularises, and says nothing about designs when the folder was empty', () => {

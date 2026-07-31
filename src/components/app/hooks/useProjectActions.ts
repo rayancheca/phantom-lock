@@ -3,10 +3,12 @@ import type { LayoutStore } from '../../../engine/types';
 import {
   addProject,
   dissolveEmptyProject,
+  isHomeProject,
   layoutsInProject,
   mergeIntoNewProject,
   moveLayoutToProject,
   moveProjectToSlot,
+  normalizeOrder,
   removeProject,
   renameProject,
 } from '../../../engine/projects';
@@ -31,8 +33,16 @@ export interface ProjectActions {
   dropLayout: (layoutId: string, projectId: string, index: number | null) => void;
   /** A drag repositioned a folder tile on the home grid. */
   dropProject: (projectId: string, index: number) => void;
-  /** A design was dropped on another design: both into a new folder. */
-  mergeLayouts: (dragId: string, targetId: string) => void;
+  /**
+   * A design was dropped on another design: both into a new folder.
+   *
+   * Returns the id of the folder it MINTED, or null when it minted none (the
+   * `MAX_PROJECTS` refusal, or two ids that do not name two real layouts). The
+   * gallery needs it to put focus on the new tile — the id is computed inside
+   * `mergeIntoNewProject` and was simply discarded here until S30, which is why
+   * focus fell to `<body>` on the app's headline gesture.
+   */
+  mergeLayouts: (dragId: string, targetId: string) => string | null;
 }
 
 /**
@@ -41,8 +51,9 @@ export interface ProjectActions {
  * that mixes a store write with UI side effects (dialog, toast, undo slot).
  *
  * The load-bearing rule here: **deleting a folder is a pure REGROUPING.**
- * `removeProject` re-homes its designs to the adjacent folder and deletes none of
- * them. A cascade delete would put N designs behind ONE auto-dismissing toast,
+ * `removeProject` re-homes its designs onto the HOME GRID, in the slot the tile
+ * occupied (S30, owner decision — it was the adjacent folder under the S20
+ * sectioned-list IA), and deletes none of them. A cascade delete would put N designs behind ONE auto-dismissing toast,
  * which is not a recovery affordance the owner's "never delete my layouts" rule
  * can live with — the app's only destructive layout primitive stays `deleteLayout`,
  * one at a time, each with its own undo.
@@ -90,16 +101,24 @@ export function useProjectActions(a: Args): ProjectActions {
       // where it put them — a design the user has since filed somewhere else on
       // purpose must not be dragged back. `landedIn` is where `removeProject` sent
       // them, so anything that has moved on since fails the second test.
-      const landedIn = st.projects[Math.max(0, d.index - 1)]?.id;
-      return {
-        ...st,
-        projects,
-        layouts: st.layouts.map((l) =>
-          moved.has(l.id) && l.projectId === landedIn
-            ? { ...l, projectId: d.project.id, updatedAt: Date.now() }
-            : l,
-        ),
-      };
+      //
+      // S30: that destination is the HOME project, not the adjacent one. Read it
+      // off the post-delete store the same way `removeProject` does; deriving it
+      // from `d.index` again would re-introduce exactly the off-by-one that made
+      // the delete toast name the folder it had just deleted.
+      const landedIn = st.projects[0]?.id;
+      return normalizeOrder(
+        {
+          ...st,
+          projects,
+          layouts: st.layouts.map((l) =>
+            moved.has(l.id) && l.projectId === landedIn
+              ? { ...l, projectId: d.project.id, updatedAt: Date.now() }
+              : l,
+          ),
+        },
+        { touch: true },
+      );
     });
   };
 
@@ -107,6 +126,13 @@ export function useProjectActions(a: Args): ProjectActions {
     const index = a.store.projects.findIndex((p) => p.id === id);
     const project = a.store.projects[index];
     if (!project || a.store.projects.length <= 1) return;
+    // The home project is the GRID, not a folder: there is nowhere to re-home
+    // its designs TO. `removeProject` refuses it, so without the same guard here
+    // this would write an undo snapshot and toast "Deleted …" over a store that
+    // did not change. The gallery never offers it (a tile is only rendered for a
+    // non-home project), which is exactly why the guard has to be stated rather
+    // than left to the caller.
+    if (isHomeProject(a.store, id)) return;
     const moved = a.store.layouts.filter((l) => l.projectId === id);
     a.lastDeletedRef.current = {
       type: 'project',
@@ -115,17 +141,16 @@ export function useProjectActions(a: Args): ProjectActions {
       movedLayoutIds: moved.map((l) => l.id),
     };
     a.setStore((st) => removeProject(st, id));
-    // Compute the destination the SAME way `removeProject` does — from the array
-    // with `id` already removed. Reading it off the unfiltered array names the
-    // folder being deleted when it is the first one, so the toast read
-    // "moved to «the folder you just deleted»".
-    const target = a.store.projects.filter((p) => p.id !== id)[Math.max(0, index - 1)];
+    // S30, by owner decision: the designs land on the HOME GRID, in the slot the
+    // folder's tile occupied — not in the adjacent folder. So the toast no longer
+    // needs to name a destination folder, and saying "moved to the home screen"
+    // matches what the user is now looking at.
     a.showToast(
       moved.length === 0
         ? `Deleted “${project.name}”`
         : `Deleted “${project.name}” — ${moved.length} design${
             moved.length === 1 ? '' : 's'
-          } moved to “${target?.name ?? 'the first folder'}”`,
+          } moved to the home screen`,
       { action: { label: 'Undo', run: undoDeleteProject } },
     );
   };
@@ -184,10 +209,10 @@ export function useProjectActions(a: Args): ProjectActions {
     a.setStore((st) => moveProjectToSlot(st, projectId, index));
   };
 
-  const mergeLayouts = (dragId: string, targetId: string) => {
+  const mergeLayouts = (dragId: string, targetId: string): string | null => {
     const drag = a.store.layouts.find((l) => l.id === dragId);
     const target = a.store.layouts.find((l) => l.id === targetId);
-    if (!drag || !target) return;
+    if (!drag || !target) return null;
     const fromDrag = drag.projectId;
     const fromTarget = target.projectId;
     // Named after the design that was already standing there, which is the one
@@ -195,7 +220,7 @@ export function useProjectActions(a: Args): ProjectActions {
     const made = mergeIntoNewProject(a.store, dragId, targetId, target.name);
     if (!made) {
       a.showToast('That is the most folders one workspace can hold.', { tone: 'bad' });
-      return;
+      return null;
     }
     a.setStore(() => made.store);
     a.showToast(`Put “${drag.name}” and “${target.name}” in a new folder`, {
@@ -211,6 +236,7 @@ export function useProjectActions(a: Args): ProjectActions {
           }),
       },
     });
+    return made.projectId;
   };
 
   return {

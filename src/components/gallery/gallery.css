@@ -366,6 +366,28 @@
   background: var(--accent-06);
 }
 
+/* --- the breadcrumb as a drop target (S30) --------------------------------
+   Taking a design OUT of a folder. `.can-exit` is the standing hint that the
+   crumb will accept the design now being moved; `.is-exit` is the armed state.
+
+   Both selectors repeat themselves with `:hover` on purpose. `.gallery-exit.is-exit`
+   is (0,2,0) and so is `.btn:hover`, so the winner would otherwise be decided by
+   Vite's module-graph CSS order between app.css and this file — and the pointer
+   is BY DEFINITION over the button whenever this state exists.
+   ------------------------------------------------------------------------- */
+
+.gallery-exit.can-exit,
+.gallery-exit.can-exit:hover {
+  border-color: var(--accent);
+}
+
+.gallery-exit.is-exit,
+.gallery-exit.is-exit:hover {
+  background: var(--accent-06);
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 /* --- the reorder caret ---------------------------------------------------- */
 
 .drop-caret {

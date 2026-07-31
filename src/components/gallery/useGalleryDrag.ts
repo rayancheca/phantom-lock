@@ -1,9 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   caretRect,
   dragArmed,
+  fallbackIndex,
+  focusPlanFor,
+  maxStepIndex,
   resolveDrop,
+  toDisplayIndex,
+  toStepIndex,
   type DropIntent,
+  type ExitTarget,
+  type FocusPlan,
+  type FocusTarget,
   type ItemRect,
   type Point,
 } from './drag';
@@ -46,6 +54,16 @@ export interface GalleryDrag {
   dragging: boolean;
   /** True only for keyboard/click move mode. */
   moving: boolean;
+  /**
+   * A pointer is down on an item but has not yet armed into a drag.
+   *
+   * Exposed because Escape must cancel it: the hook's own `cancel()` already
+   * guards on `subject || press.current`, and without this the gallery's Escape
+   * ladder saw only `subject` — so Escape during an un-armed press inside a
+   * folder took the leave-folder rung and left a live press pointing at a card
+   * in a container that is no longer on screen.
+   */
+  pressed: boolean;
   intent: DropIntent;
   ghost: GhostState | null;
   caret: { x: number; top: number; height: number } | null;
@@ -57,7 +75,11 @@ export interface GalleryDrag {
   /** Arrow-key stepping in move mode. Returns false when it did not handle the key. */
   stepMove: (key: string) => boolean;
   commitMove: () => void;
+  /** Commit move mode against an intent chosen by a click rather than by keys. */
+  commitOn: (intent: DropIntent) => void;
   cancel: () => void;
+  /** Ask for focus to be re-homed after a commit the hook did not make. */
+  requestFocus: (plan: FocusPlan) => void;
 }
 
 export interface DropCommit {
@@ -70,7 +92,27 @@ interface Args {
   items: Array<{ kind: ItemKind; id: string }>;
   /** The element the ghost is positioned inside (`.gallery-layer`). */
   layerRef: React.RefObject<HTMLElement | null>;
-  onCommit: (c: DropCommit) => void;
+  /**
+   * The breadcrumb, when the gallery is drilled into a folder — the drop target
+   * that takes a design OUT. Null on the home grid, which is what makes the
+   * `exit` intent unconstructible there rather than merely refused.
+   */
+  exitRef: React.RefObject<HTMLElement | null>;
+  /** Where a design leaving the current folder lands: the home project's id. */
+  exitProjectId: string;
+  /**
+   * Last-resort focus holder: a control always mounted in the CURRENT view and
+   * never disabled.
+   */
+  fallbackRef: React.RefObject<HTMLElement | null>;
+  /**
+   * Perform the commit, and return the id of a project it CREATED (a merge),
+   * else null.
+   *
+   * The hook turns that into the focus plan, so neither input path can forget
+   * it — the S29 mirror lesson made structural instead of remembered.
+   */
+  onCommit: (c: DropCommit) => string | null;
   /** False inside a drilled-in folder: the model is FLAT, so a merge there would
    *  yank both designs OUT onto the home grid. Measured before it shipped. */
   canMerge: boolean;
@@ -86,6 +128,16 @@ export function useGalleryDrag(a: Args): GalleryDrag {
   const [subject, setSubject] = useState<DragSubject | null>(null);
   const [dragging, setDragging] = useState(false);
   const [moving, setMoving] = useState(false);
+  /** Mirrors `press.current !== null` into render, for the Escape ladder. */
+  const [pressed, setPressed] = useState(false);
+  /**
+   * The last STEP index move mode pointed at.
+   *
+   * Kept so that an arrow key after an `f`/`o` returns to where the user was
+   * aiming. Without it the fallback was 0, which teleported the caret to the
+   * front of the grid on a perfectly ordinary two-key sequence.
+   */
+  const lastStep = useRef(0);
   const [intent, setIntent] = useState<DropIntent>({ kind: 'none' });
   const [ghost, setGhost] = useState<GhostState | null>(null);
   const [caret, setCaret] = useState<{ x: number; top: number; height: number } | null>(null);
@@ -133,8 +185,20 @@ export function useGalleryDrag(a: Args): GalleryDrag {
     return out;
   }, []);
 
+  /** The breadcrumb, measured, or undefined when there is no folder open. */
+  const exitTarget = useCallback((): ExitTarget | undefined => {
+    const el = live.current.exitRef.current;
+    if (!el) return undefined;
+    const r = el.getBoundingClientRect();
+    return {
+      projectId: live.current.exitProjectId,
+      rect: { left: r.left, top: r.top, right: r.right, bottom: r.bottom },
+    };
+  }, []);
+
   const clear = useCallback(() => {
     press.current = null;
+    setPressed(false);
     setSubject(null);
     setDragging(false);
     setMoving(false);
@@ -142,6 +206,64 @@ export function useGalleryDrag(a: Args): GalleryDrag {
     setCaret(null);
     setIntent({ kind: 'none' });
   }, []);
+
+  // --- focus after a commit -------------------------------------------------
+  //
+  // Every commit destroys the element that holds focus, so without this a drop
+  // ends with `document.activeElement === document.body` and a keyboard user is
+  // returned to the top of the document. The PLAN is pure (`drag.ts`); this is
+  // only the part that needs the DOM.
+
+  // A fresh WRAPPER object per request is what makes the effect fire. Putting
+  // the plan straight into state would make two identical plans `===`, React
+  // would bail out of the update, and focus would silently not move.
+  const [focusReq, setFocusReq] = useState<{ plan: FocusPlan } | null>(null);
+  const requestFocus = useCallback((plan: FocusPlan) => setFocusReq({ plan }), []);
+
+  const focusItem = useCallback((t: FocusTarget): boolean => {
+    const el = els.current.get(keyOf(t.kind, t.id));
+    const btn = el?.querySelector<HTMLElement>('.gallery-open');
+    if (!btn || !btn.isConnected) return false;
+    // Already there: do nothing. A redundant `focus()` is not free — it scrolls
+    // the `overflow-y: auto` grid to the element, so on the plain-reorder path
+    // (where React has already restored focus itself) it would yank the view.
+    if (document.activeElement === btn) return true;
+    btn.focus();
+    // `focus()` on a hidden or disabled node is a silent no-op, so the caller
+    // must be told whether it actually landed rather than assuming.
+    return document.activeElement === btn;
+  }, []);
+
+  /**
+   * `useLayoutEffect`, not `useEffect`.
+   *
+   * MEASURED: React saves the active element before the mutation phase and
+   * restores it in `resetAfterCommit`, which runs before BOTH effect kinds — so
+   * a layout effect is both after React's own restoration (and therefore wins)
+   * and before paint (so no frame is painted with focus at `<body>`).
+   *
+   * ⚠️ jsdom CANNOT tell the two apart: it never paints, and RTL flushes passive
+   * effects inside `act` before returning. So the tests below would pass with
+   * `useEffect` too, and a later "simplification" to it would land green. The
+   * reason it must not is recorded here rather than in an assertion, because
+   * there is no assertion that can carry it.
+   */
+  useLayoutEffect(() => {
+    if (!focusReq) return; // mount, and every render that is not a request
+    const layer = live.current.layerRef.current;
+    const active = document.activeElement;
+    const lost = !active || active === document.body;
+    const inside = active instanceof HTMLElement && !!layer?.contains(active);
+    // Never yank focus back from somewhere outside the gallery: by the time a
+    // commit lands the user may already be somewhere else entirely.
+    if (!lost && !inside) return;
+    for (const t of focusReq.plan.targets) if (focusItem(t)) return;
+    const items = live.current.items;
+    const at = fallbackIndex(focusReq.plan.vacated, items.length);
+    const item = at === null ? undefined : items[at];
+    if (item && focusItem(item)) return;
+    live.current.fallbackRef.current?.focus();
+  }, [focusReq, focusItem]);
 
   /**
    * `.gallery-layer` carries `backdrop-filter`, which establishes a CONTAINING
@@ -201,6 +323,7 @@ export function useGalleryDrag(a: Args): GalleryDrag {
         grab: { x: e.clientX - rect.left, y: e.clientY - rect.top },
         size: { width: rect.width, height: rect.height },
       };
+      setPressed(true);
     },
     [],
   );
@@ -235,7 +358,11 @@ export function useGalleryDrag(a: Args): GalleryDrag {
         height: p.size.height,
       });
       const rects = measure();
-      applyIntent(resolveDrop(point, rects, p.subject, live.current.canMerge), p.subject, rects);
+      applyIntent(
+        resolveDrop(point, rects, p.subject, live.current.canMerge, exitTarget()),
+        p.subject,
+        rects,
+      );
     };
 
     const up = (e: PointerEvent) => {
@@ -249,6 +376,7 @@ export function useGalleryDrag(a: Args): GalleryDrag {
         // Already released (or never captured) — nothing to undo.
       }
       press.current = null;
+      setPressed(false);
       if (!armed) return; // a plain click; the card's own onClick runs
       // Swallow the click the browser is about to synthesise for THIS gesture,
       // and only that one.
@@ -268,9 +396,21 @@ export function useGalleryDrag(a: Args): GalleryDrag {
       window.addEventListener('click', swallow, true);
       setTimeout(() => window.removeEventListener('click', swallow, true), 0);
       const rects = measure();
-      const finalIntent = resolveDrop({ x: e.clientX, y: e.clientY }, rects, subj, live.current.canMerge);
+      const finalIntent = resolveDrop(
+        { x: e.clientX, y: e.clientY },
+        rects,
+        subj,
+        live.current.canMerge,
+        exitTarget(),
+      );
+      // Read the vacated slot BEFORE the commit — it is where the eye is, and
+      // after the commit the subject may no longer be in the list at all.
+      const index = live.current.items.findIndex(
+        (i) => i.kind === subj.kind && i.id === subj.id,
+      );
       clear();
-      live.current.onCommit({ subject: subj, intent: finalIntent });
+      const made = live.current.onCommit({ subject: subj, intent: finalIntent });
+      requestFocus(focusPlanFor(subj, finalIntent, made, index));
     };
 
     const cancelled = (e: PointerEvent) => {
@@ -278,8 +418,13 @@ export function useGalleryDrag(a: Args): GalleryDrag {
       if (!p || e.pointerId !== p.pointerId) return;
       const armed = p.armed;
       press.current = null;
+      setPressed(false);
       if (armed) {
         clear();
+        // A touch drag that the browser reclaims for scrolling arrives here, and
+        // it is the ONLY way a gesture ends without the user letting go — so
+        // saying nothing would leave a screen-reader user believing the move is
+        // still in progress.
         live.current.announce('Move cancelled.');
       }
     };
@@ -292,7 +437,7 @@ export function useGalleryDrag(a: Args): GalleryDrag {
       window.removeEventListener('pointerup', up);
       window.removeEventListener('pointercancel', cancelled);
     };
-  }, [applyIntent, clear, layerOrigin, measure]);
+  }, [applyIntent, clear, exitTarget, layerOrigin, measure, requestFocus]);
 
   // --- move mode (the SC 2.5.7 path) --------------------------------------
 
@@ -305,45 +450,72 @@ export function useGalleryDrag(a: Args): GalleryDrag {
       // that menu closes it returns focus to the kebab button — where the arrow
       // keys are not handled. Without this the canonical (and WCAG 2.5.7) path
       // enters a mode the user then cannot drive at all.
-      const el = els.current.get(keyOf(subj.kind, subj.id));
-      const opener = el?.querySelector<HTMLElement>('.gallery-open');
-      if (opener) opener.focus();
+      focusItem({ kind: subj.kind, id: subj.id });
       const start = live.current.items.findIndex((i) => i.kind === subj.kind && i.id === subj.id);
-      const next: DropIntent = { kind: 'slot', index: Math.max(0, start) };
+      // Seed at the subject's OWN position, expressed in display space so the
+      // caret and the commit agree with the pointer path. `toDisplayIndex` of
+      // its own step index is the identity here, and is written out rather than
+      // simplified so the two spaces stay visibly distinct.
+      const self = Math.max(0, start);
+      const next: DropIntent = { kind: 'slot', index: toDisplayIndex(toStepIndex(self, self), self) };
       setIntent(next);
+      lastStep.current = toStepIndex(self, self);
       live.current.announce(
         `Moving ${subj.name}. Arrow keys choose a place, Enter drops it, Escape cancels.`,
       );
     },
-    [],
+    [focusItem],
   );
 
   const stepMove = useCallback(
     (key: string): boolean => {
       if (!moving || !subject) return false;
-      const others = live.current.items.filter(
-        (i) => !(i.kind === subject.kind && i.id === subject.id),
-      );
-      const max = others.length;
-      const cur = intent.kind === 'slot' ? intent.index : 0;
+      const items = live.current.items;
+      const others = items.filter((i) => !(i.kind === subject.kind && i.id === subject.id));
+      const self = items.findIndex((i) => i.kind === subject.kind && i.id === subject.id);
+      // Step through DISTINCT OUTCOMES, not display slots. Display index `self`
+      // and `self + 1` are the same outcome, so stepping in display space wasted
+      // the first keypress and left the last position unreachable — measured
+      // against the real engine, see `drag.ts`.
+      const max = maxStepIndex(items.length);
+      const cur =
+        intent.kind === 'slot' ? toStepIndex(intent.index, self) : lastStep.current;
+      const at = (step: number): DropIntent => {
+        const clamped = Math.min(max, Math.max(0, step));
+        lastStep.current = clamped;
+        return { kind: 'slot', index: toDisplayIndex(clamped, self) };
+      };
       let next: DropIntent | null = null;
       if (key === 'ArrowRight' || key === 'ArrowDown') {
-        next = { kind: 'slot', index: Math.min(max, cur + 1) };
+        next = at(cur + 1);
       } else if (key === 'ArrowLeft' || key === 'ArrowUp') {
-        next = { kind: 'slot', index: Math.max(0, cur - 1) };
+        next = at(cur - 1);
       } else if (key === 'Home') {
-        next = { kind: 'slot', index: 0 };
+        next = at(0);
       } else if (key === 'End') {
-        next = { kind: 'slot', index: max };
+        next = at(max);
       } else if (key === 'Enter' || key === ' ') {
         return false; // the caller commits
+      } else if (key.toLowerCase() === 'o') {
+        // The keyboard twin of dropping on the breadcrumb. It asks the SAME
+        // question the pointer path asks — is there a breadcrumb to measure —
+        // rather than carrying a second flag that could drift from it. On the
+        // home grid there is none, so the key is NOT handled: swallowing it and
+        // doing nothing would be "propose an action you cannot perform" in a
+        // quieter costume, and the help text only promises it inside a folder.
+        const target = exitTarget();
+        if (!target || subject.kind !== 'layout') return false;
+        next = { kind: 'exit', projectId: target.projectId };
       } else if (key.toLowerCase() === 'f') {
         // Put it INTO whatever currently occupies the slot — the keyboard
         // equivalent of dropping onto an icon. Without this, move mode can
         // reorder but can never make a folder, and the pointer path would be the
         // only way to reach half the feature.
-        const at = others[Math.min(cur, others.length - 1)];
-        if (!at) return true;
+        // `cur` is a step index, which is exactly a position in `others` — so
+        // this is "the item at the place I am pointing at", with the append
+        // position clamped back onto the last item.
+        const onto = others[Math.min(cur, others.length - 1)];
+        if (!onto) return true;
         // Mirrors `resolveDrop` EXACTLY, including the flat-model guard. It did
         // not, and that was the keyboard twin of the pointer bug fixed in
         // e5c0d3b: a folder subject announced "Drop to move Alpha into Beta" and
@@ -351,27 +523,42 @@ export function useGalleryDrag(a: Args): GalleryDrag {
         // input methods must propose the same set of actions or the canonical
         // (keyboard/menu) path is the broken one.
         next =
-          subject.kind !== 'layout' || (at.kind === 'layout' && !live.current.canMerge)
-            ? { kind: 'slot', index: cur }
-            : at.kind === 'project'
-              ? { kind: 'absorb', projectId: at.id }
-              : { kind: 'merge', targetId: at.id };
+          subject.kind !== 'layout' || (onto.kind === 'layout' && !live.current.canMerge)
+            ? at(cur)
+            : onto.kind === 'project'
+              ? { kind: 'absorb', projectId: onto.id }
+              : { kind: 'merge', targetId: onto.id };
       }
       if (!next) return false;
       setIntent(next);
       live.current.announce(live.current.describe(next, subject));
       return true;
     },
-    [intent, moving, subject],
+    [exitTarget, intent, moving, subject],
   );
 
-  const commitMove = useCallback(() => {
-    if (!moving || !subject) return;
-    const subj = subject;
-    const it = intent;
-    clear();
-    live.current.onCommit({ subject: subj, intent: it });
-  }, [clear, intent, moving, subject]);
+  /**
+   * Commit move mode against an intent chosen NOW, rather than the one in state.
+   *
+   * A click on a destination has to set and commit in the same tick, and reading
+   * `intent` there would read the stale one — so the intent travels as an
+   * argument instead of through state.
+   */
+  const commitOn = useCallback(
+    (next: DropIntent) => {
+      if (!moving || !subject) return;
+      const subj = subject;
+      const index = live.current.items.findIndex(
+        (i) => i.kind === subj.kind && i.id === subj.id,
+      );
+      clear();
+      const made = live.current.onCommit({ subject: subj, intent: next });
+      requestFocus(focusPlanFor(subj, next, made, index));
+    },
+    [clear, moving, requestFocus, subject],
+  );
+
+  const commitMove = useCallback(() => commitOn(intent), [commitOn, intent]);
 
   const cancel = useCallback(() => {
     if (!subject && !press.current) return;
@@ -384,6 +571,7 @@ export function useGalleryDrag(a: Args): GalleryDrag {
     subject,
     dragging,
     moving,
+    pressed,
     intent,
     ghost,
     caret,
@@ -392,6 +580,8 @@ export function useGalleryDrag(a: Args): GalleryDrag {
     beginMove,
     stepMove,
     commitMove,
+    commitOn,
     cancel,
+    requestFocus,
   };
 }

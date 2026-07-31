@@ -1,12 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import {
   DRAG_THRESHOLD_PX,
+  EXIT_PAD_PX,
   LONG_PRESS_MS,
   caretRect,
   dragArmed,
   describeIntent,
+  fallbackIndex,
+  focusPlanFor,
+  focusPlanOn,
+  maxStepIndex,
   resolveDrop,
   slotIndexAt,
+  toDisplayIndex,
+  toStepIndex,
+  type ExitTarget,
   type ItemRect,
 } from '../drag';
 
@@ -231,5 +239,235 @@ describe('describeIntent — the drag has to be audible', () => {
     );
     expect(describeIntent({ kind: 'slot', index: 2 }, nameOf, 'design a')).toBe('Position 3');
     expect(describeIntent({ kind: 'none' }, nameOf, 'design a')).toMatch(/no drop/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// S30 — taking a design OUT of a folder.
+
+/** The breadcrumb, sitting in the header band ABOVE the grid. */
+const CRUMB: ExitTarget = {
+  projectId: 'home',
+  rect: { left: 24, top: -80, right: 140, bottom: -50 },
+};
+const mid = (t: ExitTarget) => ({
+  x: (t.rect.left + t.rect.right) / 2,
+  y: (t.rect.top + t.rect.bottom) / 2,
+});
+
+describe('resolveDrop — the exit intent', () => {
+  it('proposes exit when a DESIGN is over the breadcrumb', () => {
+    expect(resolveDrop(mid(CRUMB), GRID, { kind: 'layout', id: 'a' }, true, CRUMB)).toEqual({
+      kind: 'exit',
+      projectId: 'home',
+    });
+  });
+
+  it('is UNCONSTRUCTIBLE with no breadcrumb — the home grid passes none', () => {
+    // The enforcement is an ABSENT rect, not a boolean a caller has to compute
+    // correctly. With no target there is no argument that produces `exit`.
+    const out = resolveDrop(mid(CRUMB), GRID, { kind: 'layout', id: 'a' }, true);
+    expect(out.kind).not.toBe('exit');
+  });
+
+  it('never proposes exit for a FOLDER — the model is flat', () => {
+    // Same guard `absorb` carries. A drag must either perform the action it
+    // proposes or not propose it, and no commit branch takes a folder out of a
+    // folder.
+    const out = resolveDrop(mid(CRUMB), GRID, { kind: 'project', id: 'F' }, true, CRUMB);
+    expect(out.kind).not.toBe('exit');
+  });
+
+  it('BEATS a card whose unclipped rect reaches into the header band', () => {
+    // THE REASON exit is hit-tested first. `.gallery-grid` is `overflow-y: auto`
+    // and `getBoundingClientRect` reports a scrolled-out card's UNCLIPPED
+    // coordinates, so a card the user cannot see has a rect overlapping the
+    // breadcrumb. Items-first would let it win a drop aimed at a visible control.
+    const scrolledOut: ItemRect = {
+      kind: 'layout',
+      id: 'ghost',
+      index: 0,
+      left: 0,
+      top: -120,
+      right: 300,
+      bottom: -20,
+    };
+    const p = mid(CRUMB);
+    // The overlap is real: the hidden card genuinely contains the drop point.
+    expect(p.x >= scrolledOut.left && p.x <= scrolledOut.right).toBe(true);
+    expect(p.y >= scrolledOut.top && p.y <= scrolledOut.bottom).toBe(true);
+    expect(resolveDrop(p, [scrolledOut], { kind: 'layout', id: 'a' }, true, CRUMB)).toEqual({
+      kind: 'exit',
+      projectId: 'home',
+    });
+  });
+
+  it('pads by EXIT_PAD_PX on ALL FOUR edges, and no further', () => {
+    // Probing one edge only would be satisfied by a pad applied to that edge
+    // alone — and "a pointer dragging up from the grid approaches from below" is
+    // exactly the asymmetric version someone would write. Both probes are
+    // expressed against the constant so the test pins the SHAPE, not a window.
+    const r = CRUMB.rect;
+    const cx = (r.left + r.right) / 2;
+    const cy = (r.top + r.bottom) / 2;
+    const edges: Array<[string, (n: number) => { x: number; y: number }]> = [
+      ['left', (n) => ({ x: r.left - n, y: cy })],
+      ['right', (n) => ({ x: r.right + n, y: cy })],
+      ['top', (n) => ({ x: cx, y: r.top - n })],
+      ['bottom', (n) => ({ x: cx, y: r.bottom + n })],
+    ];
+    for (const [edge, at] of edges) {
+      const inside = resolveDrop(at(EXIT_PAD_PX - 1), [], { kind: 'layout', id: 'a' }, true, CRUMB);
+      const outside = resolveDrop(at(EXIT_PAD_PX + 1), [], { kind: 'layout', id: 'a' }, true, CRUMB);
+      expect(`${edge}:${inside.kind}`).toBe(`${edge}:exit`);
+      expect(`${edge}:${outside.kind}`).not.toBe(`${edge}:exit`);
+    }
+  });
+
+  it('leaves every other drop untouched — the grid still merges and reorders', () => {
+    // A regression guard on the new FIRST branch: with a breadcrumb present but
+    // far away, every pre-S30 answer must be unchanged.
+    const onCard = { x: 100, y: 75 };
+    expect(resolveDrop(onCard, GRID, { kind: 'layout', id: 'b' }, true, CRUMB)).toEqual({
+      kind: 'merge',
+      targetId: 'a',
+    });
+    expect(
+      resolveDrop(centre(GRID[4]), GRID, { kind: 'layout', id: 'a' }, true, CRUMB).kind,
+    ).toBe('absorb');
+  });
+});
+
+describe('describeIntent — exit', () => {
+  const nameOf = (kind: 'layout' | 'project', id: string) =>
+    kind === 'project' ? `folder ${id}` : `design ${id}`;
+
+  it('names the DESTINATION, matching the toast that follows', () => {
+    expect(describeIntent({ kind: 'exit', projectId: 'home' }, nameOf, 'design a')).toMatch(
+      /out to folder home/i,
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// S30 — move mode's index space.
+
+describe('toStepIndex / toDisplayIndex', () => {
+  it('maps a CONCRETE non-identity value — identity is the bug being fixed', () => {
+    // A round-trip property alone is satisfied by the identity pair, which is
+    // precisely the pre-S30 behaviour. This is the line that fails on it.
+    expect(toDisplayIndex(0, 0)).toBe(1);
+    expect(toDisplayIndex(1, 0)).toBe(2);
+    expect(toStepIndex(2, 0)).toBe(1);
+    // Below the subject the two spaces do coincide, and must.
+    expect(toDisplayIndex(0, 2)).toBe(0);
+    expect(toStepIndex(0, 2)).toBe(0);
+  });
+
+  it('round-trips for every (step, self) in a ten-item container', () => {
+    for (let self = 0; self < 10; self += 1) {
+      for (let step = 0; step <= 9; step += 1) {
+        expect(toStepIndex(toDisplayIndex(step, self), self)).toBe(step);
+      }
+    }
+  });
+
+  it('gives every step index a DISTINCT display index', () => {
+    // The property that makes each keypress move something: two steps that
+    // collapsed onto one display index would be a wasted press.
+    for (let self = 0; self < 6; self += 1) {
+      const seen = new Set<number>();
+      for (let step = 0; step <= maxStepIndex(6); step += 1) seen.add(toDisplayIndex(step, self));
+      expect(seen.size).toBe(maxStepIndex(6) + 1);
+    }
+  });
+
+  it('has exactly as many positions as there are items', () => {
+    // `others.length` was one short, which is why the last slot was unreachable.
+    expect(maxStepIndex(3)).toBe(2);
+    expect(maxStepIndex(1)).toBe(0);
+    expect(maxStepIndex(0)).toBe(0);
+  });
+
+  it('passes an index through unchanged when the subject is not in the container', () => {
+    expect(toDisplayIndex(3, -1)).toBe(3);
+    expect(toStepIndex(3, -1)).toBe(3);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// S30 — where focus goes after a commit.
+
+describe('focusPlanFor', () => {
+  const subject = { kind: 'layout' as const, id: 'a' };
+
+  it('puts the NEW FOLDER first after a merge', () => {
+    const plan = focusPlanFor(subject, { kind: 'merge', targetId: 'b' }, 'made-1', 3);
+    expect(plan.targets[0]).toEqual({ kind: 'project', id: 'made-1' });
+    expect(plan.vacated).toBe(3);
+  });
+
+  it('falls back to the SUBJECT when a merge minted nothing', () => {
+    // The MAX_PROJECTS refusal commits nothing and toasts, so planning a folder
+    // that was never created would skip straight past to the gap — while the
+    // subject is in fact still exactly where it was.
+    const plan = focusPlanFor(subject, { kind: 'merge', targetId: 'b' }, null, 3);
+    expect(plan.targets).toEqual([{ kind: 'layout', id: 'a' }]);
+  });
+
+  it('puts the receiving folder first after an absorb', () => {
+    const plan = focusPlanFor(subject, { kind: 'absorb', projectId: 'F' }, null, 1);
+    expect(plan.targets[0]).toEqual({ kind: 'project', id: 'F' });
+  });
+
+  it('plans NO folder for an exit — the design leaves for a view we are not on', () => {
+    const plan = focusPlanFor(subject, { kind: 'exit', projectId: 'home' }, null, 2);
+    expect(plan.targets).toEqual([{ kind: 'layout', id: 'a' }]);
+  });
+
+  it('always ends with the subject, so a plan is never empty', () => {
+    const intents = [
+      { kind: 'merge', targetId: 'b' },
+      { kind: 'absorb', projectId: 'F' },
+      { kind: 'exit', projectId: 'home' },
+      { kind: 'slot', index: 2 },
+      { kind: 'none' },
+    ] as const;
+    for (const intent of intents) {
+      const plan = focusPlanFor(subject, intent, 'made-1', 0);
+      expect(plan.targets.length).toBeGreaterThan(0);
+      expect(plan.targets[plan.targets.length - 1]).toEqual({ kind: 'layout', id: 'a' });
+    }
+  });
+
+  it('focusPlanOn names one target and carries the gap', () => {
+    expect(focusPlanOn({ kind: 'project', id: 'F' }, 4)).toEqual({
+      targets: [{ kind: 'project', id: 'F' }],
+      vacated: 4,
+    });
+  });
+});
+
+describe('fallbackIndex', () => {
+  it('takes the vacated slot, clamped to the shortened list', () => {
+    expect(fallbackIndex(2, 5)).toBe(2);
+    // The item that left was last: the new last is where the eye is, NOT a wrap
+    // to the front.
+    expect(fallbackIndex(4, 3)).toBe(2);
+    expect(fallbackIndex(-3, 3)).toBe(0);
+  });
+
+  it('has no answer for an empty container', () => {
+    expect(fallbackIndex(0, 0)).toBeNull();
+    expect(fallbackIndex(2, -1)).toBeNull();
+  });
+
+  it('sends a non-finite vacated index to the FRONT, never to NaN', () => {
+    // Defensive only — `vacated` comes from `findIndex`, so it is an integer
+    // >= -1. But `Infinity` is the store's own "unplaced" rank and would sail
+    // through a bare `Math.min`, so both unusable values resolve to the same
+    // predictable place rather than to a NaN index that reads as `undefined`.
+    expect(fallbackIndex(Number.POSITIVE_INFINITY, 4)).toBe(0);
+    expect(fallbackIndex(Number.NaN, 4)).toBe(0);
   });
 });

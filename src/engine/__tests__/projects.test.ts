@@ -9,8 +9,10 @@ import {
   addProject,
   assembleStore,
   defaultProject,
+  homeItems,
   layoutsInProject,
   moveLayoutToProject,
+  moveProjectToSlot,
   removeProject,
   renameProject,
   sanitizeProjects,
@@ -217,6 +219,10 @@ describe('addProject / renameProject', () => {
   });
 });
 
+/** A home-grid item as a readable label: `name` for a design, `[name]` for a tile. */
+const labelOf = (i: ReturnType<typeof homeItems>[number]): string =>
+  i.kind === 'layout' ? i.layout.name : `[${i.project.name}]`;
+
 describe('removeProject — deleting a folder must never delete a design', () => {
   const st0 = assembleStore(
     [P('p1', 'Home'), P('p2', 'Studio')],
@@ -224,11 +230,58 @@ describe('removeProject — deleting a folder must never delete a design', () =>
     undefined,
   );
 
-  it('re-homes the layouts to the adjacent project and keeps every one of them', () => {
+  it('re-homes the layouts to the HOME project and keeps every one of them', () => {
     const st = removeProject(st0, 'p2');
     expect(st.projects.map((p) => p.id)).toEqual(['p1']);
     expect(st.layouts).toHaveLength(3);
     for (const l of st.layouts) expect(l.projectId).toBe('p1');
+  });
+
+  it('sends them HOME, not to the adjacent folder (S30, owner decision)', () => {
+    // Needs THREE projects to tell the two rules apart: with only two, "the
+    // folder before p2" and "the home project" are the same place. Deleting the
+    // LAST folder is the case where the old rule said "Studio" and the new one
+    // says home.
+    const three = assembleStore(
+      [P('p1', 'Home'), P('p2', 'Studio'), P('p3', 'Sketches')],
+      [L('a', 'p1', 'la'), L('b', 'p2', 'lb'), L('c', 'p3', 'lc')],
+      undefined,
+    );
+    const st = removeProject(three, 'p3');
+    expect(st.layouts.find((l) => l.id === 'lc')!.projectId).toBe('p1');
+    expect(st.layouts.find((l) => l.id === 'lc')!.projectId).not.toBe('p2');
+  });
+
+  it('lands them AT THE TILE’S SLOT, not appended to the end of the grid', () => {
+    // The point of the change: the designs appear where the folder the user
+    // deleted was standing, which is where the eye already is. Home holds three
+    // designs and the tile sits between the first and the second.
+    let st = assembleStore(
+      [P('p1', 'Home'), P('p2', 'Studio')],
+      [
+        L('h0', 'p1', 'lh0'),
+        L('h1', 'p1', 'lh1'),
+        L('h2', 'p1', 'lh2'),
+        L('s0', 'p2', 'ls0'),
+        L('s1', 'p2', 'ls1'),
+      ],
+      undefined,
+    );
+    st = moveProjectToSlot(st, 'p2', 1);
+    expect(homeItems(st).map(labelOf)).toEqual(['h0', '[Studio]', 'h1', 'h2']);
+
+    const after = removeProject(st, 'p2');
+    // The folder's own designs take its place, in their own order, and the home
+    // designs that straddled it stay put on either side.
+    expect(homeItems(after).map(labelOf)).toEqual(['h0', 's0', 's1', 'h1', 'h2']);
+  });
+
+  it('refuses the HOME project — it IS the grid, with nowhere to re-home to', () => {
+    // Never offered by the UI (a tile is only rendered for a non-home project),
+    // so this is what makes it a property of the function rather than of its
+    // caller. Removing p1 would promote p2 to be the grid and strand p1's own
+    // designs pointing at a project that no longer exists.
+    expect(removeProject(st0, 'p1')).toBe(st0);
   });
 
   it('bumps updatedAt on exactly the moved layouts, so the move actually persists', () => {

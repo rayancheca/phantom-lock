@@ -9,21 +9,45 @@
  * component's job is reduced to collecting rects and calling these.
  */
 
-/** A grid item, measured. Screen coordinates, as `getBoundingClientRect` gives. */
-export interface ItemRect {
-  kind: 'layout' | 'project';
-  id: string;
-  /** Display position within the container, 0-based. */
-  index: number;
+/** The four numbers every hit test needs. */
+export interface Rect {
   left: number;
   top: number;
   right: number;
   bottom: number;
 }
 
+/** A grid item, measured. Screen coordinates, as `getBoundingClientRect` gives. */
+export interface ItemRect extends Rect {
+  kind: 'layout' | 'project';
+  id: string;
+  /** Display position within the container, 0-based. */
+  index: number;
+}
+
 export interface Point {
   x: number;
   y: number;
+}
+
+/**
+ * The breadcrumb, measured — present ONLY while the gallery is drilled into a
+ * folder (S30).
+ *
+ * An ABSENT rect is the enforcement, not a boolean a caller has to compute
+ * correctly: on the home grid there is no breadcrumb to measure, so `exit`
+ * becomes UNCONSTRUCTIBLE rather than merely guarded. "Propose only what you can
+ * perform" — the hardest S29 lesson — is then structural.
+ */
+export interface ExitTarget {
+  /**
+   * Where a design leaving this folder lands: the HOME project. Carried on the
+   * target rather than recomputed at commit time, so the sentence the user
+   * hears and the write that happens name the same destination by construction.
+   */
+  projectId: string;
+  /** The breadcrumb button's own rect, un-inflated. */
+  rect: Rect;
 }
 
 /** What the pointer is currently proposing. */
@@ -32,10 +56,23 @@ export type DropIntent =
   | { kind: 'merge'; targetId: string }
   /** Drop onto a folder tile: join it. */
   | { kind: 'absorb'; projectId: string }
+  /** Drop on the breadcrumb: leave this folder for the home grid. */
+  | { kind: 'exit'; projectId: string }
   /** Drop between items: reorder to this display index. */
   | { kind: 'slot'; index: number }
   /** Nothing valid under the pointer. */
   | { kind: 'none' };
+
+/**
+ * Hit-slop around the breadcrumb.
+ *
+ * `.btn` is `padding: 6px 12px` at `--text-sm` (components/app/app.css:110-122)
+ * — about 30 px tall, which is a fine CLICK target and a poor DROP target for a
+ * moving pointer. Symmetric on all four edges, and small enough that it cannot
+ * reach the head's right-hand action cluster at the far end of a
+ * `justify-content: space-between` row.
+ */
+export const EXIT_PAD_PX = 12;
 
 /**
  * How far the pointer must travel before a press becomes a drag.
@@ -65,8 +102,13 @@ export const LONG_PRESS_MS = 350;
  */
 export const MERGE_CORE = 0.5;
 
-function contains(r: ItemRect, p: Point): boolean {
+function contains(r: Rect, p: Point): boolean {
   return p.x >= r.left && p.x <= r.right && p.y >= r.top && p.y <= r.bottom;
+}
+
+/** Grow a rect by `n` on every edge. */
+function pad(r: Rect, n: number): Rect {
+  return { left: r.left - n, top: r.top - n, right: r.right + n, bottom: r.bottom + n };
 }
 
 function inMergeCore(r: ItemRect, p: Point): boolean {
@@ -126,7 +168,28 @@ export function resolveDrop(
    * at, leaving that view empty. Measured on the real store before it shipped.
    */
   canMerge = true,
+  /**
+   * The breadcrumb, when the gallery is drilled into a folder. Absent on the
+   * home grid, which is what makes `exit` unconstructible there.
+   */
+  exit?: ExitTarget,
 ): DropIntent {
+  // TESTED FIRST, and the reason is geometric rather than stylistic.
+  //
+  // In normal flow the breadcrumb cannot overlap a card — `.gallery-head` and
+  // `.gallery-surface` are siblings in a column flex, so their boxes are
+  // disjoint. But `.gallery-grid` scrolls with `overflow-y: auto`, and
+  // `getBoundingClientRect` reports a scrolled-out card's UNCLIPPED
+  // coordinates: the same blindness already written up for the ghost. A card
+  // scrolled above the viewport therefore has a rect lying inside the band the
+  // breadcrumb occupies, and testing items first would let a card the user
+  // cannot see win a drop aimed squarely at a visible control.
+  //
+  // The layout-only guard is the same one `absorb` carries below: the model is
+  // FLAT, and there is no commit branch that takes a folder out of a folder.
+  if (exit && dragged.kind === 'layout' && contains(pad(exit.rect, EXIT_PAD_PX), p)) {
+    return { kind: 'exit', projectId: exit.projectId };
+  }
   const others = items.filter((r) => !(r.kind === dragged.kind && r.id === dragged.id));
   const over = others.find((r) => contains(r, p));
   // BOTH container proposals require the dragged item to be a DESIGN. The model
@@ -173,6 +236,58 @@ export function caretRect(
   return { x: anchor.right + gap / 2, top: anchor.top, height: anchor.bottom - anchor.top };
 }
 
+// ---------------------------------------------------------------------------
+// Move mode's index space (S30).
+//
+// A drop index counts the container AS THE USER SEES IT — which, during a
+// same-container move, still shows the item being moved. `moveLayoutToProject`
+// converts that to a position in the sequence WITHOUT it, and the conversion
+// collapses two display indices onto one outcome: `self` and `self + 1` both
+// mean "stay put".
+//
+// The pointer path never notices, because a pointer lands wherever it lands. The
+// KEYBOARD path stepped ±1 through display space, and MEASURED against the real
+// engine on a three-design grid that gave a subject at display 0:
+//
+//     at=0 -> 0   at=1 -> 0   at=2 -> 1   at=3 -> 2
+//
+// So the first ArrowRight was a silent no-op — the live region said "Position 2"
+// and nothing moved — and because the old cap was `others.length` (= 2 here) the
+// LAST position was unreachable altogether. That is a defect in the path S29
+// designated as the WCAG 2.2 SC 2.5.7 mechanism, so it is the one path that has
+// to be exactly right.
+//
+// The fix is to step through the distinct OUTCOMES and convert once, at the
+// edge. Both directions are pure, so the round trip is provable in node — but a
+// round-trip test alone is satisfied by the identity pair, which is precisely
+// today's bug, so the real guard runs these against the real `moveLayoutToProject`.
+
+/**
+ * Display index -> step index. Step space has one position per distinct outcome:
+ * `0..others.length`, where `others.length` is "after everything else".
+ */
+export function toStepIndex(display: number, self: number): number {
+  if (self < 0) return display;
+  return display > self ? display - 1 : display;
+}
+
+/**
+ * Step index -> display index, the exact inverse for every step position.
+ *
+ * `w >= self` maps to `w + 1` so that the value survives the engine's
+ * without-self conversion: `withoutSelf(w + 1, self) === w` whenever
+ * `w + 1 > self`, and `withoutSelf(w, self) === w` whenever `w < self`.
+ */
+export function toDisplayIndex(step: number, self: number): number {
+  if (self < 0) return step;
+  return step >= self ? step + 1 : step;
+}
+
+/** The highest step index in a container the subject is part of. */
+export function maxStepIndex(itemCount: number): number {
+  return Math.max(0, itemCount - 1);
+}
+
 /**
  * Has this press become a drag yet?
  *
@@ -207,9 +322,90 @@ export function describeIntent(
       return `Drop to put ${movingName} and ${nameOf('layout', intent.targetId)} in a new folder`;
     case 'absorb':
       return `Drop to move ${movingName} into ${nameOf('project', intent.projectId)}`;
+    case 'exit':
+      // Names the HOME PROJECT, not the breadcrumb's "All layouts" label,
+      // because that is the name `dropLayout`'s toast uses too — so the
+      // announcement and the toast that follows it agree.
+      return `Drop to move ${movingName} out to ${nameOf('project', intent.projectId)}`;
     case 'slot':
       return `Position ${intent.index + 1}`;
     default:
       return 'No drop here';
   }
+}
+
+// ---------------------------------------------------------------------------
+// Where focus goes after a commit (S30).
+//
+// Every gallery commit DESTROYS the element that holds focus: a merge unmounts
+// both cards and mounts a tile, an absorb and an exit unmount the card, and even
+// a plain reorder moves the node. Measured in this repo's own React 19 + jsdom:
+// when the focused element is removed in a commit, `document.activeElement`
+// becomes `document.body` — so without a plan, every drop ends with focus on
+// nothing and a keyboard user is returned to the top of the document.
+//
+// The plan is computed HERE, purely, so that the pointer path and the move-mode
+// path cannot disagree about it. That is the S29 lesson made structural rather
+// than remembered.
+
+/** An item that can hold focus: the same key space the registry uses. */
+export interface FocusTarget {
+  kind: 'layout' | 'project';
+  id: string;
+}
+
+export interface FocusPlan {
+  /** Preferred items, most specific first. The first one on screen wins. */
+  targets: FocusTarget[];
+  /**
+   * Display index the subject held BEFORE the commit. Used only when no target
+   * survives — whatever slid into that gap is where the eye already is.
+   */
+  vacated: number;
+}
+
+/**
+ * Where focus should land after a drop.
+ *
+ * `madeProjectId` is the folder a merge actually MINTED, or null when it minted
+ * none — a merge refused at `MAX_PROJECTS` commits nothing and shows a toast, so
+ * planning the folder that was never created would silently fall through to the
+ * gap. The subject is appended in EVERY branch, so no plan is ever empty, and it
+ * is the right second choice: after a refused merge the subject is still there.
+ */
+export function focusPlanFor(
+  subject: FocusTarget,
+  intent: DropIntent,
+  madeProjectId: string | null,
+  subjectIndex: number,
+): FocusPlan {
+  const targets: FocusTarget[] = [];
+  if (intent.kind === 'merge' && madeProjectId) {
+    targets.push({ kind: 'project', id: madeProjectId });
+  } else if (intent.kind === 'absorb') {
+    targets.push({ kind: 'project', id: intent.projectId });
+  }
+  // NOT for `exit`: the design leaves for the home grid, which the drilled-in
+  // view is not showing. Rung 2 (the subject) covers the case where the folder
+  // dissolved and the view fell back to home; where it did not, the subject is
+  // genuinely off-screen and the gap is the honest answer.
+  targets.push({ kind: subject.kind, id: subject.id });
+  return { targets, vacated: subjectIndex };
+}
+
+/** One named item, then the gap it may leave. */
+export function focusPlanOn(target: FocusTarget, vacated = 0): FocusPlan {
+  return { targets: [target], vacated };
+}
+
+/**
+ * Which display index takes focus when no planned target survived.
+ *
+ * Clamped rather than wrapped: the item after the one that left is where the eye
+ * is, and at the end of the list that is the new last item, never the first.
+ */
+export function fallbackIndex(vacated: number, count: number): number | null {
+  if (count <= 0) return null;
+  const v = Number.isFinite(vacated) ? Math.trunc(vacated) : 0;
+  return Math.min(Math.max(v, 0), count - 1);
 }

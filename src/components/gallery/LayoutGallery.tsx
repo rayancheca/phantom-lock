@@ -11,7 +11,8 @@ import { drawMiniPlan } from '../canvas/thumb';
 import Icon from '../ui/Icon';
 import Menu, { MenuItem, MenuSeparator } from '../ui/Menu';
 import { useGalleryDrag, type DragSubject, type ItemKind } from './useGalleryDrag';
-import { describeIntent, type DropIntent } from './drag';
+import { describeIntent, focusPlanOn, type DropIntent } from './drag';
+import { escapeAction } from './escape';
 import './gallery.css';
 
 /**
@@ -100,8 +101,12 @@ interface GalleryProps {
   onDropLayout: (layoutId: string, projectId: string, index: number | null) => void;
   /** Reposition a folder tile on the home grid. */
   onDropProject: (projectId: string, index: number) => void;
-  /** Drop one design on another: both into a new folder at the target's slot. */
-  onMergeLayouts: (dragId: string, targetId: string) => void;
+  /**
+   * Drop one design on another: both into a new folder at the target's slot.
+   * Returns the id of the folder it minted, or null when it minted none — the
+   * gallery needs it to put focus on the new tile.
+   */
+  onMergeLayouts: (dragId: string, targetId: string) => string | null;
   onClose: () => void;
 }
 
@@ -111,6 +116,15 @@ type GridItem =
 
 export default function LayoutGallery(p: GalleryProps) {
   const layerRef = useRef<HTMLDivElement>(null);
+  /** The breadcrumb — a drop target only while drilled into a folder. */
+  const exitRef = useRef<HTMLButtonElement | null>(null);
+  /**
+   * Where focus goes when nothing else survives a commit. One control per view,
+   * and it must never be disabled: `.focus()` on a disabled element is a no-op
+   * that drops focus to `<body>`, which is the failure being fixed. "New folder"
+   * is disabled at MAX_PROJECTS, so the Close button is the home grid's.
+   */
+  const fallbackRef = useRef<HTMLButtonElement | null>(null);
   /** Which folder is drilled into, or null for the home grid. */
   const [openFolder, setOpenFolder] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState('');
@@ -156,26 +170,47 @@ export default function LayoutGallery(p: GalleryProps) {
   );
 
   const onCommit = useCallback(
-    ({ subject, intent }: { subject: DragSubject; intent: DropIntent }) => {
+    ({ subject, intent }: { subject: DragSubject; intent: DropIntent }): string | null => {
+      // Every path returns explicitly: `noImplicitReturns` is not set, so a
+      // fall-through would silently become `undefined` and lose the focus plan.
       if (intent.kind === 'merge' && subject.kind === 'layout') {
-        p.onMergeLayouts(subject.id, intent.targetId);
-        return;
+        return p.onMergeLayouts(subject.id, intent.targetId);
       }
       if (intent.kind === 'absorb' && subject.kind === 'layout') {
         p.onDropLayout(subject.id, intent.projectId, null);
-        return;
+        return null;
+      }
+      if (intent.kind === 'exit' && subject.kind === 'layout') {
+        // `intent.projectId`, not a fresh `homeProject(p.store).id`: the proposal
+        // and the write then name the same destination by construction. A stale
+        // id is a safe no-op — `dropLayout` returns early when the target
+        // project is not found.
+        const emptied = layoutsInProject(p.store, container.id).length === 1;
+        p.onDropLayout(subject.id, intent.projectId, null);
+        // Announced ONLY when the folder disappeared. `dropLayout` already
+        // toasts "Moved X to Home" through its own live region, so narrating the
+        // move again would double-speak; that the container the user is looking
+        // at has just ceased to exist is the one fact the toast does not carry.
+        if (emptied) {
+          setAnnouncement(`Moved ${subject.name} out. ${container.name} was empty and is gone.`);
+        }
+        return null;
       }
       if (intent.kind === 'slot') {
         if (subject.kind === 'project') p.onDropProject(subject.id, intent.index);
         else p.onDropLayout(subject.id, container.id, intent.index);
       }
+      return null;
     },
-    [container.id, p],
+    [container, p],
   );
 
   const drag = useGalleryDrag({
     items: items.map((i) => ({ kind: i.kind, id: i.id })),
     layerRef,
+    exitRef,
+    exitProjectId: home.id,
+    fallbackRef,
     onCommit,
     announce: setAnnouncement,
     describe,
@@ -189,18 +224,76 @@ export default function LayoutGallery(p: GalleryProps) {
   // nothing else fires — so a React `onKeyDown` for move-cancel is structurally
   // dead, not merely racing. The effect is `[]`-deps (it must not be rebuilt on
   // every store change), so every value it reads comes from a ref.
+  /**
+   * Is something stacked ABOVE this gallery holding its own Escape?
+   *
+   * The two selectors are precisely the overlays that (a) can be on screen over
+   * this gallery and (b) claim Escape with their own window-capture listener:
+   * `ui/Menu`'s popup (rendered only while open) and `ui/Dialog` (the rename,
+   * folder-name, room-size and generate dialogs all open FROM here and leave the
+   * gallery mounted).
+   *
+   * Deliberately NOT `[role="dialog"][aria-modal]`, which looks more semantic
+   * and is wrong: it also matches the tutorial's `CoachMark`, whose Escape is a
+   * React `onKeyDown` that THIS handler's `stopPropagation` kills — so yielding
+   * to it would make Escape do nothing at all. Yield only to a handler that will
+   * actually run.
+   *
+   * The menu half is scoped to this layer; the dialog half is deliberately
+   * document-wide, justified by every `.dialog-layer` owning a window-capture
+   * Escape handler, so yielding to one is safe whatever the stacking order.
+   *
+   * Read from the live DOM on every keystroke, never latched: a Menu can be
+   * unmounted while open (the kebab's own Delete removes the card), and a cached
+   * flag would then disable Escape for the rest of the session.
+   */
+  const overlayAbove = () =>
+    layerRef.current?.querySelector('[role="menu"]') != null ||
+    document.querySelector('.dialog-layer') != null;
+
+  /**
+   * Leave the drilled-in folder, putting focus on the tile the user came out of.
+   *
+   * Both routes out — Escape and the breadcrumb — unmount the control that holds
+   * focus (a card in the folder, or the crumb itself), so without this the view
+   * changes and focus falls to `<body>`. The tile is where the eye already is.
+   */
+  const leaveFolder = (id: string) => {
+    setOpenFolder(null);
+    setAnnouncement('Closed folder.');
+    drag.requestFocus(focusPlanOn({ kind: 'project', id }));
+  };
+
   const escRef = useRef<() => void>(() => {});
   escRef.current = () => {
-    if (drag.subject) {
-      drag.cancel();
-      return;
+    // Captured BEFORE the switch: `escapeAction`'s return value cannot narrow
+    // `folder`, and the `leave-folder` rung is exactly the state in which it is
+    // defined. Reading `folder.id` inside the branch is a compile error under
+    // `strict`, and reading `openFolder` there would use the STALE id.
+    const openId = folder?.id;
+    switch (
+      escapeAction({
+        overlayAbove: overlayAbove(),
+        // `folder`, NOT `openFolder`: a folder can be deleted or auto-dissolve
+        // while drilled into, after which the raw state still holds its id but
+        // the view has already fallen back to home. Feeding the raw state made
+        // Escape swallow itself and announce "Closed folder." about a folder
+        // that was already gone.
+        inFolder: folder !== undefined,
+        moving: drag.subject !== null || drag.pressed,
+      })
+    ) {
+      case 'yield':
+        return;
+      case 'cancel-move':
+        drag.cancel();
+        return;
+      case 'leave-folder':
+        if (openId) leaveFolder(openId);
+        return;
+      case 'close':
+        p.onClose();
     }
-    if (openFolder) {
-      setOpenFolder(null);
-      setAnnouncement('Closed folder.');
-      return;
-    }
-    p.onClose();
   };
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -214,7 +307,11 @@ export default function LayoutGallery(p: GalleryProps) {
   }, []);
 
   const onItemKeyDown = (e: React.KeyboardEvent, subject: DragSubject) => {
-    if (drag.moving) {
+    // A modified key is a browser or OS chord, never a move command. Without
+    // this, move mode swallowed Cmd+O (Open File) and Cmd+F (Find) and silently
+    // retargeted the drop — the bare-letter branches match on `key` alone.
+    const chord = e.metaKey || e.ctrlKey || e.altKey;
+    if (drag.moving && !chord) {
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
         drag.commitMove();
@@ -223,9 +320,10 @@ export default function LayoutGallery(p: GalleryProps) {
       if (drag.stepMove(e.key)) e.preventDefault();
       return;
     }
+    if (chord) return;
     // `m` picks up, mirroring the "Move…" menu item. A bare letter is safe here:
     // this handler is on the item's own button, so it cannot reach the canvas.
-    if (e.key.toLowerCase() === 'm' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    if (e.key.toLowerCase() === 'm') {
       e.preventDefault();
       drag.beginMove(subject);
     }
@@ -423,10 +521,24 @@ export default function LayoutGallery(p: GalleryProps) {
           <div className="gallery-crumb">
             <button
               type="button"
-              className="btn btn-quiet"
+              ref={(el) => {
+                exitRef.current = el;
+                fallbackRef.current = el;
+              }}
+              className={`btn gallery-exit${drag.subject?.kind === 'layout' ? ' can-exit' : ''}${
+                drag.intent.kind === 'exit' ? ' is-exit' : ''
+              }`}
               onClick={() => {
-                setOpenFolder(null);
-                setAnnouncement('Closed folder.');
+                // While moving, the breadcrumb is the DESTINATION, not the way
+                // back. Without this the exit action's only non-dragging path
+                // would be a keyboard key — SC 2.1.1, and explicitly NOT SC
+                // 2.5.7, which requires the alternative to work "by a single
+                // pointer without dragging".
+                if (drag.moving && drag.subject?.kind === 'layout') {
+                  drag.commitOn({ kind: 'exit', projectId: home.id });
+                  return;
+                }
+                leaveFolder(folder.id);
               }}
             >
               <Icon name="chevron-left" size={14} />
@@ -472,7 +584,17 @@ export default function LayoutGallery(p: GalleryProps) {
             <Icon name="export" size={13} />
             Export all
           </button>
-          <button type="button" className="dialog-x" aria-label="Close" onClick={p.onClose}>
+          <button
+            type="button"
+            // The home grid's last-resort focus holder. The Close button is the
+            // only head control that is never disabled — "New folder" goes
+            // disabled at MAX_PROJECTS. Inside a folder the crumb takes over, so
+            // this ref is only claimed on the home grid.
+            ref={folder ? undefined : fallbackRef}
+            className="dialog-x"
+            aria-label="Close"
+            onClick={p.onClose}
+          >
             <Icon name="x" size={15} />
           </button>
         </div>
@@ -494,10 +616,13 @@ export default function LayoutGallery(p: GalleryProps) {
         {grid}
       </div>
 
+      {/* Container-aware: a help text that names a key doing nothing in the
+          current view is the documentation form of the same defect the exit
+          intent exists to avoid. `O` only works inside a folder. */}
       <p id="gallery-move-help" className="sr-only">
         Press M, or choose “Move…” from this item’s actions menu, to move it. Then use the arrow
-        keys to choose a place, F to put it inside the item at that place, Enter to drop it, and
-        Escape to cancel.
+        keys to choose a place, F to put it inside the item at that place,{' '}
+        {folder ? 'O to move it out of this folder, ' : ''}Enter to drop it, and Escape to cancel.
       </p>
       <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">
         {announcement}
@@ -527,7 +652,9 @@ export default function LayoutGallery(p: GalleryProps) {
               ? 'New folder'
               : drag.intent.kind === 'absorb'
                 ? `Add to “${nameOf('project', drag.intent.projectId)}”`
-                : 'Move here'}
+                : drag.intent.kind === 'exit'
+                  ? 'Move out'
+                  : 'Move here'}
           </span>
         </span>
       )}

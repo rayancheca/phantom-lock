@@ -33,6 +33,38 @@ import type { RectObj, Scene, WallObj } from '../../types';
 /** A spread of seeds that is the same on every machine and every run. */
 const SEEDS = Array.from({ length: 24 }, (_, i) => (i * 2654435761) >>> 0);
 
+/**
+ * Every (archetype x seed) design, generated ONCE at module scope.
+ *
+ * Not a micro-optimisation. MEASURED: the 192-design grid costs ~1.78 s, and
+ * nine tests below each walk some prefix of it — while the whole
+ * `traceScene` + `computeAudio` pass over the same corpus costs 150 ms, so the
+ * generator is ~92 % of the work. Under `npm run test:coverage` the v8
+ * instrumentation multiplies that several-fold and the per-test 5 s timeout
+ * fires with the code entirely correct.
+ *
+ * Module scope is evaluated during COLLECTION, which is not subject to
+ * `testTimeout`, so the corpus is built once and shared. Raising `testTimeout`
+ * would hide the cost rather than remove it, and `detect.test.ts` has taken this
+ * same route four times.
+ *
+ * Sharing is safe because `generateDesign` is a pure function of its options and
+ * nothing here mutates a result. The three tests that need a FRESH call — the
+ * two determinism comparisons and the id-freshness check — deliberately still
+ * call `generateDesign` directly, because ids are the one thing NOT determined
+ * by the seed.
+ */
+const CORPUS = new Map<string, ReturnType<typeof generateDesign>>();
+for (const id of ARCHETYPE_IDS) {
+  for (const seed of SEEDS) CORPUS.set(`${id}:${seed}`, generateDesign({ archetype: id, seed }));
+}
+/** A corpus design. Throws rather than silently regenerating an unseeded pair. */
+function design(id: ArchetypeId, seed: number): ReturnType<typeof generateDesign> {
+  const r = CORPUS.get(`${id}:${seed}`);
+  if (!r) throw new Error(`no corpus design for ${id}:${seed} — add the seed to SEEDS`);
+  return r;
+}
+
 function walls(scene: Scene): WallObj[] {
   return scene.objects.filter((o): o is WallObj => o.kind === 'wall');
 }
@@ -276,7 +308,7 @@ describe('generateDesign', () => {
   });
 
   it('gives DIFFERENT designs for different seeds — so determinism is not vacuous', () => {
-    const sigs = new Set(SEEDS.map((s) => geometrySignature(generateDesign({ archetype: 'two-bed', seed: s }))));
+    const sigs = new Set(SEEDS.map((s) => geometrySignature(design('two-bed', s))));
     expect(sigs.size).toBe(SEEDS.length);
   });
 
@@ -291,7 +323,7 @@ describe('generateDesign', () => {
     // echogram traces another.
     for (const id of ARCHETYPE_IDS) {
       for (const seed of SEEDS.slice(0, 6)) {
-        const { scene } = generateDesign({ archetype: id, seed });
+        const { scene } = design(id, seed);
         const seat = activeListener(scene);
         expect(scene.listener.pos.x).toBeCloseTo(seat.pos.x, 12);
         expect(scene.listener.pos.y).toBeCloseTo(seat.pos.y, 12);
@@ -335,7 +367,7 @@ describe('generateDesign', () => {
   it('stays well inside every import limit, so a generated design is shareable', () => {
     for (const id of ARCHETYPE_IDS) {
       for (const seed of SEEDS.slice(0, 8)) {
-        const { scene } = generateDesign({ archetype: id, seed });
+        const { scene } = design(id, seed);
         expect(importRejection(scene)).toBeNull();
         const b = sceneBounds(scene);
         expect(b.max.x - b.min.x).toBeLessThan(MAX_ENVELOPE_M + 5);
@@ -353,7 +385,7 @@ describe('generateDesign', () => {
     for (const id of ARCHETYPE_IDS) {
       let furnished = 0;
       for (const seed of SEEDS.slice(0, 8)) {
-        const { scene } = generateDesign({ archetype: id, seed });
+        const { scene } = design(id, seed);
         expect(walls(scene).length).toBeGreaterThanOrEqual(4);
         if (scene.objects.some((o) => o.kind === 'rect' && o.role === 'furniture')) furnished++;
       }
@@ -366,7 +398,7 @@ describe('generateDesign', () => {
     let windows = 0;
     for (const id of ARCHETYPE_IDS) {
       for (const seed of SEEDS.slice(0, 6)) {
-        const { scene } = generateDesign({ archetype: id, seed });
+        const { scene } = design(id, seed);
         doors += rects(scene, 'door').length;
         windows += rects(scene, 'window').length;
       }
@@ -424,7 +456,7 @@ describe('generateDesign', () => {
     // corpus follows the code's guards" lesson landing on this very diff.
     for (const id of ARCHETYPE_IDS) {
       for (const seed of SEEDS) {
-        const { scene } = generateDesign({ archetype: id, seed });
+        const { scene } = design(id, seed);
         const ws = walls(scene);
         for (const role of ['door', 'window'] as const) {
           for (const o of rects(scene, role)) {
@@ -473,7 +505,7 @@ describe('generateDesign', () => {
     // Full seed list, for the same reason as above.
     for (const id of ARCHETYPE_IDS) {
       for (const seed of SEEDS) {
-        const { scene } = generateDesign({ archetype: id, seed });
+        const { scene } = design(id, seed);
         const ws = walls(scene);
         for (const o of [...rects(scene, 'door'), ...rects(scene, 'window')]) {
           const hosts = hostWalls(o, ws);
@@ -497,7 +529,7 @@ describe('generateDesign', () => {
     // app makes discoverable, because the hero ignition needs an EDGE.
     for (const id of ARCHETYPE_IDS) {
       for (const seed of SEEDS) {
-        const r = generateDesign({ archetype: id, seed });
+        const r = design(id, seed);
         if (r.scene.speakers.length === 0) {
           expect(r.locked).toBe(false);
           continue;
@@ -519,7 +551,7 @@ describe('generateDesign', () => {
     for (const id of ARCHETYPE_IDS) {
       for (const seed of SEEDS) {
         total++;
-        if (generateDesign({ archetype: id, seed }).locked) locked++;
+        if (design(id, seed).locked) locked++;
       }
     }
     // Measured at 87 % over 480 designs; the floor leaves room for the pair
@@ -554,7 +586,7 @@ describe('generateDesign', () => {
     let sawSkip = false;
     for (const id of ARCHETYPE_IDS) {
       for (const seed of SEEDS) {
-        const r = generateDesign({ archetype: id, seed });
+        const r = design(id, seed);
         expect(Array.isArray(r.skipped)).toBe(true);
         if (r.skipped.length > 0) {
           sawSkip = true;

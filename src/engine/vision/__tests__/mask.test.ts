@@ -34,6 +34,28 @@ function ink(img: GrayImage, x0: number, y0: number, x1: number, y1: number, val
   }
 }
 
+/**
+ * The same four-wall plan drawn at 1x, 2x, 3x and 4x, ALREADY READ.
+ *
+ * Hoisted to module scope for the reason `generate.test.ts` hoists its corpus:
+ * the 4x page alone is 2800 x 2080, the four together are ~10.9 M pixels, and
+ * `inkThresholds` blurs and differences every one of them. MEASURED under
+ * `--coverage`: 2.2 s quiet, but 6.6 s under full-suite parallel load — over the
+ * 5 s per-test timeout, with the code entirely correct. Module scope is
+ * evaluated during COLLECTION, which is not timeout-bound, so the reading
+ * happens once and the test body is left as pure assertions.
+ *
+ * Raising `testTimeout` would hide the cost rather than remove it.
+ */
+const PHONE_READINGS = [1, 2, 3, 4].map((k) => {
+  const img = page(700 * k, 520 * k, 246);
+  ink(img, 60 * k, 50 * k, 640 * k, 50 * k + 4 * k, 30);
+  ink(img, 60 * k, 470 * k, 640 * k, 470 * k + 4 * k, 30);
+  ink(img, 60 * k, 50 * k, 60 * k + 4 * k, 470 * k, 30);
+  ink(img, 640 * k, 50 * k, 640 * k + 4 * k, 470 * k, 30);
+  return { k, t: inkThresholds(img) };
+});
+
 function mask(w: number, h: number, set: Array<[number, number, number, number]>): Mask {
   const m = emptyMask(w, h);
   for (const [x0, y0, x1, y1] of set) {
@@ -186,14 +208,9 @@ describe('inkMaskOf', () => {
    * phone photo — and 9 of the 22 legitimate fixtures starved at 4x.
    */
   it('does NOT starve on a legitimate plan at phone resolution', () => {
-    for (const k of [1, 2, 3, 4]) {
-      const img = page(700 * k, 520 * k, 246);
-      ink(img, 60 * k, 50 * k, 640 * k, 50 * k + 4 * k, 30);
-      ink(img, 60 * k, 470 * k, 640 * k, 470 * k + 4 * k, 30);
-      ink(img, 60 * k, 50 * k, 60 * k + 4 * k, 470 * k, 30);
-      ink(img, 640 * k, 50 * k, 640 * k + 4 * k, 470 * k, 30);
-      const t = inkThresholds(img);
-      expect(t.starved).toBe(false);
+    for (const { k, t } of PHONE_READINGS) {
+      // `k` rides in the assertion so a failure names the scale factor.
+      expect({ k, starved: t.starved }).toEqual({ k, starved: false });
       // and it is not a near miss at any of them
       expect(t.edgeDensity).toBeGreaterThan(4);
     }

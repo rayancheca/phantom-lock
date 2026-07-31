@@ -43,7 +43,8 @@ interface AppDialogsProps {
   onMoveLayout: (layoutId: string, projectId: string) => void;
   onDropLayout: (layoutId: string, projectId: string, index: number | null) => void;
   onDropProject: (projectId: string, index: number) => void;
-  onMergeLayouts: (dragId: string, targetId: string) => void;
+  /** Returns the id of the folder the merge minted, or null when it minted none. */
+  onMergeLayouts: (dragId: string, targetId: string) => string | null;
   onCloseGallery: () => void;
   onCloseCompare: () => void;
   onDismissToast: () => void;
