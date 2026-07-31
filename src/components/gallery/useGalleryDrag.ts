@@ -429,11 +429,36 @@ export function useGalleryDrag(a: Args): GalleryDrag {
       }
     };
 
+    /**
+     * Keep a touch drag once the long press has ARMED (S30).
+     *
+     * `touch-action: pan-y` on the card is what keeps the grid scrollable, and
+     * the browser latches it at touchstart — so it cannot be switched to `none`
+     * after the press arms. MEASURED before this existed: a mainly-VERTICAL
+     * touch drag produced `pointerdown -> pointermove -> pointercancel`, i.e.
+     * the scroller took the gesture and the drag evaporated.
+     *
+     * `preventDefault` on a non-passive `touchmove` is evaluated per event
+     * rather than latched, so it can still refuse the pan — but only while the
+     * pan has not begun, which is exactly the window an armed long press sits
+     * in (the finger has been stationary for LONG_PRESS_MS, so nothing has
+     * started scrolling yet).
+     *
+     * The `armed` guard is what makes this safe: an ordinary swipe never arms,
+     * never reaches `preventDefault`, and scrolls normally. Both halves are
+     * verified live — see `docs/sessions/S30/live-s30.mjs`.
+     */
+    const touchMove = (e: TouchEvent) => {
+      if (press.current?.armed && e.cancelable) e.preventDefault();
+    };
+
     window.addEventListener('pointermove', move, { passive: false });
+    window.addEventListener('touchmove', touchMove, { passive: false });
     window.addEventListener('pointerup', up);
     window.addEventListener('pointercancel', cancelled);
     return () => {
       window.removeEventListener('pointermove', move);
+      window.removeEventListener('touchmove', touchMove);
       window.removeEventListener('pointerup', up);
       window.removeEventListener('pointercancel', cancelled);
     };

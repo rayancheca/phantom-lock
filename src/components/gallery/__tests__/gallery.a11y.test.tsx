@@ -7,6 +7,7 @@ import { seededDefaultStore } from '../../../engine/seed';
 import {
   addProject,
   dissolveEmptyProject,
+  homeItems,
   homeProject,
   layoutsInProject,
   mergeIntoNewProject,
@@ -245,15 +246,22 @@ describe('move mode — the non-dragging path WCAG 2.5.7 requires', () => {
     expect(before.map((l) => l.id).indexOf(first.id)).toBe(0);
   });
 
-  it('reaches the LAST position — the old cap left it unreachable', () => {
+  it('reaches the LAST position of the MIXED container — the old cap left it unreachable', () => {
     // `max` used to be `others.length`, one short of the number of distinct
-    // outcomes, so the final slot could not be selected at all. End must reach
-    // it, and this is the assertion that fails if the cap regresses.
+    // outcomes, so the final slot could not be selected at all.
+    //
+    // MEASURED against the wrong version of this test: asserting over
+    // `layoutsInProject(store, home)` — the DESIGNS — is decorative, because
+    // `stepMove` caps on the MIXED home sequence (designs PLUS folder tiles).
+    // The fixture's two tiles supply two slots of slack, so a cap short by one,
+    // two or even three still passed. The container the code counts is the
+    // container the test must count.
     const store = withFolder();
     const onDropLayout = vi.fn();
     const home = homeProject(store).id;
-    const items = layoutsInProject(store, home);
-    const first = items[0];
+    const mixed = homeItems(store);
+    expect(mixed.length).toBeGreaterThan(layoutsInProject(store, home).length); // not vacuous
+    const first = layoutsInProject(store, home)[0];
     render(<LayoutGallery {...props(store)} onDropLayout={onDropLayout} />);
     const opener = openerIn(itemFor(first.name));
     fireEvent.keyDown(opener, { key: 'm' });
@@ -261,8 +269,61 @@ describe('move mode — the non-dragging path WCAG 2.5.7 requires', () => {
     fireEvent.keyDown(opener, { key: 'Enter' });
 
     const [id, projectId, at] = onDropLayout.mock.calls[0];
-    const after = layoutsInProject(moveLayoutToProject(store, id, projectId, at), home);
-    expect(after[after.length - 1].id).toBe(first.id);
+    const after = homeItems(moveLayoutToProject(store, id, projectId, at));
+    const last = after[after.length - 1];
+    expect(last.kind).toBe('layout');
+    expect(last.kind === 'layout' ? last.layout.id : null).toBe(first.id);
+  });
+
+  it('leaves a NON-FIRST subject exactly where it was when committed immediately', () => {
+    // Every other move-mode test moves `items[0]`, where `self === 0` makes the
+    // step index and the committed index coincide — so a seed that ignored the
+    // subject's position and started at 0 was invisible to all of them. Measured:
+    // with a seed-at-zero bug a design at index 2 TELEPORTS to index 0 on a bare
+    // m-then-Enter.
+    const store = withFolder();
+    const onDropLayout = vi.fn();
+    const home = homeProject(store).id;
+    const designs = layoutsInProject(store, home);
+    const subject = designs[designs.length - 1];
+    const wasAt = homeItems(store).findIndex(
+      (i) => i.kind === 'layout' && i.layout.id === subject.id,
+    );
+    expect(wasAt).toBeGreaterThan(0); // not vacuous
+    render(<LayoutGallery {...props(store)} onDropLayout={onDropLayout} />);
+    const opener = openerIn(itemFor(subject.name));
+    fireEvent.keyDown(opener, { key: 'm' });
+    fireEvent.keyDown(opener, { key: 'Enter' });
+
+    const [id, projectId, at] = onDropLayout.mock.calls[0];
+    const after = homeItems(moveLayoutToProject(store, id, projectId, at));
+    expect(after.findIndex((i) => i.kind === 'layout' && i.layout.id === subject.id)).toBe(wasAt);
+  });
+
+  it('an arrow AFTER an F continues from the caret, instead of teleporting to the front', () => {
+    // `lastStep` exists for exactly this and nothing else: it is read only when
+    // the intent is NOT a slot, which happens only after F or O. No other test
+    // presses F and then keeps arrowing, so dropping the memory passed the whole
+    // suite while being a real, visible regression.
+    const store = withFolder();
+    const onDropLayout = vi.fn();
+    const home = homeProject(store).id;
+    const first = layoutsInProject(store, home)[0];
+    render(<LayoutGallery {...props(store)} onDropLayout={onDropLayout} />);
+    const opener = openerIn(itemFor(first.name));
+    fireEvent.keyDown(opener, { key: 'm' });
+    fireEvent.keyDown(opener, { key: 'ArrowRight' });
+    fireEvent.keyDown(opener, { key: 'ArrowRight' });
+    fireEvent.keyDown(opener, { key: 'f' }); // intent becomes merge/absorb
+    fireEvent.keyDown(opener, { key: 'ArrowRight' }); // ...and back to a slot
+    fireEvent.keyDown(opener, { key: 'Enter' });
+
+    const [id, projectId, at] = onDropLayout.mock.calls[0];
+    const after = homeItems(moveLayoutToProject(store, id, projectId, at));
+    const landed = after.findIndex((i) => i.kind === 'layout' && i.layout.id === first.id);
+    // Three rights from position 0 is position 3. Losing the memory restarts the
+    // count and lands on 1.
+    expect(landed).toBe(3);
   });
 
   it('every arrow step lands somewhere NEW — no keypress is a no-op', () => {
@@ -391,6 +452,23 @@ describe('S30 §14c — Escape is a LADDER, and a menu is the innermost rung', (
     expect(onClose).not.toHaveBeenCalled();
     expect(screen.queryByRole('menu')).toBeNull();
     expect(document.activeElement).not.toBe(document.body);
+  });
+
+  it('YIELDS to a Dialog stacked over the gallery', () => {
+    // The OTHER half of `overlayAbove`, and it was entirely untested: deleting
+    // the `.dialog-layer` rung left the whole suite green while reintroducing
+    // exactly the §14c bug. Not hypothetical — the rename, folder-name,
+    // room-size and generate dialogs all open FROM the gallery and leave it
+    // mounted, so Escape over any of them would have closed the lot.
+    const onClose = vi.fn();
+    render(
+      <>
+        <LayoutGallery {...props(withFolder())} onClose={onClose} />
+        <div className="dialog-layer" />
+      </>,
+    );
+    pressEscape();
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it('still closes when a role=menu exists OUTSIDE the gallery layer', () => {
@@ -582,5 +660,38 @@ describe('S30 §14e — taking a design OUT of a folder', () => {
     fireEvent.click(screen.getByRole('button', { name: /all layouts/i }));
     expect(onDropLayout).not.toHaveBeenCalled();
     expect(screen.getByRole('heading').textContent).toBe('Your layouts');
+  });
+});
+
+describe('S30 §14a — a touch drag may refuse the scroller, but only once ARMED', () => {
+  /**
+   * The dangerous half of the touch fix, as far as jsdom can reach.
+   *
+   * `touch-action: pan-y` is latched at touchstart, so keeping an armed drag
+   * needs `preventDefault` on a non-passive `touchmove`. If that fired
+   * unguarded the gallery would become UNSCROLLABLE on touch — worse than the
+   * bug it fixes.
+   *
+   * ⚠️ ONLY THE UN-ARMED DIRECTION IS TESTABLE HERE, and the reason is measured
+   * rather than assumed: jsdom dispatches a plain `Event` for pointer events,
+   * not a `PointerEvent`, so `button`, `pointerId`, `pointerType` and `clientX`
+   * all arrive `undefined`. `onItemPointerDown` bails at `e.button !== 0`, so a
+   * press is never even registered (verified: after a `fireEvent.pointerDown`,
+   * Escape still CLOSES the gallery, which it would not if `pressed` were true).
+   * Every later guard — `pointerId` matching, `dragArmed` — is unreachable for
+   * the same reason. That is also why `useGalleryDrag.ts` sits at 58.9 % line
+   * coverage while the decisions it makes, in `drag.ts`, sit at 98.4 %.
+   *
+   * The ARMED direction, and the "an ordinary swipe still scrolls" regression,
+   * are both verified in real Chrome where a scroller actually exists —
+   * `docs/sessions/S30/live-s30.mjs`, measured 650 px of overflow and
+   * scrollTop 0 -> 386 on an un-armed flick, and 12 uncancelled pointermoves on
+   * an armed vertical drag.
+   */
+  it('does NOT swallow a touchmove when no drag is in progress', () => {
+    render(<LayoutGallery {...props(withFolder())} />);
+    const e = new Event('touchmove', { cancelable: true, bubbles: true });
+    window.dispatchEvent(e);
+    expect(e.defaultPrevented).toBe(false);
   });
 });
