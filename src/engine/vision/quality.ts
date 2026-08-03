@@ -29,20 +29,43 @@
  * thin furniture OUTLINES is offered 27/27 readings at structure up to 1.000
  * and confidence 1.00, and the obvious diagnosis is that these gates are too
  * loose. S31 measured that diagnosis instead of acting on it, and it is wrong.
- * The gates are not too loose; the information is not in the image.
+ * The gates are not too loose. What separates a floorplan from a page of
+ * furniture outlines is what the ink MEANS, and no function of the detected
+ * segments has access to that — which is a claim about THIS seam, established
+ * by the two structural facts below, not a claim that the case is unsolvable
+ * anywhere (see the redirect at the end).
  *
  * The proposed fourth signal was COHESION — "the walls of a building all belong
- * to one structure, four furniture boxes do not" — in every formulation anyone
- * could construct: length in the largest connected component, its bounding-box
- * span, its footprint containment, enclosure by flood fill, cycle counts,
- * reach-within-D, and eleven more. Every one of them overlaps the protected
- * population. Three independent measurements say so:
+ * to one structure, four furniture boxes do not" — measured in 18 formulations:
+ * length in the largest connected component, its bounding-box span, its
+ * footprint containment, enclosure by flood fill, cycle counts, reach-within-D,
+ * page-normalised variants and more. Every one overlaps the protected
+ * population, and TWO structural facts explain why — note they are different
+ * arguments with different scopes, which an earlier draft of this comment ran
+ * together:
  *
- *   - THE THEOREM. Each is a ratio (property of the largest component) /
- *     (the same property of all segments), so on a ONE-COMPONENT reading it is
+ *   - THE THEOREM, which covers the RATIO-TO-THE-WHOLE family only (cohesion,
+ *     containment, span — the three the test computes). Each is a ratio
+ *     (property of the largest component) / (the same property of all
+ *     segments), so on a ONE-COMPONENT reading numerator = denominator and it is
  *     identically 1.000 whatever the image depicts. Pushing the furniture boxes
  *     together until their edges touch reaches that for free — a perfect score
  *     for the null. It is the same blind spot as `structure`, one level up.
+ *     ⚠️ It does NOT cover enclosure or cycle counts, which are not of that
+ *     form; those are refuted separately and by measurement (below).
+ *   - THE CORPUS ITSELF, which covers everything else and is the stronger
+ *     argument. `clean-rect` is a REQUIRED-ACCEPT fixture (floor 0.98) that is
+ *     geometrically ONE CLOSED RECTANGLE, and `two-room` (floor 0.95) is two
+ *     rectangles sharing a wall. So "a closed box" and "two boxes touching" are
+ *     drawings the suite already demands be accepted — at any size, since the
+ *     shrink ladder shows page-relative scale carries nothing. Any predicate
+ *     that refuses the furniture page must therefore refuse one of them. This is
+ *     why no non-ratio candidate rescues the case either: a rule needing
+ *     T-junctions refuses all three of `clean-rect`/`thick-rect`/`hollow-rect`,
+ *     which have none by construction; and enclosure is dead on its own numbers
+ *     — `apartment-rotated` and `oblique-survey` measure enclosedLargest 0.000
+ *     at every level (one door gap lets the outside flood in) and `tiny-rooms`
+ *     0.011, all legitimate, against nulls in the 0.07-0.21 range.
  *   - THE INVERSION. A legitimate terrace of three detached dwellings scores
  *     0.333 where a tight furniture cluster scores 0.522. Ordinary drawings,
  *     the wrong way round.

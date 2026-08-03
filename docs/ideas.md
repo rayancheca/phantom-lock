@@ -810,19 +810,32 @@ Evidence: `docs/sessions/S28/bench/` (reproduction, adjudication, negative contr
 **The finding stands; the diagnosis was wrong.** A page of four thin furniture OUTLINES really is
 offered 27/27 at structure up to 1.000 and confidence 1.00, on `main`, on S27 and on S28 alike. What
 three sessions of this entry assumed — that `vision/quality.ts` is too loose and needs a fourth
-signal — is false. S31 measured it. **No function of the detected segments can separate the two
-populations**, and the reason is structural rather than a matter of tuning.
+signal — is false. S31 measured it. **Nothing computable from the detected segments separates the
+two populations at this seam**, and the reason is structural rather than a matter of tuning. Two
+distinct arguments carry it, with different scopes: the THEOREM covers the ratio-to-the-whole family,
+and the CORPUS argument covers everything else.
 
 The proposed fourth signal was COHESION, in every formulation that could be constructed: length in
 the largest connected component, its bounding-box span, footprint containment, enclosure by flood
 fill, cycle counts, reach-within-D, page-relative variants — 18 in all. Every one overlaps the
 protected population.
 
-- **THE THEOREM.** Each is a ratio `(property of the largest component) / (the same property of all
-  segments)`, so on a ONE-COMPONENT reading it is identically **1.000** whatever the image depicts.
-  Pushing the furniture boxes together until their edges touch reaches that for free. It is the same
-  blind spot as `structure`, one level up: `structure` fails because a closed box satisfies a local
-  endpoint test perfectly; the cohesion family fails because a closed box *is* a single component.
+- **THE THEOREM — scoped to the RATIO-TO-THE-WHOLE family** (cohesion, containment, span). Each is a
+  ratio `(property of the largest component) / (the same property of all segments)`, so on a
+  ONE-COMPONENT reading it is identically **1.000** whatever the image depicts. Pushing the furniture
+  boxes together until their edges touch reaches that for free. Same blind spot as `structure`, one
+  level up: `structure` fails because a closed box satisfies a local endpoint test perfectly; the
+  cohesion family fails because a closed box *is* a single component. ⚠️ It does **not** cover
+  enclosure or cycle counts — not of that form, refuted separately below.
+- **THE CORPUS ITSELF — the stronger and more general argument.** `clean-rect` is a REQUIRED-ACCEPT
+  fixture (floor 0.98) that is geometrically **one closed rectangle**, and `two-room` (floor 0.95) is
+  **two rectangles sharing a wall**. Those are exactly the null constructions. So any predicate that
+  refuses the furniture page must refuse a fixture the suite demands be accepted — at any size, since
+  the shrink ladder shows page-relative scale carries nothing. This disposes of the non-ratio
+  candidates too: a rule requiring T-junctions refuses `clean-rect`/`thick-rect`/`hollow-rect`, which
+  have none by construction; and enclosure dies on its own numbers — `apartment-rotated` and
+  `oblique-survey` measure enclosedLargest **0.000** at every level (one door gap floods the
+  interior) and `tiny-rooms` 0.011, all legitimate, against nulls at 0.07-0.21.
 - **THE INVERSION.** A legitimate terrace of three detached dwellings scores 0.333 where a tight
   furniture cluster scores 0.522. A detached duplex scores 0.500 against the same 0.522. Ordinary
   drawings, the wrong way round.

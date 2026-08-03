@@ -9,11 +9,27 @@
  * The gates are not too loose. The information is not in the image.
  *
  * `assessDetection` is a pure function of the detected SEGMENTS and the wall
- * mask. This file pins, as executable statements, the three measurements that
- * together show no such function can separate the two populations — so that the
- * next session spends its budget on the seam where the missing information
- * actually lives (metric scale; see the redirect at the bottom of this file and
- * in `docs/ideas.md` Section 13e) rather than on another threshold sweep.
+ * mask. This file pins, as executable statements, the measurements behind that —
+ * so that the next session spends its budget on the seam where the missing
+ * information actually lives (metric scale; see the redirect at the bottom of
+ * this file and in `docs/ideas.md` Section 13e) rather than on another threshold
+ * sweep.
+ *
+ * ⚠️ WHAT IS AND IS NOT PROVED HERE, because the distinction decides what a
+ * future session may skip. The tests below compute exactly three statistics —
+ * cohesion, containment, span — and the THEOREM they demonstrate covers that
+ * RATIO-TO-THE-WHOLE family only. It says nothing about enclosure, cycle counts,
+ * or junction degree, which are not of that form. Those are refuted separately
+ * and by measurement, recorded in `vision/quality.ts` and `docs/ideas.md`
+ * Section 13e: enclosure is dead on the corpus's own numbers (two legitimate
+ * fixtures score 0.000 because one door gap floods the interior), and a
+ * T-junction rule refuses `clean-rect`/`thick-rect`/`hollow-rect`, which have
+ * none by construction.
+ *
+ * The argument that DOES generalise is the corpus one, and the shrink ladder
+ * below is its executable half: `clean-rect` (floor 0.98) is one closed
+ * rectangle and `two-room` (floor 0.95) is two rectangles sharing a wall, so the
+ * null constructions are drawings this suite already demands be accepted.
  *
  * Read these tests as a PROOF OBLIGATION, not as approval of the current
  * behaviour. If someone finds a genuinely separating signal, several of these
