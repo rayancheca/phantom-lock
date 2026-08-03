@@ -26,7 +26,8 @@ effort — a small high-value item beats a large one.
 | 4b | ✅ **The explicit seat COMMAND** — **DONE S32** (plain `F`, Inspector + HUD buttons, snap guide). ⇧F → §4d | ~~P1~~ done | — |
 | 4d | ⇧F quarter-turn — the turned class is not representable in the drag magnet, so the next drag un-turns it | P2 | ½ session |
 | 11 | ✅ **Generate a design** (owner-requested randomizer) — **DONE S22** | ~~P1~~ done | — |
-| 15 | **Generator QUALITY (owner-reported 2026-08-03: "broken as fuck")** — 26.3 % of designs skip a piece, and 125 of 126 skips are ONE preset; 9.6 % ship with no speakers | **P1 — high** | 1 session |
+| 15 | ✅ **Generator QUALITY (owner-reported)** — **DONE S33**: skips 26.3 % → 1.9 %, no-speaker 9.6 % → 1.5 %, coverage 12.7 % → 18.4 %. Filed cause was WRONG (see below). Residual → 15b | ~~P1~~ done | — |
+| 15b | Per-ROOM furniture quotas — `two-bed` programme 0.800, both beds can land in one bedroom | P2 | ½ session |
 | 16 | **Word-style direct-manipulation handles (owner-requested 2026-08-03)** — resize + rotate an object with the mouse | **P1 — high** | 1 session |
 | 5 | Read-only 3D view | P2 | 1 session *(plan exists)* |
 | 6 | Component/hook tests | P2 | 1 session |
@@ -1188,6 +1189,70 @@ AFTER over the same enumerated seeds (the S22 discipline — build the measuring
 and test the instrument), reporting skip rate, floor coverage, aspect-ratio spread, adjacency
 sanity, and lock rate. Skip rate to ~0. No archetype below a stated coverage floor. And the
 `armchair` reject either removed with evidence or kept with a fallback.
+
+---
+
+### 15 — ✅ **DONE (S33)**, and the filed diagnosis was WRONG
+
+The instrument is `src/engine/generate/__tests__/design-score.ts` (test-only, 29 tests of its own),
+calibrated on `apartmentScene()` — the hand-authored Maple Court demo, which is a model of the home
+the owner lives in and is the only ground truth in the repo (**28.9 %** floor coverage, 1.75 pieces
+per 10 m², and it scores **0.9998**). Bench: `docs/sessions/S33/bench/score-corpus.mts`, same 8
+archetypes x 60 seeds.
+
+| | before | after |
+|---|---|---|
+| **total** | 0.7856 | **0.8552** |
+| placement | 0.9673 | 0.9984 |
+| density | 0.1478 | **0.4160** |
+| programme | 0.9632 | 0.9583 |
+| orientation | 0.7125 | 0.7696 |
+| spacing | 1.0000 | 1.0000 |
+| reach | 1.0000 | 1.0000 |
+| proportion | 0.9694 | **0.9993** |
+| lock | 0.9042 | **0.9854** |
+| designs skipping a piece | 26.3 % | **1.9 %** |
+| designs with NO speakers | 46 / 480 | **7 / 480** |
+| mean floor coverage | 12.7 % | 18.4 % |
+| cost | 10.1 ms | 22.3 ms |
+
+**THE FILED CAUSE WAS WRONG, and the right one is more interesting.** §15 above says the armchair's
+`facing < 0.2` cone was too tight. It was not. `openSlots` handed every open slot the CONSTANT world
+facing `{x:0, y:-1}` and `rotation: 0`, so the cone test reduced to *"is the TV north of this
+point?"* — a property of which wall the TV landed on, not of the slot. Measured: **0 / 258** skips
+with the TV north of the room centre, **125 / 162 (77.2 %)** with it south. That is 125 of the 126
+skipped pieces in the whole corpus. The facing was not even consistent with its own rotation
+(`rotation: 0` puts a rect's front at `(0,+1)`), and every open-placed piece therefore shipped at
+rotation 0 facing nothing.
+
+**What else was found and fixed, each measured:** `wallSlots` offered only the centroid-facing side
+of every wall, so one face of all 960 partitions was unreachable and only **65.7 %** of floor-facing
+wall length was ever offered · `inventoryFor` read six area thresholds, **four of which never fired
+on any of the 960 rooms**, and left `cabinet`/`round-table` unreachable · `ZONE_AFFINITY.dining`
+excluded `living`, so a table ordered FOR a living room was charged −0.9 for standing in one and
+**53.9 %** of multi-room dining placements were mismatched · `split` drew its cut blind, leaving a
+room worse than 2:1 in **20.4 %** of designs · `loft`/`great-room` envelopes put a single "living
+room" at up to 70 m², larger than the whole 51.4 m² Maple Court apartment · and the studio-sleeps
+rule put a **double bed in every generated home office**, which no score could see and only driving
+the real UI caught.
+
+**Residuals, honestly.** `programme` is the one sub-score that did NOT improve (0.9632 → 0.9583):
+`inventoryFor` reasons per ROOM but returns a flat global count and `arrangeFurniture` has no
+per-room quota, so on `two-bed` (0.800) both beds can land in one bedroom. That is the next real
+piece of work here — see §15b. `cinema` density is 0.254 and `great-room` 0.399, the two lowest.
+`orientation` at 0.770 is limited by wall-placed sofa/TV pairs, and weighting facing harder was
+measured and REJECTED: it buys +0.011 orientation and costs 3 more no-speaker designs.
+
+### 15b. Per-ROOM furniture quotas — **P2**, ~½ session
+
+`inventoryFor` decides per room and then sums into one flat `ArrangeItem[]`; `arrangeFurniture`
+places by score with no notion of which room a piece was ordered for. `ZONE_AFFINITY` is a soft
+pull (+1.6 in the right zone, −0.9 in the wrong one) and it is not always enough: measured after
+S33, `two-bed`'s `programme` is **0.800**, i.e. one bedroom in five is missing its bed because both
+beds scored better in the same room. The fix is to carry a room id on each `ArrangeItem` and give
+`placeOne` a per-room candidate filter. Cheap to state, and it touches the same seam the
+user-facing "Arrange furniture for me" dialog uses, so it needs its own before/after over the
+instrument.
 
 ---
 

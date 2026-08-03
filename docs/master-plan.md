@@ -912,6 +912,59 @@ speed. Confirm the next kickoff you write re-states this protocol.*
 
 ## Progress log
 
+### Session 33 — 2026-08-03 — the design generator's QUALITY (§15)
+
+**The owner's report.** *"generate a design is broken as fuck. i want actual good generations with
+logic and thought not random designs"*, with a screenshot of *"1 piece of furniture had nowhere to
+go — reroll or pick a larger shape."*
+
+**The instrument came first** (`src/engine/generate/__tests__/design-score.ts`, test-only, **29
+tests of its own**), calibrated on `apartmentScene()` — the hand-authored Maple Court demo, a model
+of the home the owner lives in and the only ground truth in the repo: **28.9 %** floor coverage,
+1.75 pieces per 10 m². It scores **0.9998**. Its own tests found THREE defects in it before it was
+used to justify anything: `spacing` was missing entirely (the pile-it-all-on-one-spot control scored
+identically to the demo, because density is blind to it by construction), `ANCHORS` matched only the
+generator's vocabulary so it could not see the demo's "Couch", and `intersectionArea` did not
+re-orient the clip polygon and reported the demo as overlap-free (TRAP 22, in my own harness).
+
+**Measured, 8 archetypes x 60 seeds — total 0.7856 → 0.8552:**
+
+| | before | after | | before | after |
+|---|---|---|---|---|---|
+| placement | 0.9673 | **0.9984** | proportion | 0.9694 | **0.9993** |
+| density | 0.1478 | **0.4160** | lock | 0.9042 | **0.9854** |
+| programme | 0.9632 | 0.9583 | skipping a piece | 26.3 % | **1.9 %** |
+| orientation | 0.7125 | 0.7696 | NO speakers | 46/480 | **7/480** |
+
+**THE FILED CAUSE WAS WRONG.** `docs/ideas.md` §15 said the armchair's `facing < 0.2` cone was too
+tight. It was not: `openSlots` gave every open slot the CONSTANT world facing `{x:0,y:-1}` and
+`rotation: 0`, so the test asked *"is the TV north of this point?"* — 0/258 skips with the TV north
+of the room centre, **125/162 (77.2 %)** with it south, which is 125 of the corpus's 126 skips.
+
+**Seven further defects, each measured:** `wallSlots` offered ONE face of every wall (65.7 % of
+floor-facing wall length reachable) · four of `inventoryFor`'s six area thresholds never fired and
+`cabinet`/`round-table` were unorderable · `ZONE_AFFINITY.dining` excluded `living`, mismatching
+53.9 % of multi-room dining placements · `split` drew blind, leaving a >2:1 room in 20.4 % of
+designs · `loft`/`great-room` put one "living room" at up to 70 m², bigger than the whole Maple
+Court apartment · the studio-sleeps rule put a **double bed in every generated home office** (caught
+only by driving the real UI — the bed placed fine and counted toward coverage) · and a PRE-EXISTING
+flaky test, measured at 1 failure in 40 runs on `main`.
+
+**Two things measured and NOT taken.** Weighting sofa/TV facing harder buys +0.011 orientation and
+costs 3 more no-speaker designs. Always taking the SQUAREST guillotine cut fixes proportion and
+collapses variety — distinct room sets over 60 seeds fall 58 → 34 on `loft`; drawing at random from
+the cuts inside an aspect budget keeps both.
+
+**Evidence.** 8 negative controls, all caught (one exposed a weak test, which was rebuilt on an
+L-shaped fixture and re-verified red). Live in real headless Chrome on a fresh profile: 24 summaries
+across all 8 archetypes — **1** said "nowhere to go", **21** said "a stereo pair that locks"; the
+kept design reached IndexedDB with 7 furniture pieces and 4 distinct rotations. Tests 1560 → **1612**.
+Bundle 503.23 → **505.77 kB** (164.17 → 164.98 kB gz), CSS unchanged.
+
+**Deferred with a reason:** per-room furniture quotas (`ideas.md` §15b) — `two-bed`'s `programme` is
+0.800 because `inventoryFor` reasons per room but returns a flat count and `arrangeFurniture` has no
+per-room filter, so both beds can land in one bedroom.
+
 ### Session 32 — 2026-08-03 — the explicit seat command (§4b, plain `F`)
 
 **Shipped.** `COMMAND_SEAT` / `WALL_SEAT_REACH_M` (1.2 m) / `seatObjectAgainstWall` /
