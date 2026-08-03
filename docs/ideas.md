@@ -25,6 +25,8 @@ effort — a small high-value item beats a large one.
 | 4 | ✅ **Snap furniture to a wall's angle** — **DONE S23** (drag half; `f` command → 4b) | ~~P1~~ done | — |
 | 4b | The explicit seat COMMAND (`f`/⇧F + Inspector/HUD buttons + snap guide) | **P1 — high** | ½ session |
 | 11 | ✅ **Generate a design** (owner-requested randomizer) — **DONE S22** | ~~P1~~ done | — |
+| 15 | **Generator QUALITY (owner-reported 2026-08-03: "broken as fuck")** — 26.3 % of designs skip a piece, and 125 of 126 skips are ONE preset; 9.6 % ship with no speakers | **P1 — high** | 1 session |
+| 16 | **Word-style direct-manipulation handles (owner-requested 2026-08-03)** — resize + rotate an object with the mouse | **P1 — high** | 1 session |
 | 5 | Read-only 3D view | P2 | 1 session *(plan exists)* |
 | 6 | Component/hook tests | P2 | 1 session |
 | 10 | ✅ **Projects (folders) + N-up compare** (owner-requested) — **DONE S20** | ~~P1~~ done | — |
@@ -1124,3 +1126,102 @@ list — see `docs/master-plan.md` Session 30 for the evidence.
   dispatches a plain `Event` for pointer events, so `button`/`pointerId`/`clientX` are `undefined`,
   `onItemPointerDown` bails at `e.button !== 0`, and a press is never registered. The decisions all
   live in `drag.ts` (98.4 %). The pointer half is covered live instead.
+
+---
+
+## 15. Generator QUALITY — owner-reported, **P1**
+
+> *"generate a design is broken as fuck. i want actual good generations with logic and thought
+> not random designs."* — owner, 2026-08-03, with a screenshot of the `railroad` archetype
+> showing *"1 piece of furniture had nowhere to go — reroll or pick a larger shape."*
+
+Reported mid-S32 as information to fix later, not as a redirect. **Measured immediately**, so the
+next session starts from numbers rather than from the adjective. Harness:
+`docs/sessions/S32/bench/audit-generate.mts`, 8 archetypes x 60 seeds = **480 designs**.
+
+**The headline is much narrower than "random":**
+
+| symptom | measured |
+|---|---|
+| designs skipping ≥1 piece | **126 / 480 = 26.3 %** |
+| of those skips, the `armchair` | **125 of 126** |
+| designs shipping **ZERO speakers** | **46 / 480 = 9.6 %** (`studio` 16/60, `railroad` 14/60) |
+| mean floor coverage | **9.3 % – 24.1 %** by archetype |
+| rooms with no furniture at all | 2 of 960 — **a non-issue** |
+| worst room aspect ratio | **2.68:1** (`one-bed` Bedroom 2.80 x 7.50) |
+| smallest room | **10.85 m²** (`railroad` Kitchen 3.10 x 3.50) |
+
+**Cause 1 — the armchair is the ONLY preset with a hard reject.** `arrange.ts:411-418`:
+
+```ts
+case 'armchair': {
+  if (tv) {
+    const facing = v.dot(v.norm(v.sub(tv.center, slot.center)), slot.facing);
+    if (facing < 0.2) return null;      // <-- every other preset only SCORES
+```
+
+Measured: an armchair is requested in **420** of the 480 designs and skipped in **125 = 29.8 %**,
+and a TV is present in **every single one** — so the skip is purely this cone test, never a
+missing anchor. Every other case in `scoreSlot` adjusts `score`; only this one rejects. The fix
+direction is to make it a penalty, or to fall back to the best-facing slot when none clears the
+cone — but measure the resulting layouts, because the cone is what stops an armchair facing a wall.
+
+**Cause 2 — "no speakers" is by design and reads as a bug.** `pair.ts` ships a verified lock or
+NOTHING (S22's deliberate choice: `VerdictHero`'s ignition is an edge, so "almost locked" would
+celebrate nothing). Correct, but 9.6 % of the time the user gets a furnished flat with no audio
+and the dialog does not say why. At minimum the notice should distinguish "no lock was findable
+in this shape" from silence.
+
+**Cause 3 — low floor coverage is what "looks random" actually means.** At 9–24 % coverage rooms
+read as sparse regardless of how good each individual placement is. `inventoryFor`
+(`generate/index.ts:99`) asks for a fixed small set keyed on crude area thresholds and room-name
+regexes; it has no notion of *this room needs a focal wall, a circulation path, and a secondary
+zone*. That is the "logic and thought" the owner is asking for.
+
+**Not yet investigated:** whether the guillotine tiler can be constrained to sane proportions
+(`tile.ts`), and whether room ADJACENCY is ever considered (a kitchen opening off a bedroom is
+possible today). Both are prime suspects for the "random" feel and neither was measured here.
+
+**Acceptance for the session that takes this on:** a scored quality harness that runs BEFORE and
+AFTER over the same enumerated seeds (the S22 discipline — build the measuring instrument first
+and test the instrument), reporting skip rate, floor coverage, aspect-ratio spread, adjacency
+sanity, and lock rate. Skip rate to ~0. No archetype below a stated coverage floor. And the
+`armchair` reject either removed with evidence or kept with a fallback.
+
+---
+
+## 16. Word-style direct-manipulation handles — owner-requested, **P1**
+
+> *"i also want to be able to change the shape and size and rotation of objects with my mouse
+> just like in microsoft word"* — owner, 2026-08-03.
+
+Today an object's `w`/`h`/`rotation` are editable ONLY through `InspectorPanel`'s numeric fields
+and the rotation slider (`InspectorPanel.tsx:414-431`); the canvas offers move-only
+(`SimCanvas.tsx:993` `move-rc`). The ask is the standard eight resize grips plus a rotate grip.
+
+**What makes it non-trivial here, from the existing code:**
+
+- The handles must live in the object's **ROTATED frame**, not the world's — every object carries
+  `rotation`, and Maple Court is a -12.83° plan, so world-axis grips would be visibly wrong on the
+  one layout that matters. `rectCorners(center, w, h, rotation)` already gives the right basis.
+- **It collides with the S23 wall-seat magnet.** `moveObjectTo` rewrites `rotation` every frame
+  from `rot0` while a drag is live; a resize or rotate gesture must be its own `Drag` kind that
+  the magnet does not touch, or the two will fight exactly as `q`/`e` did mid-drag (S23 lesson).
+- **`rot0` re-basing (`SimCanvas.tsx:1004`) reads `live.rotation`** and re-bases when it differs
+  from what the branch last wrote. A rotate handle writing `rotation` is indistinguishable from an
+  external `q`/`e` unless it uses the same `lastRotRef` discipline.
+- Grips are canvas pixels, not DOM, so they are invisible to axe and to `getComputedStyle` — the
+  hit-testing needs a pure, node-tested `handleAt(view, obj, screenPt)` the way `interaction.ts`
+  already does for wall hover, and the a11y story stays the keyboard path.
+- Undo must coalesce one gesture into one entry (`beginGroup`/`endGroup`, the S5 model), and a
+  no-op resize must return the SAME scene ref or it pushes a phantom entry (the S14 lesson).
+- Min sizes: `sanitizeObject` clamps, and `InspectorPanel` uses `min={0.1}`. A grip dragged past
+  zero must not flip the rect inside out — decide whether it mirrors (Word does) or clamps.
+- Doors/windows are wall-locked (S17): a resize grip changes the CLEAR OPENING (`w`) only, and
+  rotation must stay refused, or the door silently detaches from its wall.
+
+**Acceptance:** pure hit-test + transform module with node tests over rotated frames; a `Drag`
+kind of its own; Shift for aspect-lock and Alt for resize-about-centre (the Word contract);
+rotation snapping to the plan's axis rather than the world's; keyboard equivalents already exist
+(`q`/`e`, Inspector) so SC 2.1.1 is met, but state that explicitly; live-verified with real
+`Input.dispatchMouseEvent` drags, since jsdom cannot drive pointer events (TRAP 21).
