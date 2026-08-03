@@ -911,6 +911,46 @@ speed. Confirm the next kickoff you write re-states this protocol.*
 - Off-ladder radii snap. (Alpha-token rename `ok-10`→`ok-12` + header perpetual-animation trim — **DONE in S13/UX-1**.)
 
 ## Progress log
+
+### Session 32 — 2026-08-03 — the explicit seat command (§4b, plain `F`)
+
+**Shipped.** `COMMAND_SEAT` / `WALL_SEAT_REACH_M` (1.2 m) / `seatObjectAgainstWall` /
+`canSeatAgainstWall` in `canvas/placement.ts`; the `F` key routed off `flip-door`'s same-ref
+result; the Inspector "Seat against wall" button (gated `furniture | tv`, C6); a fourth
+`SelectionActions` HUD button with `repeatable={false}`; the on-canvas snap guide; `canvas-help.ts`.
+
+**Two real defects found and fixed.** (1) Reach and capture are the same number, so 1.2 m reopened
+the C3 short-wall hazard — measured 1.20 → 3.28 m² capture over a 0.70 m stub, worst jump 1.083 →
+1.540 m, closed by a required `WallSeatOptions.contain` that is a no-op for walls ≥ 2.4 m.
+(2) SHIPPED BUG: `wallSeatFor` quantised then clamped, so 14.3 % of seated results slid up to 1.5 cm
+on re-application over off-grid wall lengths.
+
+**Deferred with a spec (`docs/ideas.md` §4d).** ⇧F, because the turned class is not representable in
+the drag magnet: 4 of 5 realistic pieces lose the turn on the next drag, one of them without moving.
+
+**Owner reports recorded (`docs/ideas.md` §15/§16), both measured.** The generator skips a piece in
+26.3 % of 480 designs and **125 of 126 skips are the `armchair`** — `arrange.ts:414` is the only
+case in `scoreSlot` that returns null rather than scoring; it is requested 420 times and skipped
+125 (29.8 %) with a TV present in every one. 9.6 % of designs ship with zero speakers. Plus the
+Word-style resize/rotate handle request.
+
+**Evidence.** Agents: 4 design lenses + 4 adversarial skeptics (8 total, 1.07 M tokens); every
+finding adjudicated against the tree by hand — two CRITICALs reproduced exactly, one HIGH
+("⇧F never settles") was superseded by a tie-break form measured idempotent over 1 036 800 samples,
+and a claimed "2.5 cm" defect measured **1.5 cm** and converges, so the magnitude and the "keeps
+sliding" characterisation were both corrected. Tests **1543 → 1560**. `placement.ts` 100 % stmts /
+93.97 % branch / 100 % funcs / 100 % lines. Nine negative controls run (6 on the command, 3 on the
+guide); 7 caught, 1 was a genuine test hole now covered, 1 was provable code redundancy and is
+annotated as such. Live: real headless Chrome, fresh profile — Desk seated to **−11.73°**, face gap
+**5.55e-17 m**, second press moved nothing, the button disabled itself, and C6 verified by creating
+a window through the app's own `w` key. Shots in `docs/sessions/S32/shots/`. Gates green: 1560 tests
+· 503.23 kB / 164.17 kB gz JS · lint 0 problems.
+
+**Honest limits.** One browser, not cross-browser. No real screen reader driven. The snap guide is
+only visible mid-drag, so it is proven by a recording stub plus three negative controls rather than
+by a screenshot. `App.tsx` is now 1292 lines against the 800 cap — debt restated, not reduced.
+
+
 - **2026-08-03 — Session 31 DONE:** §13e **REFUTED** at the `vision/quality.ts` seam (proven three
   ways, pinned by 7 tests, redirected to metric scale, P1→P2) and creation-time alignment **built,
   measured and REVERTED** (the plan axis flips 12.83° on one ordinary wall edit; fully specified as

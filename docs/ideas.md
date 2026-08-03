@@ -23,7 +23,8 @@ effort — a small high-value item beats a large one.
 | 3 | **Guided tutorial mode** | **P1 — high** | 1–2 sessions |
 | 3b | ✅ **Door width + swing angle** (owner-requested) — **DONE S17** (G2f corridors deferred) | ~~P1~~ done | — |
 | 4 | ✅ **Snap furniture to a wall's angle** — **DONE S23** (drag half; `f` command → 4b) | ~~P1~~ done | — |
-| 4b | The explicit seat COMMAND (`f`/⇧F + Inspector/HUD buttons + snap guide) | **P1 — high** | ½ session |
+| 4b | ✅ **The explicit seat COMMAND** — **DONE S32** (plain `F`, Inspector + HUD buttons, snap guide). ⇧F → §4d | ~~P1~~ done | — |
+| 4d | ⇧F quarter-turn — the turned class is not representable in the drag magnet, so the next drag un-turns it | P2 | ½ session |
 | 11 | ✅ **Generate a design** (owner-requested randomizer) — **DONE S22** | ~~P1~~ done | — |
 | 15 | **Generator QUALITY (owner-reported 2026-08-03: "broken as fuck")** — 26.3 % of designs skip a piece, and 125 of 126 skips are ONE preset; 9.6 % ship with no speakers | **P1 — high** | 1 session |
 | 16 | **Word-style direct-manipulation handles (owner-requested 2026-08-03)** — resize + rotate an object with the mouse | **P1 — high** | 1 session |
@@ -1225,3 +1226,56 @@ kind of its own; Shift for aspect-lock and Alt for resize-about-centre (the Word
 rotation snapping to the plan's axis rather than the world's; keyboard equivalents already exist
 (`q`/`e`, Inspector) so SC 2.1.1 is met, but state that explicitly; live-verified with real
 `Input.dispatchMouseEvent` drags, since jsdom cannot drive pointer events (TRAP 21).
+
+---
+
+### 4d. The ⇧F quarter turn — **DEFERRED OUT OF S32 ON A MEASUREMENT. P2.**
+
+S23 deferred `f`/⇧F to §4b. S32 shipped **plain `F`** — the key, the Inspector button, the
+touch-HUD button and the snap guide — and deferred **⇧F**, because the quarter-turned state is
+**not representable in the ambient drag magnet's output space**, so the app destroys it on next
+touch.
+
+**The mechanism, from the shipped code.** `wallSeatFor` computes `th = normalizeAngle(thw + k·π)`
+for integer `k` (`placement.ts`), so under `DRAG_SEAT` the only reachable orientations are
+wall-PARALLEL. And `moveObjectTo` writes `rotation = seat.rotation` whenever ANY candidate is
+found — `seated` or not. So a piece left perpendicular by ⇧F is snapped back the moment it is
+dragged anywhere near a wall.
+
+**Measured against shipped `main`**, a piece placed flush and perpendicular on a 6 m wall, then
+put through one `DRAG_SEAT` frame:
+
+| piece | result |
+|---|---|
+| sofa 2.00 × 0.90 | magnet does not fire — the turn survives (the ONLY survivor) |
+| bed 2.00 × 1.60 | fires, gap 0.200, `seated=false` → **180°, turn destroyed** |
+| desk 1.40 × 0.80 | fires, gap 0.300, `seated=false` → **180°, destroyed WITHOUT the piece moving** |
+| table 1.20 × 0.90 | fires, gap 0.150, seated → **180°, destroyed** |
+| chair 0.90 × 0.60 | fires, gap 0.150, seated → **180°, destroyed** |
+
+4 of 5, and the desk case is the sharpest: the rotation is rewritten while the centre stays put,
+so there is not even a movement to explain it. Shipping a command the app silently undoes is worse
+than not shipping it — the S31 lesson, applied before the code landed rather than after.
+
+**The two options, neither of which is small.**
+1. Make `wallSeatFor` snap to the nearer of the TWO classes `{thw, thw + π/2}` with hysteresis,
+   i.e. leave an already-perpendicular piece alone. This also fixes the ambient magnet's existing
+   inability to respect a deliberately perpendicular piece — but it changes shipped S23 behaviour
+   that 38 tests pin, and needs its own corpus.
+2. Persist the intent as a per-object `seatTurn?: boolean`. A schema change, so it needs the
+   old-shape migration test the protocol requires.
+
+**Also settled in S32, so the next attempt need not re-derive it.** The correct place for the turn
+is a REFERENCE ANGLE, not an addend: `ref = quarterTurn ? thw + π/2 : thw`, with both `k` and the
+reconstruction measured against `ref`. C1 refuted the addend-on-the-input form; an addend on the
+OUTPUT is also wrong, because it leaves `k` measured against the unturned lattice and puts the
+second press exactly on `Math.round`'s ±0.5 tie — measured, `Math.round(0.5) === 1` and
+`Math.round(-0.5) === -0`, so ⇧F twice is either a literal no-op (7 of 18 sampled wall angles) or
+a footprint-identical 180° flip that still pushes an undo entry and jumps the Inspector slider.
+Write `ref` as a CONDITIONAL rather than `thw + turn` with `turn = 0`: `Math.atan2(-0, 1)` returns
+`-0`, `-0 + 0` is `+0`, and `normalizeAngle` preserves the sign of the zero — so the conditional
+makes "`quarterTurn: false` is byte-unchanged" structural rather than incidental.
+
+**And refuse the turn for a TV.** `bestspot.ts` scores `angle = |cos| >= 0.55 ? 1 : max(0.25, …)`,
+so a quarter-turned TV reads `|cos| = 0` and multiplies `tvViewQuality` by **0.25 across the whole
+room**. That is the exact collapse §1.2 cited as the reason the snap is nearest-π at all.
