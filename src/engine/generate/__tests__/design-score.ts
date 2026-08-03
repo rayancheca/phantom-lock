@@ -337,6 +337,8 @@ export function scoreDesign(scene: Scene, requested: number, locked: boolean): D
     }
   }
 
+  const zoneOf = (p: Vec2): string | null => zones.find((z) => inZone(p, z))?.name ?? null;
+
   const orientationMisses: string[] = [];
   let oriented = 0;
   let orientable = 0;
@@ -344,7 +346,14 @@ export function scoreDesign(scene: Scene, requested: number, locked: boolean): D
     if (o.kind !== 'rect') continue;
     for (const rule of ANCHORS) {
       if (!rule.piece.test(o.label)) continue;
-      const target = furniture.find((t) => rule.anchor.test(t.label));
+      // Same ROOM only. Scoring an armchair against a TV two rooms away asks
+      // whether it points through a wall at a screen it cannot see — the
+      // instrument would then reward turning it, which is the opposite of what
+      // a person wants. (The generator had exactly this bug; an instrument
+      // sharing the blindness would have hidden it.)
+      const target = furniture.find(
+        (t) => rule.anchor.test(t.label) && (zones.length === 0 || zoneOf(t.center) === zoneOf(o.center)),
+      );
       if (!target) break;
       orientable++;
       const toward = v.norm(v.sub(target.center, o.center));

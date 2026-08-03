@@ -110,8 +110,13 @@ export const ARCHETYPES: Record<ArchetypeId, Archetype> = {
       { name: 'Study', weight: 1, seat: 'none' },
       { name: 'Bedroom', weight: 1.2, seat: 'secondary' },
     ],
-    width: [10, 15],
-    depth: [7, 11],
+    // Trimmed in S33. At [10,15] x [7,11] the three cells averaged 38.5 m²
+    // each and a "living room" routinely came out at 55 m² — bigger than the
+    // whole 51.4 m² Maple Court apartment — which is why coverage read 8.1 %
+    // and the plans looked empty. Measured: density 0.300 -> 0.451 with the
+    // lock rate essentially unmoved (1.000 -> 0.983).
+    width: [9, 12.5],
+    depth: [6.5, 9],
     windowRate: 0.55,
     shape: ['rect', 'l-notch'],
   },
@@ -137,8 +142,12 @@ export const ARCHETYPES: Record<ArchetypeId, Archetype> = {
       { name: 'Living room', weight: 2, seat: 'primary' },
       { name: 'Kitchen', weight: 1, seat: 'none' },
     ],
-    width: [9, 14],
-    depth: [7, 10],
+    // Trimmed in S33 for the same reason as `loft`, and it was the worst case
+    // in the corpus: two cells over up to 140 m² put the median living room at
+    // 49.5 m² and coverage at 7.3 %. Measured: density 0.212 -> 0.404, lock
+    // unchanged at 1.000.
+    width: [8, 11],
+    depth: [6, 8.5],
     windowRate: 0.6,
     shape: ['rect', 'l-notch'],
   },

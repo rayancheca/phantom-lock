@@ -23,10 +23,31 @@ export interface Cell {
   h: number;
 }
 
-/** Cut fraction range — never closer than ~38 % to either edge. */
+/**
+ * Cut fraction range — never closer than ~38 % to either edge.
+ *
+ * Note the band actually in force is [0.38, 0.63], not [0.38, 0.62]:
+ * `lattice` computes `steps = Math.round((hi - lo) / step)` and
+ * `Math.round(0.24 / 0.05)` is 5, so `k = 5` yields 0.63. Verified over 200 000
+ * draws — the distinct fractions are {0.38, 0.43, 0.48, 0.53, 0.58, 0.63}.
+ * Harmless (0.63 is still a legal cut) and recorded because the documented band
+ * was not the band in force for two sessions. S33's `split` enumerates the
+ * lattice explicitly, so the overshoot no longer decides anything.
+ */
 const CUT_LO = 0.38;
 const CUT_HI = 0.62;
 const CUT_STEP = 0.1;
+
+/**
+ * The worst room aspect a cut may leave behind before it is only a fallback.
+ *
+ * 2.0 rather than a tighter figure because an exhaustive guillotine search over
+ * the same 300 multi-room envelopes shows 298 of them admit a <= 2:1 tiling —
+ * so this is nearly always satisfiable, and the two that are not (a 7.5 x 7.5
+ * envelope, best achievable 2.027) fall through to the squarest cut rather than
+ * failing.
+ */
+const ASPECT_BUDGET = 2.0;
 
 function area(c: Cell): number {
   return c.w * c.h;
@@ -46,9 +67,46 @@ function split(rnd: Rng, cell: Cell): [Cell, Cell] | null {
   const lo = Math.max(CUT_LO, MIN_ROOM_SIDE / span);
   const hi = Math.min(CUT_HI, 1 - MIN_ROOM_SIDE / span);
   if (hi <= lo) return null;
-  const frac = lattice(rnd, lo, hi, CUT_STEP / 2);
-  const at = Math.round(span * frac * 10) / 10;
-  if (at < MIN_ROOM_SIDE || span - at < MIN_ROOM_SIDE) return null;
+  // Draw randomly from the cuts that leave BOTH halves inside the aspect
+  // budget, rather than blind from the whole band.
+  //
+  // Blind, 10.4 % of the 960 rooms in the corpus came out worse than 2:1 and
+  // 20.4 % of DESIGNS contained one — always a named secondary room (Study
+  // 33.3 %, Guest bedroom 30.0 %), because the weight sort hands the last cell
+  // to the lowest-weight room. Nothing in the old `split` ever looked at the
+  // result: `vertical = cell.w >= cell.h` was the only pressure toward
+  // squareness and it is a per-cut heuristic that never inspects its own output.
+  //
+  // Always taking the SQUAREST cut was measured first and rejected: it fixes
+  // proportion (0.969 -> 0.999) and then collapses the design space, because the
+  // cut stops being a function of the seed at all — distinct room sets over 60
+  // seeds fell 58 -> 34 on `loft`, 60 -> 36 on `railroad`, 56 -> 38 on
+  // `one-bed`. Variety is most of what "generate a design" sells. Choosing at
+  // random among the ACCEPTABLE cuts keeps both.
+  const other = vertical ? cell.h : cell.w;
+  const worstAspect = (cut: number) => {
+    const a = Math.max(cut, other) / Math.min(cut, other);
+    const b = Math.max(span - cut, other) / Math.min(span - cut, other);
+    return Math.max(a, b);
+  };
+  const legal: number[] = [];
+  let fallback = -1;
+  let fallbackScore = Infinity;
+  for (let f = lo; f <= hi + 1e-9; f += CUT_STEP / 2) {
+    const cut = Math.round(span * f * 10) / 10;
+    if (cut < MIN_ROOM_SIDE || span - cut < MIN_ROOM_SIDE) continue;
+    const sc = worstAspect(cut);
+    if (sc <= ASPECT_BUDGET) legal.push(cut);
+    if (sc < fallbackScore) {
+      fallbackScore = sc;
+      fallback = cut;
+    }
+  }
+  // ONE draw either way, so every downstream draw is unmoved whichever branch
+  // is taken and the two are directly comparable seed for seed.
+  const roll = rnd();
+  if (legal.length === 0 && fallback < 0) return null;
+  const at = legal.length > 0 ? legal[Math.min(legal.length - 1, Math.floor(roll * legal.length))] : fallback;
   return vertical
     ? [
         { ...cell, w: at },

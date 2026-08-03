@@ -329,16 +329,25 @@ describe('bootstrapPersistence on OLD-SHAPE data', () => {
 describe('the export bundle carries the folder, by NAME', () => {
   it('names each layout’s project so it survives a trip to another store', () => {
     const base = defaultStore();
+    // A DISTINCTIVE project id. `createId` appends five random base-36
+    // characters, so a substring search for a two-character id like "p1" hits a
+    // scene id by chance roughly 1 in 1296 times per id — with ~25 ids in the
+    // bundle that is a ~2 % flake, and it was measured at 1 failure in 40 runs
+    // on `main` (S33). A test that fails 2 % of the time for a reason unrelated
+    // to what it checks is worse than no test: it trains you to re-run the gate.
+    const projectId = 'project-id-that-appears-nowhere-else';
     const store: LayoutStore = {
       ...base,
-      projects: [{ id: 'p1', name: 'Maple Court', createdAt: 1, order: 0 }],
-      layouts: [{ ...base.layouts[0], projectId: 'p1' }],
+      projects: [{ id: projectId, name: 'Maple Court', createdAt: 1, order: 0 }],
+      layouts: [{ ...base.layouts[0], projectId }],
     };
     const bundle = buildExportBundle(store);
     expect(bundle.version).toBe(2);
     expect(bundle.layouts[0].project).toBe('Maple Court');
     // ids are deliberately NOT exported — they are meaningless in another store
-    expect(JSON.stringify(bundle)).not.toContain('p1"');
+    expect(JSON.stringify(bundle)).not.toContain(projectId);
+    // …and the structured check that does not depend on a string search at all.
+    expect(Object.keys(bundle.layouts[0])).not.toContain('projectId');
   });
 });
 

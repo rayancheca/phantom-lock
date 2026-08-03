@@ -34,6 +34,7 @@
 import type { Scene, SceneObject, Vec2 } from '../types';
 import {
   DEFAULT_LISTENER_Z,
+  FURNITURE_PRESETS,
   activeListener,
   addListener,
   blankScene,
@@ -88,45 +89,156 @@ export interface GenerateResult {
 const ENVELOPE_STEP = 0.5;
 
 /**
+ * Floor coverage a generated room aims for.
+ *
+ * Measured off `apartmentScene()` — the hand-authored Maple Court demo, a model
+ * of the home the owner actually lives in: 14.8 m² of furniture on 51.4 m² of
+ * walkable floor, i.e. **28.9 %**. Aimed slightly under that because the budget
+ * is spent against a cell's RECTANGULAR area while the score is measured against
+ * the WALKABLE region, which is smaller once walls and door corridors are taken
+ * out.
+ *
+ * The old rule ordered a fixed handful of pieces from six area thresholds, four
+ * of which never fired on any of the 960 rooms in the corpus, and left `cabinet`
+ * and `round-table` unreachable — no cell could ever order them. Coverage came
+ * out at 7.3–18.1 % against the demo's 28.9 %, which is what "looks random /
+ * empty" actually measures: `great-room` had more than twice Maple Court's floor
+ * and FEWER pieces on it.
+ */
+const COVERAGE_TARGET = 0.24;
+
+/**
+ * What each kind of room is FOR, in two tiers.
+ *
+ * `core` is what the room's name promises and is ordered unconditionally — a
+ * bedroom has a bed at 12 m² and at 40 m². `fill` is then cycled, one piece at a
+ * time, until the coverage budget is met, so a big room gets more of the same
+ * programme rather than a different one. Each entry carries its own cap, because
+ * "logic and thought" means three plants and not eleven.
+ *
+ * Every id here MUST also appear in `arrange.ts` `PLACE_ORDER`: that list is
+ * what `arrangeFurniture` iterates, so a preset missing from it is silently
+ * dropped no matter how loudly the inventory asks for it.
+ */
+interface RoomProgramme {
+  core: string[];
+  fill: Array<{ id: string; max: number }>;
+}
+
+function programmeFor(name: string): RoomProgramme {
+  const n = name.toLowerCase();
+  if (/bed|sleep|guest|master/.test(n)) {
+    return {
+      core: ['bed', 'wardrobe'],
+      fill: [
+        { id: 'bookshelf', max: 2 },
+        { id: 'cabinet', max: 2 },
+        { id: 'armchair', max: 1 },
+        { id: 'plant', max: 2 },
+        { id: 'desk', max: 1 },
+      ],
+    };
+  }
+  if (/kitchen/.test(n)) {
+    return {
+      core: ['counter', 'dining'],
+      fill: [
+        { id: 'counter', max: 3 },
+        { id: 'cabinet', max: 2 },
+        { id: 'plant', max: 2 },
+      ],
+    };
+  }
+  if (/office|study|work|desk/.test(n)) {
+    return {
+      core: ['desk', 'bookshelf'],
+      fill: [
+        { id: 'cabinet', max: 2 },
+        { id: 'armchair', max: 1 },
+        { id: 'bookshelf', max: 3 },
+        { id: 'plant', max: 2 },
+      ],
+    };
+  }
+  // Living room, TV room, loft — the social space.
+  return {
+    core: ['sofa', 'tv'],
+    fill: [
+      { id: 'armchair', max: 2 },
+      { id: 'round-table', max: 1 },
+      { id: 'bookshelf', max: 2 },
+      { id: 'cabinet', max: 2 },
+      { id: 'dining', max: 1 },
+      { id: 'plant', max: 3 },
+      { id: 'sofa', max: 2 },
+    ],
+  };
+}
+
+/** Plan-view footprint of a preset, m². A circle is `w` across. */
+function footprintOf(presetId: string): number {
+  const p = FURNITURE_PRESETS.find((q) => q.id === presetId);
+  if (!p) return 0;
+  return p.kind === 'circle' ? Math.PI * (p.w / 2) ** 2 : p.w * p.h;
+}
+
+/**
  * Furniture for a set of cells, derived per ROOM and summed.
  *
- * Not `suggestInventory`, which reads the bounding BOX (`arrange.ts:498`
- * multiplies the full span) and therefore over-orders on any non-rectangular
- * plan — measured: a 12x10-bbox plan with a 30 m² floor reported 51 m² and
- * asked for 11 pieces, two of which were then dropped with "No spot survives
- * the rules". The generator knows its own cell areas, so it uses them.
+ * Not `suggestInventory`, which reads the bounding BOX (`arrange.ts` multiplies
+ * the full span) and therefore over-orders on any non-rectangular plan —
+ * measured: a 12x10-bbox plan with a 30 m² floor reported 51 m² and asked for 11
+ * pieces, two of which were then dropped with "No spot survives the rules". The
+ * generator knows its own cell areas, so it uses them.
  */
 export function inventoryFor(cells: Cell[]): ArrangeItem[] {
-  const counts = new Map<string, number>();
-  const want = (id: string, n: number) => {
-    if (n > 0) counts.set(id, (counts.get(id) ?? 0) + n);
-  };
+  const counts = new Map<string, { count: number; optional: boolean }>();
   let bedrooms = 0;
+
   for (const c of cells) {
-    const area = c.w * c.h;
-    const name = c.name.toLowerCase();
-    if (/bed|sleep|guest|master/.test(name)) {
-      bedrooms++;
-      want('bed', 1);
-      want('wardrobe', 1);
-      if (area > 12) want('bookshelf', 1);
-    } else if (/kitchen/.test(name)) {
-      want('counter', area > 8 ? 2 : 1);
-      if (area > 10) want('dining', 1);
-    } else if (/office|study|work|desk/.test(name)) {
-      want('desk', 1);
-      want('bookshelf', 1);
-    } else {
-      // Living room, TV room, loft — the social space.
-      want('sofa', 1);
-      want('tv', 1);
-      if (area > 16) want('armchair', 1);
-      if (area > 22) want('dining', 1);
-      if (area > 12) want('plant', 1);
+    const budget = c.w * c.h * COVERAGE_TARGET;
+    const programme = programmeFor(c.name);
+    if (/bed|sleep|guest|master/.test(c.name.toLowerCase())) bedrooms++;
+
+    // Per-CELL tallies: the caps are what one room may hold, not what the whole
+    // home may. Two bedrooms order two beds; one bedroom does not order two.
+    const here = new Map<string, number>();
+    let used = 0;
+    const take = (id: string, optional: boolean) => {
+      here.set(id, (here.get(id) ?? 0) + 1);
+      const prev = counts.get(id);
+      counts.set(id, {
+        count: (prev?.count ?? 0) + 1,
+        // A preset ordered by ANY room's core is required overall. Only a piece
+        // that is pure fill everywhere it appears may be quietly dropped.
+        optional: (prev?.optional ?? true) && optional,
+      });
+      used += footprintOf(id);
+    };
+
+    for (const id of programme.core) take(id, false);
+
+    // Cycle the fill list rather than exhausting each entry in turn, so a room
+    // gets variety before it gets a third bookshelf. Stops as soon as a whole
+    // pass adds nothing, which is what makes the loop total.
+    for (let pass = 0; pass < 8 && used < budget; pass++) {
+      let added = false;
+      for (const entry of programme.fill) {
+        if (used >= budget) break;
+        if ((here.get(entry.id) ?? 0) >= entry.max) continue;
+        take(entry.id, true);
+        added = true;
+      }
+      if (!added) break;
     }
   }
-  if (bedrooms === 0 && cells.length === 1) want('bed', 1); // a studio still sleeps
-  return [...counts].map(([presetId, count]) => ({ presetId, count }));
+
+  if (bedrooms === 0 && cells.length === 1) {
+    // A studio still sleeps — and that bed is a promise, not a filler.
+    const prev = counts.get('bed');
+    counts.set('bed', { count: (prev?.count ?? 0) + 1, optional: false });
+  }
+  return [...counts].map(([presetId, e]) => ({ presetId, count: e.count, optional: e.optional }));
 }
 
 /**
@@ -169,7 +281,7 @@ export function generateDesign(opts: GenerateOptions): GenerateResult {
   // Furnish BEFORE placing speakers — see the module header.
   const furniture = arrangeFurniture(scene, inventoryFor(cells));
   scene = { ...scene, objects: [...scene.objects, ...furniture.objects] };
-  const skipped = furniture.notes.filter((n) => /skipped/i.test(n));
+  const skipped = furniture.skipped;
 
   const tv = scene.objects.find((o): o is Extract<SceneObject, { kind: 'rect' }> =>
     o.kind === 'rect' && o.role === 'tv',

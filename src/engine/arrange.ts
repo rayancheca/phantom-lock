@@ -7,17 +7,62 @@ import * as v from './vec';
 export interface ArrangeItem {
   presetId: string;
   count: number;
+  /**
+   * Pieces ordered to FILL a room rather than to furnish it.
+   *
+   * A room's programme is a promise — a bedroom has a bed — and failing to place
+   * one is a defect worth telling the user about. The extra bookshelf ordered
+   * because the room still had floor left is an ambition, and a room that turns
+   * out to be full is the system working, not failing. Without the distinction a
+   * coverage-targeted inventory reports its own success as a problem: measured,
+   * ordering to a 26 % coverage budget took the "had nowhere to go" notice from
+   * 26.3 % of designs to 37.1 % while the designs themselves got markedly better.
+   *
+   * This cannot be used to hide a real failure. An optional piece that does not
+   * land still leaves the room emptier, and emptiness is measured directly by
+   * the `density` sub-score — so marking everything optional would move the
+   * complaint, not silence it.
+   */
+  optional?: boolean;
 }
 
 export interface ArrangeResult {
   objects: SceneObject[];
   notes: string[];
+  /**
+   * Required pieces that found no home, in prose, one per piece.
+   *
+   * Structured rather than left for the caller to recover by running a regex
+   * over `notes` — which is what `generateDesign` used to do (`/skipped/i`), a
+   * coupling that would have broken silently the moment any other note happened
+   * to contain the word.
+   */
+  skipped: string[];
 }
 
 /** Walkway margin kept around every placed piece. */
 const CLEARANCE = 0.35;
 /** Depth of the keep-clear corridor in front of every door. */
 const DOOR_CORRIDOR = 1.1;
+/**
+ * Floor kept clear around the listening seat.
+ *
+ * This app exists to put a stereo pair around that seat, and `generate/pair.ts`
+ * searches radii from 0.65 m to 1.8 m for one — so furniture standing there is
+ * furniture standing in the speakers' only home. It is not a hypothetical:
+ * S33 removed the armchair's bogus hard reject, 125 more armchairs got placed,
+ * and designs shipping with NO speakers went 46 -> 92 of 480 because the chair
+ * had taken the pair's floor. The fix restores the priority the app is about.
+ *
+ * 2.0 m, chosen by sweeping it against the coverage budget rather than by
+ * argument. Measured over the corpus at a 0.24 coverage target, designs with NO
+ * speakers: **1.6 m -> 82, 2.0 m -> 15, 2.4 m -> 14** of 480, against 46 before
+ * this session. 1.6 m looks like it should be enough (the pair reaches 1.8 m)
+ * and is not, because `pair.ts` `pointFree` rejects a speaker within
+ * `max(w,h)/2 + 0.3` of a piece's CENTRE — an armchair at 1.7 m still vetoes the
+ * ring. Past 2.0 m the lock stops improving and only floor is lost.
+ */
+const SEAT_CLEARANCE = 2.0;
 
 interface Ctx {
   scene: Scene;
@@ -136,40 +181,153 @@ interface Slot {
   facing: Vec2;
   wallLen: number;
   t: number;
+  /**
+   * True when the piece may CHOOSE its own heading — an open-floor slot.
+   *
+   * A wall slot determines both where a piece stands AND which way it points:
+   * the wall fixes the rotation and the inward normal fixes the facing. An open
+   * slot determines only the first, and pretending otherwise was a real bug for
+   * two sessions — see `openSlots`.
+   */
+  free: boolean;
 }
 
+/**
+ * The rotation that points a rect's front at `to`.
+ *
+ * "Front" is local +y, the same axis `inwardOf` reads, so a piece oriented by
+ * this function and one seated against a wall mean the same thing by the same
+ * convention. Returns null when the two points coincide, because the direction
+ * is then undefined and `v.norm` would hand back NaN — which propagates
+ * silently through every downstream score.
+ */
+export function faceToward(from: Vec2, to: Vec2): { rotation: number; facing: Vec2 } | null {
+  const d = v.sub(to, from);
+  if (Math.hypot(d.x, d.y) < 1e-9) return null;
+  const facing = v.norm(d);
+  return { rotation: Math.atan2(-facing.x, facing.y), facing };
+}
+
+/**
+ * Candidate positions against a wall, on EVERY side of it that is real floor.
+ *
+ * Until S33 this offered one side only: `inward` was flipped to point at the
+ * BUILDING centroid, so for an interior partition between two rooms the far
+ * room's face was permanently invisible to the arranger. Measured over the
+ * corpus, only **65.7 %** of floor-facing wall length was ever offered — every
+ * one of the 960 partitions had a dead face, which is a large part of why the
+ * rooms furthest from the centroid read as empty.
+ *
+ * The exterior shell is unaffected: its outward face is not walkable, so the
+ * `walkable.contains` test in `fits` rejects it and the slot costs one flood
+ * lookup. That is what makes "offer both and let `fits` decide" safe rather
+ * than a source of furniture outside the building.
+ */
 function wallSlots(ctx: Ctx, depth: number): Slot[] {
   const out: Slot[] = [];
   for (const wall of ctx.walls) {
     const len = v.dist(wall.a, wall.b);
     if (len < 1.0) continue;
     const dir = v.norm(v.sub(wall.b, wall.a));
-    let inward = v.perp(dir);
+    const perp = v.perp(dir);
     const mid = v.lerp(wall.a, wall.b, 0.5);
-    if (v.dot(inward, v.sub(ctx.centroid, mid)) < 0) inward = v.scale(inward, -1);
-    for (let t = 0.12; t <= 0.88; t += 0.076) {
-      const onWall = v.lerp(wall.a, wall.b, t);
-      out.push({
-        center: v.add(onWall, v.scale(inward, depth / 2 + 0.06)),
-        rotation: Math.atan2(dir.y, dir.x),
-        facing: inward,
-        wallLen: len,
-        t,
-      });
+    // The centroid-facing side FIRST, so that where both sides are floor and
+    // score equally the pre-S33 choice still wins and the diff stays small.
+    const towardCentroid = v.dot(perp, v.sub(ctx.centroid, mid)) < 0 ? v.scale(perp, -1) : perp;
+    const sides = [towardCentroid, v.scale(towardCentroid, -1)];
+    for (const inward of sides) {
+      const off = depth / 2 + 0.06;
+      // Skip a side with no floor behind it before generating 11 slots for it.
+      if (ctx.walkable && !ctx.walkable.contains(v.add(mid, v.scale(inward, off)))) continue;
+      for (let t = 0.12; t <= 0.88; t += 0.076) {
+        const onWall = v.lerp(wall.a, wall.b, t);
+        out.push({
+          center: v.add(onWall, v.scale(inward, off)),
+          rotation: Math.atan2(dir.y, dir.x),
+          facing: inward,
+          wallLen: len,
+          t,
+          free: false,
+        });
+      }
     }
   }
   return out;
 }
 
+/**
+ * Candidate positions on open floor.
+ *
+ * These carry NO heading. Until S33 every open slot was emitted with the
+ * CONSTANT world facing {x:0, y:-1} and `rotation: 0`, which had three
+ * consequences, all measured over 8 archetypes x 60 seeds:
+ *
+ *   - the armchair's cone test `dot(toTv, slot.facing) < 0.2 -> reject` reduced
+ *     to "is the TV NORTH of this point?", a property of which wall the TV
+ *     landed on and not of the slot at all. Skip rate 0/258 when the TV was
+ *     north of the room centre, **125/162 (77.2 %)** when it was south — which
+ *     is 125 of the 126 skipped pieces in the whole corpus, and the message the
+ *     owner screenshotted;
+ *   - the facing (0,-1) and the rotation 0 were not even consistent with each
+ *     other: rotation 0 puts a rect's front at (0,+1);
+ *   - every open-placed piece therefore shipped at rotation 0 and faced nothing.
+ *
+ * `placeOne` orients a free slot per PRESET before scoring it, so the cone tests
+ * became real questions instead of a compass reading.
+ */
 function openSlots(ctx: Ctx): Slot[] {
   const b = sceneBounds(ctx.scene);
   const out: Slot[] = [];
   for (let x = b.min.x + 0.6; x <= b.max.x - 0.6; x += 0.45) {
     for (let y = b.min.y + 0.6; y <= b.max.y - 0.6; y += 0.45) {
-      out.push({ center: { x, y }, rotation: 0, facing: { x: 0, y: -1 }, wallLen: 0, t: 0.5 });
+      out.push({ center: { x, y }, rotation: 0, facing: { x: 0, y: 1 }, wallLen: 0, t: 0.5, free: true });
     }
   }
   return out;
+}
+
+/**
+ * What an open-floor piece should point at, if anything.
+ *
+ * Only pieces with an unambiguous anchor are listed. A plant has no front, and
+ * inventing one would be motion without meaning.
+ */
+function openAnchor(ctx: Ctx, presetId: string, at: Vec2): Vec2 | null {
+  if (presetId !== 'armchair') return null;
+  const target = findRole(ctx, 'tv')?.center ?? findByLabel(ctx, 'Sofa')?.center ?? null;
+  if (!target) return null;
+  // ONLY an anchor in the same room. Without this a reading chair in the
+  // bedroom turns to face the living room's TV through a wall — visible on the
+  // contact sheet as chairs at arbitrary angles scattered through rooms that
+  // have no screen in them, which is precisely the "no logic and thought" the
+  // owner reported. A chair with no anchor of its own falls through to the
+  // axis-alignment branch and sits square to its room.
+  if (ctx.zones.length > 0 && zoneNameAt(ctx, at) !== zoneNameAt(ctx, target)) return null;
+  return target;
+}
+
+/**
+ * Give a free slot a real heading.
+ *
+ * A piece with an anchor turns to face it. A piece without one aligns its long
+ * axis with the zone it stands in — a dining table in a room that is deeper than
+ * it is wide should run the same way the room does, and `rotation: 0` for every
+ * open piece regardless of the room was the visible half of the same bug.
+ */
+function orientFree(ctx: Ctx, preset: FurniturePreset, slot: Slot): Slot {
+  const anchor = openAnchor(ctx, preset.id, slot.center);
+  if (anchor) {
+    const turn = faceToward(slot.center, anchor);
+    if (turn) return { ...slot, rotation: turn.rotation, facing: turn.facing };
+  }
+  // A circle has no long axis, so turning it is a no-op that only costs a
+  // different-looking `rotation` in the saved file.
+  if (preset.kind === 'circle' || preset.w === preset.h) return slot;
+  const zone = ctx.zones.find((z) => pointInRect(slot.center, z.rect));
+  if (zone && zone.rect.h > zone.rect.w) {
+    return { ...slot, rotation: Math.PI / 2, facing: { x: 1, y: 0 } };
+  }
+  return slot;
 }
 
 function minDistToPlaced(ctx: Ctx, p: Vec2): number {
@@ -260,7 +418,15 @@ const ZONE_AFFINITY: Record<string, RegExp> = {
   bed: /bed|sleep|master|guest/i,
   wardrobe: /bed|sleep|master|guest|closet|hall/i,
   counter: /kitchen/i,
-  dining: /kitchen|dining/i,
+  // `living|lounge|family` belongs here, and its absence was a self-inflicted
+  // mismatch rather than a preference: `inventoryFor` orders a dining table when
+  // a LIVING cell is over 22 m², and this rule then charged it -0.9 for standing
+  // in that same living room. Measured over the corpus, 404 of 524 dining tables
+  // were ordered that way and 53.9 % of multi-room dining placements ended up
+  // mismatched — 83 pushed into bedrooms and 18 into studies. Every other preset
+  // was under 5 %. A dining table in a living room is an open-plan flat; a dining
+  // table in a bedroom is the "no logic and thought" the owner reported.
+  dining: /kitchen|dining|living|lounge|family/i,
   sofa: /living|lounge|tv|family/i,
   tv: /living|lounge|tv|family|bed/i,
   armchair: /living|lounge|tv|family|read/i,
@@ -391,16 +557,22 @@ function scoreSlot(ctx: Ctx, preset: FurniturePreset, slot: Slot): Evaluated | n
       why.push('room to pull chairs out all round');
       break;
     }
-    case 'round-table': {
-      score -= v.dist(slot.center, ctx.centroid) * 0.25;
-      break;
-    }
     case 'wardrobe':
     case 'cabinet':
     case 'bookshelf': {
-      // Tall pieces must never steal a window's light…
-      if (winDist < Math.max(1.0, preset.w * 0.7)) return null;
-      why.push('keeps every window clear');
+      // Tall pieces should not steal a window's light — a heavy PENALTY, not a
+      // veto. As a veto this was the second-largest source of skipped pieces
+      // once the inventory started ordering to a coverage budget: a bookshelf is
+      // `core` for a study, `windowRate` puts windows on half the exterior
+      // edges, and in a small study no slot cleared 1 m from every window. 39 of
+      // 44 remaining skips were this one rule. A bookshelf beside a window is a
+      // compromise; a study with no bookshelf at all is a worse one.
+      const clear = Math.max(1.0, preset.w * 0.7);
+      if (winDist < clear) {
+        score -= 3.2 * (1 - winDist / clear);
+      } else {
+        why.push('keeps every window clear');
+      }
       // …and earn their keep acoustically at first-reflection points.
       if (ctx.reflections.length > 0 && nearest(ctx.reflections, slot.center) < 0.9) {
         score += 1.4;
@@ -409,12 +581,46 @@ function scoreSlot(ctx: Ctx, preset: FurniturePreset, slot: Slot): Evaluated | n
       break;
     }
     case 'armchair': {
+      // NO hard reject. The old `if (facing < 0.2) return null` was the single
+      // biggest defect in the generator, and not because 0.2 was too tight:
+      // `openSlots` gave every open slot the fixed world facing (0,-1), so the
+      // test asked which way NORTH was. Now `orientFree` has already turned the
+      // chair toward its anchor, `facing` is ~1 by construction, and what is
+      // left to decide is WHERE — which is a score, not a veto.
+      const sofa = findByLabel(ctx, 'Sofa');
       if (tv) {
-        const facing = v.dot(v.norm(v.sub(tv.center, slot.center)), slot.facing);
-        if (facing < 0.2) return null;
-        score += facing;
-        why.push('joins the conversation circle');
+        const d = v.dist(slot.center, tv.center);
+        // Close enough to watch, far enough not to be under it.
+        score += 1.4 - Math.abs(d - 2.8) * 0.45;
+        why.push(`${d.toFixed(1)} m from the screen`);
       }
+      if (sofa) {
+        const d = v.dist(slot.center, sofa.center);
+        // Conversation distance: a chair 4 m from the sofa is two seating areas.
+        score += Math.max(0, 1.2 - Math.abs(d - 2.0) * 0.7);
+        why.push('within talking distance of the sofa');
+        // …and never parked in the middle of the sofa's view of the screen.
+        if (tv) {
+          const toTv = v.sub(tv.center, sofa.center);
+          const span = v.len(toTv);
+          if (span > 0.1 && distToRay(slot.center, sofa.center, v.norm(toTv), span) < 0.9) {
+            score -= 2.6;
+          } else {
+            why.push('clear of the sofa-to-TV sightline');
+          }
+        }
+      }
+      break;
+    }
+    case 'round-table': {
+      // Reachable from the seating without being in the walkway.
+      const sofa = findByLabel(ctx, 'Sofa');
+      if (sofa) {
+        const d = v.dist(slot.center, sofa.center);
+        score += Math.max(0, 1.8 - Math.abs(d - 1.3) * 1.6);
+        why.push('within reach of the sofa');
+      }
+      score -= v.dist(slot.center, ctx.centroid) * 0.25;
       break;
     }
     case 'plant': {
@@ -441,12 +647,30 @@ function scoreSlot(ctx: Ctx, preset: FurniturePreset, slot: Slot): Evaluated | n
   return { score, why };
 }
 
-function placeOne(ctx: Ctx, preset: FurniturePreset, notes: string[]): boolean {
+function placeOne(
+  ctx: Ctx,
+  preset: FurniturePreset,
+  notes: string[],
+  skipped: string[],
+  optional: boolean,
+): boolean {
   const isOpen = preset.place === 'open';
-  const slots = isOpen ? openSlots(ctx) : wallSlots(ctx, preset.h);
+  const raw = isOpen ? openSlots(ctx) : wallSlots(ctx, preset.h);
+
+  const seat = ctx.scene.listener.pos;
 
   let best: { slot: Slot; eval: Evaluated } | null = null;
-  for (const slot of slots) {
+  for (const candidateSlot of raw) {
+    // Open floor near the seat belongs to the stereo pair — see SEAT_CLEARANCE.
+    // Scoped to OPEN pieces on purpose: a wall piece stands against a wall,
+    // where `pair.ts` cannot put a speaker anyway, and applying the same radius
+    // to wall slots empties the `office` archetype outright (a 4 x 3.5 room puts
+    // every wall slot 1.29 m from a centred seat).
+    if (isOpen && v.dist(candidateSlot.center, seat) < SEAT_CLEARANCE) continue;
+    // Orient BEFORE the fit test, not after: a rotated rect sweeps a different
+    // footprint, so testing the unrotated one and then storing the rotated one
+    // would let a piece be committed into a space it does not fit.
+    const slot = candidateSlot.free ? orientFree(ctx, preset, candidateSlot) : candidateSlot;
     const candidate: RectObj | null =
       preset.kind === 'circle'
         ? asRect({
@@ -466,7 +690,13 @@ function placeOne(ctx: Ctx, preset: FurniturePreset, notes: string[]): boolean {
   }
 
   if (!best) {
-    notes.push(`No spot survives the rules for a ${preset.label.toLowerCase()} — it was skipped.`);
+    // An OPTIONAL piece that does not fit means the room filled up, which is the
+    // budget working. Only a promised piece is worth interrupting the user for.
+    if (!optional) {
+      const note = `No spot survives the rules for a ${preset.label.toLowerCase()} — it was skipped.`;
+      notes.push(note);
+      skipped.push(note);
+    }
     return false;
   }
   const placed: SceneObject =
@@ -566,7 +796,11 @@ export function arrangeFurniture(scene: Scene, items: ArrangeItem[]): ArrangeRes
   const walls = scene.objects.filter((o): o is WallObj => o.kind === 'wall');
   const notes: string[] = [];
   if (walls.length < 3) {
-    return { objects: [], notes: ['Build the room first — the arranger anchors furniture to walls.'] };
+    return {
+      objects: [],
+      notes: ['Build the room first — the arranger anchors furniture to walls.'],
+      skipped: [],
+    };
   }
   const mids = walls.map((w) => v.lerp(w.a, w.b, 0.5));
   const centroid = v.scale(
@@ -612,12 +846,14 @@ export function arrangeFurniture(scene: Scene, items: ArrangeItem[]): ArrangeRes
     ),
   };
 
-  const queue: FurniturePreset[] = [];
+  const queue: Array<{ preset: FurniturePreset; optional: boolean }> = [];
   for (const id of PLACE_ORDER) {
     const item = items.find((i) => i.presetId === id);
     const preset = FURNITURE_PRESETS.find((p) => p.id === id);
     if (!item || !preset || item.count <= 0) continue;
-    for (let i = 0; i < Math.min(6, item.count); i++) queue.push(preset);
+    for (let i = 0; i < Math.min(6, item.count); i++) {
+      queue.push({ preset, optional: item.optional === true });
+    }
   }
   for (const item of items) {
     const preset = FURNITURE_PRESETS.find((p) => p.id === item.presetId);
@@ -626,12 +862,13 @@ export function arrangeFurniture(scene: Scene, items: ArrangeItem[]): ArrangeRes
     }
   }
   if (queue.length === 0) {
-    return { objects: [], notes: [...notes, 'Pick at least one piece of furniture to arrange.'] };
+    return { objects: [], notes: [...notes, 'Pick at least one piece of furniture to arrange.'], skipped: [] };
   }
 
+  const skipped: string[] = [];
   let placedCount = 0;
-  for (const preset of queue) {
-    if (placeOne(ctx, preset, notes)) placedCount += 1;
+  for (const { preset, optional } of queue) {
+    if (placeOne(ctx, preset, notes, skipped, optional)) placedCount += 1;
   }
   if (placedCount > 0) {
     notes.unshift(
@@ -639,5 +876,5 @@ export function arrangeFurniture(scene: Scene, items: ArrangeItem[]): ArrangeRes
     );
     notes.push('This is a starter arrangement — drag anything to taste.');
   }
-  return { objects: ctx.placed, notes };
+  return { objects: ctx.placed, notes, skipped };
 }

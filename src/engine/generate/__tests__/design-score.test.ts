@@ -14,7 +14,6 @@ import { describe, expect, it } from 'vitest';
 import {
   ASPECT_MAX,
   DENSITY_ANCHOR,
-  DENSITY_TOL,
   FACING_MIN,
   band,
   frontOf,

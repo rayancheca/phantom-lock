@@ -18,11 +18,14 @@ import { designName } from '../names';
 import {
   MAX_IMPORT_SPAN,
   activeListener,
+  blankScene,
   importRejection,
+  rectRoomWalls,
   sanitizeScene,
   sceneBounds,
   sceneListeners,
 } from '../../scene';
+import { arrangeFurniture } from '../../arrange';
 import { traceScene } from '../../raytrace';
 import { rectCorners } from '../../geometry';
 import { makeOpening } from '../../../components/canvas/interaction';
@@ -169,6 +172,57 @@ describe('tileEnvelope', () => {
     const cells = tileEnvelope(mulberry32(1), 5, 4, rooms);
     expect(cells.length).toBeLessThan(rooms.length);
     for (const c of cells) expect(Math.min(c.w, c.h)).toBeGreaterThanOrEqual(MIN_ROOM_SIDE - 1e-9);
+  });
+
+  it('S33: keeps rooms inside the aspect budget', () => {
+    // Blind cuts left 10.4 % of rooms worse than 2:1 and put one in 20.4 % of
+    // designs — always a named secondary room, because the weight sort hands the
+    // last cell to the lowest-weight spec.
+    let worse = 0;
+    let rooms = 0;
+    for (const id of ARCHETYPE_IDS) {
+      for (const seed of SEEDS) {
+        const arch = ARCHETYPES[id];
+        const rnd = mulberry32(seed);
+        designName(rnd, arch);
+        const w = lattice(rnd, arch.width[0], arch.width[1], 0.5);
+        const h = lattice(rnd, arch.depth[0], arch.depth[1], 0.5);
+        for (const c of tileEnvelope(rnd, w, h, arch.rooms)) {
+          rooms++;
+          if (Math.max(c.w, c.h) / Math.min(c.w, c.h) > 2.4) worse++;
+        }
+      }
+    }
+    // Guard that the sweep is non-vacuous. 24 seeds x 8 archetypes over 1-3
+    // rooms each gives 384; asserting a number I had not measured is how a
+    // "passing" test ends up sweeping nothing.
+    expect(rooms).toBeGreaterThan(300);
+    expect(worse / rooms).toBeLessThan(0.01);
+  });
+
+  it('S33: does NOT collapse the design space to one cut per envelope', () => {
+    // Always taking the squarest cut fixes the aspect and destroys the variety
+    // that is most of what "generate a design" sells — measured, distinct room
+    // sets over 60 seeds fell 58 -> 34 on `loft` and 60 -> 36 on `railroad`.
+    // Drawing at random among the ACCEPTABLE cuts keeps both, and this is the
+    // assertion that stops a later "simplification" back to argmax.
+    for (const id of ['loft', 'railroad', 'two-bed'] as const) {
+      const arch = ARCHETYPES[id];
+      const shapes = new Set<string>();
+      for (const seed of SEEDS) {
+        const rnd = mulberry32(seed);
+        designName(rnd, arch);
+        const w = lattice(rnd, arch.width[0], arch.width[1], 0.5);
+        const h = lattice(rnd, arch.depth[0], arch.depth[1], 0.5);
+        shapes.add(
+          tileEnvelope(rnd, w, h, arch.rooms)
+            .map((c) => `${c.name}:${c.w.toFixed(2)}x${c.h.toFixed(2)}`)
+            .sort()
+            .join('|'),
+        );
+      }
+      expect(shapes.size, id).toBeGreaterThan(SEEDS.length * 0.7);
+    }
   });
 
   it('gives the heaviest room the largest cell', () => {
@@ -594,8 +648,39 @@ describe('generateDesign', () => {
         }
       }
     }
-    // If this ever stops being true the reporting is vacuous and should go.
-    expect(sawSkip).toBe(true);
+    // S22 asserted `sawSkip === true` here, i.e. it required the CORPUS to keep
+    // failing in order to prove the plumbing worked. S33 took skips from 26.3 %
+    // of designs to 4.4 %, so that assertion was on its way to becoming a
+    // demand that the generator stay broken (the S27 lesson: improving a
+    // detector disarms the controls written against its failures). The plumbing
+    // is now proved by CONSTRUCTION instead, below, and the corpus is free to
+    // reach zero.
+    void sawSkip;
+  });
+
+  it('the skip REPORTING is proved by construction, not by the corpus failing', () => {
+    // A 3.2 x 3.2 room with a 3 x 3 block in it: a bed cannot fit anywhere.
+    const s = blankScene();
+    const scene = {
+      ...s,
+      listener: { ...s.listener, pos: { x: 1.6, y: 1.6 } },
+      objects: [
+        ...rectRoomWalls(3.2, 3.2),
+        {
+          id: 'blocker', kind: 'rect' as const, center: { x: 1.6, y: 1.6 },
+          w: 3, h: 3, rotation: 0, absorption: 0.1, label: 'Block',
+          role: 'furniture' as const, height: 1,
+        },
+      ],
+    };
+    const required = arrangeFurniture(scene, [{ presetId: 'bed', count: 1 }]);
+    expect(required.skipped).toHaveLength(1);
+    expect(required.skipped[0]).toMatch(/skipped/i);
+
+    // …and the same piece marked OPTIONAL is silent, which is what lets the
+    // inventory order to a coverage budget without crying wolf.
+    const optional = arrangeFurniture(scene, [{ presetId: 'bed', count: 1, optional: true }]);
+    expect(optional.skipped).toEqual([]);
   });
 
   it('survives every archetype without throwing, at many seeds', () => {
@@ -645,5 +730,124 @@ describe('names', () => {
     expect(uniqueName('Quiet studio', [])).toBe('Quiet studio');
     expect(uniqueName('Quiet studio', ['Quiet studio'])).toBe('Quiet studio 2');
     expect(uniqueName('Quiet studio', ['Quiet studio', 'Quiet studio 2'])).toBe('Quiet studio 3');
+  });
+});
+
+describe('S33: the inventory is driven by a coverage BUDGET', () => {
+  const total = (xs: ReturnType<typeof inventoryFor>) => xs.reduce((a, i) => a + i.count, 0);
+
+  it('scales with room area rather than stepping over a handful of thresholds', () => {
+    // The old rule read six area thresholds, four of which never fired on any
+    // of the 960 rooms in the corpus, so a 20 m² and a 50 m² living room were
+    // furnished almost identically. Coverage came out at 7.3-18.1 % against the
+    // hand-authored demo's 28.9 %.
+    const areas = [16, 25, 36, 49].map((a) => {
+      const side = Math.sqrt(a);
+      return total(inventoryFor([{ name: 'Living room', x: 0, y: 0, w: side, h: side }]));
+    });
+    for (let i = 1; i < areas.length; i++) {
+      expect(areas[i], `area step ${i}`).toBeGreaterThan(areas[i - 1]);
+    }
+  });
+
+  it('orders the two presets that were previously UNREACHABLE', () => {
+    // No cell could ever order `cabinet` or `round-table` — they existed in the
+    // palette and in PLACE_ORDER and the generator never asked for either.
+    const ids = new Set(
+      inventoryFor([{ name: 'Living room', x: 0, y: 0, w: 7, h: 7 }]).map((i) => i.presetId),
+    );
+    expect(ids.has('cabinet') || ids.has('round-table')).toBe(true);
+  });
+
+  it("a room's PROGRAMME is required and its FILL is optional", () => {
+    const items = inventoryFor([{ name: 'Bedroom', x: 0, y: 0, w: 7, h: 7 }]);
+    const by = Object.fromEntries(items.map((i) => [i.presetId, i]));
+    // A bedroom promises a bed and a wardrobe.
+    expect(by.bed.optional).toBe(false);
+    expect(by.wardrobe.optional).toBe(false);
+    // Anything ordered only to use up the remaining floor is optional.
+    const fill = items.filter((i) => i.presetId !== 'bed' && i.presetId !== 'wardrobe');
+    expect(fill.length).toBeGreaterThan(0);
+    for (const f of fill) expect(f.optional, f.presetId).toBe(true);
+  });
+
+  it('a preset that is CORE anywhere stays required everywhere', () => {
+    // `desk` is fill for a bedroom and core for a study. Summed across both it
+    // must come out required, or a study could silently lose its desk.
+    const items = inventoryFor([
+      { name: 'Bedroom', x: 0, y: 0, w: 7, h: 7 },
+      { name: 'Study', x: 7, y: 0, w: 5, h: 5 },
+    ]);
+    const desk = items.find((i) => i.presetId === 'desk');
+    expect(desk).toBeDefined();
+    expect(desk!.optional).toBe(false);
+  });
+
+  it('caps a room rather than filling it with eleven plants', () => {
+    const items = inventoryFor([{ name: 'Living room', x: 0, y: 0, w: 12, h: 12 }]);
+    for (const i of items) expect(i.count, i.presetId).toBeLessThanOrEqual(6);
+    const plants = items.find((i) => i.presetId === 'plant');
+    expect(plants?.count ?? 0).toBeLessThanOrEqual(3);
+  });
+
+  it('every id it can order is in PLACE_ORDER, or the arranger drops it silently', () => {
+    // `arrangeFurniture` iterates PLACE_ORDER, not `items` — a preset missing
+    // from that list is never queued no matter how loudly the inventory asks.
+    const asked = new Set<string>();
+    for (const name of ['Living room', 'Bedroom', 'Kitchen', 'Study', 'TV room', 'Office']) {
+      for (const size of [4, 7, 10]) {
+        for (const i of inventoryFor([{ name, x: 0, y: 0, w: size, h: size }])) asked.add(i.presetId);
+      }
+    }
+    const scene = {
+      ...blankScene(),
+      objects: rectRoomWalls(30, 30),
+    };
+    for (const id of asked) {
+      const res = arrangeFurniture(
+        { ...scene, listener: { ...scene.listener, pos: { x: 15, y: 15 } } },
+        [{ presetId: id, count: 1 }],
+      );
+      const placedOrReported = res.objects.length > 0 || res.skipped.length > 0;
+      expect(placedOrReported, `${id} is never queued — missing from PLACE_ORDER?`).toBe(true);
+    }
+  });
+});
+
+describe('S33: the corpus-wide quality floors', () => {
+  it('places what it promises — under 10 % of designs report a skipped piece', () => {
+    // Measured 26.3 % before S33 and 4.4 % after. The floor is set with room to
+    // retune, but a return to the old regime turns this red.
+    let withSkip = 0;
+    let n = 0;
+    for (const id of ARCHETYPE_IDS) {
+      for (const seed of SEEDS) {
+        n++;
+        if (design(id, seed).skipped.length > 0) withSkip++;
+      }
+    }
+    expect(withSkip / n).toBeLessThan(0.1);
+  });
+
+  it('no archetype furnishes a room to less than a tenth of its floor', () => {
+    // The "looks empty / random" complaint, as a number. `great-room` measured
+    // 7.3 % and `loft` 8.1 % before S33; both clear 18 % now. The floor is well
+    // under that so a retune has room, but a collapse is caught.
+    for (const id of ARCHETYPE_IDS) {
+      let coverage = 0;
+      for (const seed of SEEDS) {
+        const r = design(id, seed);
+        const furniture = r.scene.objects.filter(
+          (o) => o.kind === 'circle' || (o.kind === 'rect' && (o.role === 'furniture' || o.role === 'tv')),
+        );
+        const area = furniture.reduce(
+          (a, o) => a + (o.kind === 'circle' ? Math.PI * o.r * o.r : o.kind === 'rect' ? o.w * o.h : 0),
+          0,
+        );
+        const floor = regionOf(r.scene, r.scene.listener.pos, { doorsBlock: false }).area;
+        coverage += area / Math.max(1, floor);
+      }
+      expect(coverage / SEEDS.length, id).toBeGreaterThan(0.1);
+    }
   });
 });
