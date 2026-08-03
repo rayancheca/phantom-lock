@@ -47,15 +47,7 @@ import { repaintOnFontLoad } from './font-ready';
 // SNAP_STEP and the placement primitives are shared with the KEYBOARD path, so
 // there is exactly one definition of each (S7). `surfaceHeightAt` used to be a
 // closure here even though it only ever read `scene.objects`.
-import {
-  DRAG_SEAT,
-  SNAP_STEP,
-  bandRect,
-  moveObjectTo,
-  placeSpeakerAt,
-  planAxis,
-  surfaceHeightAt,
-} from './placement';
+import { DRAG_SEAT, SNAP_STEP, moveObjectTo, placeSpeakerAt, surfaceHeightAt } from './placement';
 import { CANVAS_HELP } from './canvas-help';
 import './sim-canvas.css';
 const MIN_SCALE = 8;
@@ -1031,22 +1023,13 @@ export default function SimCanvas({
     const a = drag.anchor;
     const b = snap(p);
     if (drag.tool === 'rect' || drag.tool === 'room') {
-      // Rubber-band in the PLAN's frame, so a box dragged on a building that is
-      // not square to the world comes out parallel to its walls.
-      //
-      // Deliberately NOT for the `room` tool: that commits through `onRoomDrawn`
-      // into a `RoomLabel`, which has no rotation field at all, so a rotated
-      // preview there would promise something the commit cannot keep.
-      //
-      // At axis 0 this is BIT-IDENTICAL to the old `Math.abs(b.x - a.x)` form —
-      // `d.x * 1 + d.y * 0` is `d.x` — and `planAxis` returns EXACTLY 0 on a
-      // Manhattan plan and `null` on a scene with no walls. So a square plan is
-      // untouched by construction rather than by a tested coincidence.
-      const band = bandRect(a, b, drag.tool === 'room' ? 0 : (planAxis(cur.objects) ?? 0));
       setPreview({
         id: 'preview',
         kind: 'rect',
-        ...band,
+        center: v.lerp(a, b, 0.5),
+        w: Math.abs(b.x - a.x),
+        h: Math.abs(b.y - a.y),
+        rotation: 0,
         absorption: 0.3,
         label: drag.tool === 'room' ? 'Area' : 'Object',
         role: 'furniture',

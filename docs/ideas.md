@@ -430,9 +430,63 @@ annihilated by it (a literal no-op on 13/22/37/68° walls, a footprint-identical
 the rest). Until §4b lands, the escape for a deliberately perpendicular piece is Shift-drag,
 which holds `rot0` exactly — real, and documented rather than hidden.
 
-Also deferred: **creation-time alignment**. `App.tsx:446` and `SimCanvas.tsx:1015` both
-hardcode `rotation: 0`, so on a skewed plan every new rect still arrives crooked before any
-drag. Same helper, ~2 more call sites, probably the next-biggest everyday win.
+See **§4c** below: creation-time alignment was BUILT and REVERTED in S31, and §4c now carries
+the measurements and the spec.
+
+---
+
+### 4c. Creation-time alignment — **BUILT, MEASURED AND REVERTED in S31. P1, and now fully specified.**
+
+`App.tsx` `addPreset` and `SimCanvas.tsx`'s draw preview both hardcode `rotation: 0`, so on a
+building not square to the world every new rect arrives crooked — and the S23 magnet only fires
+within `WALL_ALIGN_GAP_M` (0.35 m) of a wall, so a piece dropped in the middle of a room is never
+straightened by anything. Real on the shipped demo: `apartmentScene()` measures **-12.83°**.
+
+S31 implemented it (`planAxis` + `bandRect` in `canvas/placement.ts`, 14 tests, six negative
+controls all caught, live-verified end to end — both paths persisted -12.829° through IndexedDB and
+the canvas pill read `∠-13°`) and then **reverted it**, because the self-review asked the question
+the tests did not: *is the axis stable?*
+
+**WHY IT WAS REVERTED — the three measurements any next attempt must answer.**
+
+1. **The axis is BISTABLE on the only real plan.** Maple Court has two wall populations — 12.358 m
+   folded to 77.75° and 7.840 m to 0.25° — and `dominantAngle` is winner-take-all over 0.5° bins.
+   Measured: **one ordinary 4.6 m wall drawn square flips the answer from -12.829° to exactly
+   0.000°**, as does one "Add a room…", as does deleting the 5.66 m wall. **Four of the owner's six
+   layouts are this plan.** The user then gets two objects 12.83° apart from the same gesture,
+   seconds apart, with nothing on screen to explain it. A margin gate does not rescue it: the true
+   margin is 12.358/7.840 = **1.58x**, so a 1.5x gate still flips on a 4.5 m edit and a 2x gate
+   returns null on the one plan the feature exists for. Structural direction: `addRoomShell` and the
+   wall tool both emit world-square walls, so the estimate is dragged toward 0 as the user builds.
+2. **The rubber band breaks Snap.** Endpoints snap to the WORLD 0.05 m grid while `w`/`h` become
+   projections onto a rotated axis, which are multiples of nothing. Measured on Maple Court: a
+   2.00 x 1.00 drag reads **1.728 x 1.419** in the Inspector and `1.73 x 1.42 m` on the canvas pill.
+   Any fix must snap in the PLAN's frame, not the world's.
+3. **`arrange.ts:169` is a THIRD creation site.** `openSlots` hardcodes `rotation: 0`, so with the
+   other two fixed, "Decide for me" places a Dining table at 0.000° beside a palette sofa at
+   -12.83° (measured: Sofa -11.725° via `wallSlots`, Dining table 0.000° via `openSlots`).
+   Secondary: `fits()` is an SAT test over `rectCorners`, so a world-axis table also fails to fit in
+   skewed rooms where an aligned one would, and the arranger reports "No spot survives the rules".
+
+**Also true and worth keeping from the S31 attempt** (all measured, so the next session need not
+re-derive): `planAxis` returns **exactly 0** on a Manhattan plan — verified with `Object.is` over
+525 synthetic shells (origins to 1e21, spans 1e-2 to 400 m), 600 walls built through the app's real
+paths, and all 192 generated designs — so a square plan is untouched by construction. `bandRect` at
+axis 0 is bit-identical to the arithmetic it replaced (0 mismatches in 200 000 randomised drags) and
+`a`/`b` stay genuinely opposite corners (worst error 2.16e-14). Cost is 48 µs at 500 walls, 2.6 % of
+a frame. A square plan keeps 0 even with two 7 m diagonals; only a diagonal longer than the whole
+perimeter flips it. `planAxis` can return **NaN** on a hand-crafted store with ≥50 walls of ~1e308
+length, and `?? 0` does not catch NaN — `sanitizeScene` then silently DROPS the object; guard with
+`Number.isFinite`, not `??`.
+
+**Acceptance for the next attempt.** A stability rule stated and calibrated against an ENUMERATED
+set of real layouts (the owner's six, plus the generated corpus), such that no single ordinary edit
+— one wall, one "Add a room…", one delete — changes the axis · Snap produces round dimensions in the
+plan's frame · all THREE creation sites agree (`addPreset`, the draw preview, `arrange.ts`
+`openSlots`) · a test on each call site, including one that catches a rotated Area preview (deleting
+the `room` exemption currently leaves the suite green) · the NaN guard · live-verified on the demo.
+Worth considering instead of a global estimate: a per-layout STORED axis the user sets once, which
+removes the instability by construction rather than by threshold.
 
 ---
 
