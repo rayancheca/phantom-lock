@@ -14,7 +14,7 @@ effort — a small high-value item beats a large one.
 | 13d | ✅ **S27's fix had a MIRROR regression** — **DONE S28** (both threshold rules kept as candidates; polarity case REFUSED → 14/16/26 walls live) | ~~P0~~ done | — |
 | 13b | ✅ **Detection's verdict was unstable under a tone curve** — **DONE S27, LANDED S28** (owner 38/138 → 0/138; corpus 94.82 % → 95.48 %) | ~~P1~~ done | — |
 | 14 | **Gallery home screen (owner-requested)** — ✅ **DONE S29**: flat grid, folders as tiles, drag to merge/reorder, persisted arrangement. Residuals below. | ~~P1~~ done | — |
-| 13e | **The refusal gates accept images with no floorplan** — a page of furniture OUTLINES is offered 27/27 at confidence 1.00. Pre-existing on `main`; no threshold rule can reach it. | **P1** | ½–1 session |
+| 13e | **REFUTED AT THIS SEAM (S31)** — no function of the detected segments separates a floorplan from furniture outlines; proven three ways and pinned. Redirected to metric scale, which needs a calibrated-scale flow first. | P2 | 1 session |
 | 1 | ✅ **Auto-detect walls accuracy overhaul** — **DONE S22** (52.1 % → 95.6 %, and it refuses) | ~~P0~~ done | — |
 | 2 | ✅ **Grid-loop iteration cap** — **DONE S18** (safety half; slowness half → 2b) | ~~P0~~ done | — |
 | 2b | ✅ **Bound the reflection search** (`bestReflectionDb`) — **DONE S19** (50-room 13.7 s → ~0.5 s) | ~~P1~~ done | — |
@@ -751,41 +751,66 @@ against `MEAN_FLOOR` 0.92.
 Evidence: `docs/sessions/S28/bench/` (reproduction, adjudication, negative control) and
 `docs/sessions/S28/shots/`.
 
-### 13e. The refusal gates accept images with no floorplan — **P1, pre-existing, and not reachable from the threshold**
+### 13e. The refusal gates accept images with no floorplan — **REFUTED AT THIS SEAM (S31). Closed as specified; redirected below.**
 
-Surfaced while censusing S28's null cost, and it is **older and larger than anything S28 touched** —
-`main`, the S27 engine and the S28 engine accept these identically, so no threshold rule can reach
-them. They live in `vision/quality.ts`.
+**The finding stands; the diagnosis was wrong.** A page of four thin furniture OUTLINES really is
+offered 27/27 at structure up to 1.000 and confidence 1.00, on `main`, on S27 and on S28 alike. What
+three sessions of this entry assumed — that `vision/quality.ts` is too loose and needs a fourth
+signal — is false. S31 measured it. **No function of the detected segments can separate the two
+populations**, and the reason is structural rather than a matter of tuning.
 
-- **A page of thin furniture OUTLINES** — four rectangles, no floorplan — is offered in **27/27**
-  readings (stroke {3,5,7} × tone {26,90,150} × 3 UI levels) at structure up to **1.000** and
-  confidence **1.00**. A rectangle's corners meet, and `structureScore` measures exactly that.
-- **A null whose two tone populations EACH form joined corners** (a light thick shelf run plus a thin
-  dark one) leaks **27/27** on all three engines, up to 9 walls at structure 0.813, confidence 1.00.
-- `no-plan-lines` **repainted in a light-ink palette** measures structure 0.261–0.346 with support
-  1.000 and total length 6.5–6.8× maxDim — every feature measured sits inside the legitimate range,
-  and a rotated poche plan is indistinguishable from it.
-- The **worst single offer** found is `no-plan-lines` + grey bars at luminance 120 over 20 % of the
-  page at gamma 0.70: **13 walls at structure 0.846 and confidence 1.00**, at both Careful and
-  Thorough. Note this one is INCUMBENT-routed, i.e. present on the S27 engine as well — an earlier
-  draft of this section named a 3-wall / 0.667 / 93 % case, which is only the worst *challenger*-routed
-  leak and understates the user-facing harm by 4–6× in wall count.
+The proposed fourth signal was COHESION, in every formulation that could be constructed: length in
+the largest connected component, its bounding-box span, footprint containment, enclosure by flood
+fill, cycle counts, reach-within-D, page-relative variants — 18 in all. Every one overlaps the
+protected population.
 
-The severity split is worth keeping: censused over 124 constructions × 3 levels, the **86 pre-existing**
-accepted cells have median structure 0.750 / confidence 0.975 and **52 of 86 reach confidence ≥ 0.90**,
-while the cells S28 hands back are the quiet kind (median 0.318 / 0.759, 1 of 19 at ≥ 0.90). The loud
-holes are the old ones.
+- **THE THEOREM.** Each is a ratio `(property of the largest component) / (the same property of all
+  segments)`, so on a ONE-COMPONENT reading it is identically **1.000** whatever the image depicts.
+  Pushing the furniture boxes together until their edges touch reaches that for free. It is the same
+  blind spot as `structure`, one level up: `structure` fails because a closed box satisfies a local
+  endpoint test perfectly; the cohesion family fails because a closed box *is* a single component.
+- **THE INVERSION.** A legitimate terrace of three detached dwellings scores 0.333 where a tight
+  furniture cluster scores 0.522. A detached duplex scores 0.500 against the same 0.522. Ordinary
+  drawings, the wrong way round.
+- **THE OWNER'S OWN PLAN.** With no tone perturbation at all — merely photographed smaller — it
+  reaches span **0.347**, *below* the attack family's minimum of 0.374; at a 5 % resample it already
+  sits inside the attack band. The statistic is bistable rather than drifting: a 12.5 % scale change
+  moves `apartment-rotated` from 0.566 to 0.873, a swing **3.6x the entire margin**, as the shell
+  flips between arriving in one piece and two.
+- **SIZE ON THE PAGE CARRIES NOTHING.** `two-room` — a required-accept corpus fixture, floor 0.95 —
+  is geometrically *two rectangles sharing a wall*. Shrunk to 60 %, 45 %, 45 %-in-a-corner and 30 %
+  it reads **identically** (structure 0.833, confidence 1.00, support 1.000, explained 1.000). So
+  "two boxes pushed together" is a required-accept drawing at every size.
+- **THE NAIVE FIX WAS BUILT AND SWEPT**, in a throwaway tree: a cohesion floor breaks 4 tests in
+  `detect.test.ts` at 0.35, 8 at 0.45 and 11 at 0.55, refusing `apartment-rotated` and
+  `oblique-survey` outright. Even 0.35 — far under the 0.522 needed to reach the tight cluster —
+  already refuses a plan photographed at phone resolution. **There is no safe value.**
 
-**Do not chase this by moving `MIN_STRUCTURE`.** An incumbent-side floor was swept and its very first
-step, 0.28, already refuses **24 readings of the owner's own plan** (which reads at incumbent structure
-0.273–0.300 at 'Careful'). What is needed is a signal `structure` does not have — S26 already recorded
-that `support` and `explained` cannot separate anything, because both are measured against the mask the
-pipeline itself produced. Candidates worth measuring: whether the segments ENCLOSE regions
-(`rooms.ts` already flood-fills), the ratio of enclosed area to total length, or whether the graph has
-cycles at building scale rather than furniture scale.
+All of it is pinned as executable statements in `src/engine/__tests__/indistinguishable.test.ts`, and
+recorded in the `vision/quality.ts` header. If a future session finds a genuinely separating signal,
+several of those tests go red — which is the good news, not a regression.
 
-**Acceptance:** the furniture-outline page and the two-tone shelf page become null fixtures · both
-refused · no legitimate corpus fixture refused · the owner's plan unchanged at 9/15/24.
+**THE REDIRECT — where the missing information actually lives.** `detectWalls` takes raw pixels, so
+it cannot know how big anything IS. The app can: `Underlay.scale` is metres-per-pixel, and
+`detectWallsFromUnderlay` already holds the `Underlay`. A sofa outline is ~2 m across and a room is
+~4 m and up, which is a semantic distinction the pixel pipeline structurally cannot make and a
+metric one makes easily. Two cautions before anyone builds it, both already measured:
+
+1. `underlay-import.ts` seeds `scale = 8 / wPx` — an explicit **guess** that the image spans 8 m,
+   which the user corrects with "Calibrate scale". So a metric gate is only sound when the underlay
+   has actually been calibrated, and that state is not currently plumbed into detection.
+2. Enclosure-in-metres inherits the door-gap problem: a single opening in a shell lets the outside
+   flood in, and two legitimate corpus fixtures (`apartment-rotated`, `oblique-survey`) already
+   measure **enclosedLargest = 0.000** for exactly that reason. Measure the largest connected
+   component's EXTENT in metres instead, and calibrate it against an enumerated protected set
+   expressed in metres — which does not exist yet and is the first piece of work.
+
+**Priority: P2**, not P1 — it needs a calibrated-scale flow before it can be built, and the
+user-facing harm is bounded by the proposal card (per-wall strike-off, a confidence readout, and
+Discard). **Acceptance, when it is picked up:** a protected set of real plans expressed in metres ·
+the furniture page refused at all three levels · no corpus fixture refused · the owner's plan
+unchanged at 9 / 15 / 24 walls · behaviour identical when the underlay is uncalibrated.
+
 
 ### 13f. The monotonic-knob guarantee is narrower than it is written — **P2, pre-existing**
 

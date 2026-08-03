@@ -22,6 +22,46 @@
  *   explained   how much of the wall-like ink ended up described? Catches the
  *               opposite failure, where a few confident walls hide the fact
  *               that most of the plan was missed
+ *
+ * ## A FOURTH SIGNAL WAS MEASURED AND REFUTED — do not re-derive it (S31)
+ *
+ * `docs/ideas.md` Section 13e stood as a P1 for three sessions: a page of four
+ * thin furniture OUTLINES is offered 27/27 readings at structure up to 1.000
+ * and confidence 1.00, and the obvious diagnosis is that these gates are too
+ * loose. S31 measured that diagnosis instead of acting on it, and it is wrong.
+ * The gates are not too loose; the information is not in the image.
+ *
+ * The proposed fourth signal was COHESION — "the walls of a building all belong
+ * to one structure, four furniture boxes do not" — in every formulation anyone
+ * could construct: length in the largest connected component, its bounding-box
+ * span, its footprint containment, enclosure by flood fill, cycle counts,
+ * reach-within-D, and eleven more. Every one of them overlaps the protected
+ * population. Three independent measurements say so:
+ *
+ *   - THE THEOREM. Each is a ratio (property of the largest component) /
+ *     (the same property of all segments), so on a ONE-COMPONENT reading it is
+ *     identically 1.000 whatever the image depicts. Pushing the furniture boxes
+ *     together until their edges touch reaches that for free — a perfect score
+ *     for the null. It is the same blind spot as `structure`, one level up.
+ *   - THE INVERSION. A legitimate terrace of three detached dwellings scores
+ *     0.333 where a tight furniture cluster scores 0.522. Ordinary drawings,
+ *     the wrong way round.
+ *   - THE OWNER'S OWN PLAN. With NO tone perturbation — merely photographed
+ *     smaller — it reaches span 0.347, BELOW the attack family's minimum of
+ *     0.374. At a 5 % resample it already sits inside the attack band. The
+ *     statistic is also bistable rather than drifting: a 12.5 % scale change
+ *     moves `apartment-rotated` from 0.566 to 0.873, a swing 3.6x the entire
+ *     margin, as the shell flips between arriving in one piece and two.
+ *
+ * And the naive fix was BUILT, in a throwaway tree, and swept: a cohesion floor
+ * breaks 4 tests in `detect.test.ts` at 0.35, 8 at 0.45 and 11 at 0.55 —
+ * refusing `apartment-rotated` and `oblique-survey` outright. Even 0.35, far
+ * under the 0.522 needed to reach the tight cluster, already refuses a plan
+ * photographed at phone resolution. There is no safe value.
+ *
+ * `__tests__/indistinguishable.test.ts` pins all of this as executable
+ * statements. The redirect — the seam where the missing information DOES exist,
+ * which is metric scale rather than pixels — is in `docs/ideas.md` Section 13e.
  */
 
 import type { Mask, PxSegment } from './types';
