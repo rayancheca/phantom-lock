@@ -153,9 +153,15 @@ function programmeFor(name: string): RoomProgramme {
     return {
       core: ['desk', 'bookshelf'],
       fill: [
+        // A sofa first, and not as padding: the `office` archetype's own blurb
+        // is "a small room to work and listen in", so seating belongs there on
+        // its merits. It is also the only piece in this programme with real
+        // footprint — without it an office furnished to 10.9 % of its floor,
+        // because everything else here is 0.3 m² of shelf.
+        { id: 'sofa', max: 1 },
         { id: 'cabinet', max: 2 },
-        { id: 'armchair', max: 1 },
         { id: 'bookshelf', max: 3 },
+        { id: 'armchair', max: 1 },
         { id: 'plant', max: 2 },
       ],
     };
@@ -233,8 +239,16 @@ export function inventoryFor(cells: Cell[]): ArrangeItem[] {
     }
   }
 
-  if (bedrooms === 0 && cells.length === 1) {
-    // A studio still sleeps — and that bed is a promise, not a filler.
+  // A studio still sleeps — and that bed is a promise, not a filler.
+  //
+  // Gated on the room being a LIVING space. `cells.length === 1` alone is true
+  // of `office` ("Office") and `cinema` ("TV room") as well as `studio`, so the
+  // old form put a double bed in every generated home office — caught by driving
+  // the real UI in S33, where the kept design was "Bright office: Bed, Desk,
+  // Cabinet, Cabinet, Bookshelf…". No corpus score could see it: the bed was
+  // placed successfully and counted toward coverage, which is exactly the kind
+  // of thing that reads as "no logic and thought".
+  if (bedrooms === 0 && cells.length === 1 && /living|lounge|studio|loft/i.test(cells[0].name)) {
     const prev = counts.get('bed');
     counts.set('bed', { count: (prev?.count ?? 0) + 1, optional: false });
   }

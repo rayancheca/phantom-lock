@@ -717,6 +717,17 @@ describe('inventoryFor', () => {
     const items = inventoryFor([{ name: 'Living room', x: 0, y: 0, w: 5, h: 5 }]);
     expect(items.some((i) => i.presetId === 'bed')).toBe(true);
   });
+
+  it('does NOT put a bed in a one-room OFFICE or HOME CINEMA', () => {
+    // `cells.length === 1` is true of `office` and `cinema` too, so the
+    // studio-sleeps rule used to furnish every generated home office with a
+    // double bed. Found by driving the real UI, not by any corpus score — the
+    // bed placed fine and counted toward coverage.
+    for (const name of ['Office', 'TV room']) {
+      const items = inventoryFor([{ name, x: 0, y: 0, w: 5, h: 5 }]);
+      expect(items.some((i) => i.presetId === 'bed'), name).toBe(false);
+    }
+  });
 });
 
 describe('names', () => {
