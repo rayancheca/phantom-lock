@@ -911,6 +911,11 @@ speed. Confirm the next kickoff you write re-states this protocol.*
 - Off-ladder radii snap. (Alpha-token rename `ok-10`→`ok-12` + header perpetual-animation trim — **DONE in S13/UX-1**.)
 
 ## Progress log
+- **2026-08-03 — Session 31 DONE:** §13e **REFUTED** at the `vision/quality.ts` seam (proven three
+  ways, pinned by 7 tests, redirected to metric scale, P1→P2) and creation-time alignment **built,
+  measured and REVERTED** (the plan axis flips 12.83° on one ordinary wall edit; fully specified as
+  `docs/ideas.md` §4c). Two agent numbers did not reproduce and were corrected in place. Tests
+  1536→1543, coverage green, asset hashes byte-identical. See the Session 31 block.
 - **2026-07-19 — Session 0 (planning):** full audit (13 agents + verification), live human testing,
   DB design, and this roadmap. Wrote `docs/ultrareview.md`, `docs/database-plan.md`, `docs/master-plan.md`.
 - **2026-07-19 — Decision gate:** user chose **cross-device sync** → Session 11 scheduled.
@@ -2760,3 +2765,104 @@ streams through Chrome's real compositor, but a phone's own gesture recognisers 
 `useGalleryDrag`'s pointer path remains jsdom-blind by construction.
 
 Residuals filed as `docs/ideas.md` §14f (three, all P3). Next session: `docs/kickoff-session-31.md`.
+
+---
+
+## Session 31 — §13e refuted, creation-time alignment built and reverted (2026-08-03)
+
+**Two refutations and no new feature. That is what the measurements said, and it is the deliverable.**
+
+### Block A — `docs/ideas.md` §13e: REFUTED at the `vision/quality.ts` seam ✅
+
+§13e stood as a P1 for three sessions on the reading that the refusal gates are too loose. They are
+not. A page of four thin furniture OUTLINES really is offered 27/27 at structure up to 1.000 and
+confidence 1.00 — but **nothing computable from the detected segments separates it from a floorplan**.
+18 formulations of "cohesion" were measured; every one overlaps the protected population.
+
+Two arguments, with different scopes (the first draft ran them together — the skeptic caught it):
+- **THE THEOREM**, covering the ratio-to-the-whole family (cohesion / containment / span): each is
+  `(largest component) / (all segments)`, so a ONE-COMPONENT reading scores identically **1.000**
+  whatever the image depicts. Touching the furniture boxes reaches that for free.
+- **THE CORPUS ITSELF**, covering everything else and stronger: `clean-rect` (floor 0.98) IS one
+  closed rectangle and `two-room` (floor 0.95) IS two rectangles sharing a wall, so the nulls are
+  drawings the suite demands be accepted — at any size, since the shrink ladder shows page-relative
+  scale carries nothing. This disposes of the non-ratio candidates (T-junctions, enclosure) too.
+
+Supporting, all re-measured by hand: the INVERSION (a legitimate terrace of three detached dwellings
+0.333 vs a tight furniture cluster 0.522) · BISTABILITY (`apartment-rotated` 0.9882 → 0.5554 between
+k=1.40 and k=1.60 at **identical** 900×669 pixels — resampling phase, not resolution) · FRAMING kills
+the one page-normalised escape (`clean-rect` 0.819 → 0.511 padded; the attack 0.445 → 0.572 cropped).
+**The naive fix was BUILT in a throwaway tree and swept**: a cohesion floor breaks 4/8/11 tests in
+`detect.test.ts` at 0.35/0.45/0.55, refusing `apartment-rotated` and `oblique-survey` outright — and
+even 0.35 refuses a plan photographed at phone resolution. No safe value exists.
+
+**Redirect:** the missing information is METRIC SCALE. `Underlay.scale` is metres-per-pixel and
+`detectWallsFromUnderlay` already holds it; `detectWalls` takes raw pixels and structurally cannot
+know how big anything is. Needs a calibrated-scale flow first (`underlay-import.ts` seeds
+`scale = 8 / wPx`, an explicit guess), so §13e drops **P1 → P2**.
+
+### Block B — creation-time alignment: BUILT, MEASURED, REVERTED ⛔
+
+Implemented `planAxis` + `bandRect` in `canvas/placement.ts`, wired both creation sites, 14 tests,
+six negative controls **all caught**, and live-verified end to end — both paths persisted **-12.829°**
+through IndexedDB and the canvas pill read `∠-13°`. Reverted anyway, because the self-review asked
+the question the tests did not: **is the axis stable?** It is not.
+
+- Maple Court has two wall populations (12.358 m folded to 77.75°, 7.840 m to 0.25°) and
+  `dominantAngle` is winner-take-all, so **one ordinary 4.6 m wall drawn square flips the answer from
+  -12.829° to exactly 0.000°** — reproduced independently. Four of the owner's six layouts are that
+  plan. A margin gate cannot rescue it: the real margin is 1.58×.
+- With Snap ON a 2.00 × 1.00 drag reads **1.728 × 1.419** (endpoints snap to the WORLD grid, extents
+  project onto a rotated one).
+- `arrange.ts:169` is a THIRD creation site still at 0°, so "Decide for me" would place a table at
+  0.000° beside a palette sofa at -12.83°.
+
+Reverted rather than patched, because the **premise** failed, not the arithmetic. Nothing left dead;
+the build returns to byte-identical asset hashes. `docs/ideas.md` **§4c** carries every number,
+including what was proven GOOD (exact-0 on Manhattan plans over 525 shells + 600 real-path walls +
+192 generated designs; bit-identity over 200 000 drags; 48 µs at 500 walls; a NaN hole where `?? 0`
+does not guard), so the next attempt starts from numbers.
+
+### Evidence block
+
+**Agents:** 8 measurement/design (4 lenses + synthesis + 3 skeptics) on §13e → the refutation, plus
+the framing result and the single-component theorem. 4 self-review lenses on the diff → **1 HIGH**
+(axis instability — real, reproduced, caused the revert), 2 MEDIUM on the §13e prose (**both real,
+both fixed**), 3 LOW (all mooted by the revert, recorded in §4c).
+
+**Adjudication (TRAP 9) — two agent claims did NOT survive:**
+- An owner-plan lens reported span collapsing to 0.347. **Does not reproduce**: 0.8346 at k=0.55,
+  minimum **0.7172**. I had already published it in a commit and two files; corrected in place.
+- A skeptic's junction-degree figures could not be reproduced (my probe returned 0.000 for every
+  input, including one that certainly has T-junctions), so they are **not cited**.
+
+**Test count: 1536 → 1543** (+7). Never dropped. **Coverage green**: `quality.ts` **100 / 95.12 /
+100 / 100**; `indistinguishable.test.ts` runs in 2 ms (all heavy work at module scope).
+
+**Gate.**
+```
+Tests  1543 passed (1543)      Test Files  71 passed (71)
+dist/index.html                   1.31 kB │ gzip:   0.62 kB
+dist/assets/index-CaouhDpz.css   53.65 kB │ gzip:  10.00 kB
+dist/assets/index-XVZZrUhb.js   500.75 kB │ gzip: 163.20 kB
+eslint .  →  (0 problems)
+```
+Asset content hashes are **byte-identical to S30's** — the cleanest evidence that a refutation
+changed no behaviour.
+
+**Live:** `docs/sessions/S31/live-s31.mjs`, fresh Chrome profile, 13/13 checks passing on the §2c
+build before it was reverted; screenshots in `shots/`. The first run reported two **vacuous** PASSes
+(a wrong selector meant nothing was added and it asserted against pre-existing demo furniture); the
+harness now fails loudly when the thing under test did not happen.
+
+**Acceptance → outcome.** §13e "both null pages refused" ❌ **REFUTED — proven impossible at this
+seam**, with the proof pinned and the work redirected · no legitimate corpus fixture refused ✅
+(nothing changed) · owner's plan unchanged at 9/15/24 ✅ (verified, and unchanged by construction) ·
+corpus mean ≥ 0.92 ✅ · §2c ⛔ **built and reverted**, fully specified as §4c.
+
+### Honest limits
+
+One browser (Chrome). No real screen reader has ever been driven on this project. The §13e result is
+a claim about **this seam** — a function of the detected segments — not a proof that the problem is
+unsolvable with other information; the metric-scale redirect is exactly the other information.
+
