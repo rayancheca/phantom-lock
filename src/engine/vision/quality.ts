@@ -54,6 +54,18 @@
  *     dimensions — so the flip is resampling phase, not resolution. That swing
  *     is several times any margin a floor could have had.
  *
+ * The one formulation that ESCAPES the theorem is the page-normalised variant
+ * (divide by the PAGE, not by the segments), because its denominator is not the
+ * thing being measured. It is then defeated by FRAMING, which is free to an
+ * attacker and involuntary for a user: padding a legitimate fixture with plain
+ * paper takes `clean-rect` from 0.819 to 0.511 at 30 % pad, while cropping the
+ * attack tight lifts it from 0.445 to 0.572 — so a cropped null outscores a real
+ * plan with an ordinary margin. The corpus cannot even express this dimension,
+ * since all 26 fixtures are drawn to fill their page. Note the counterpoint the
+ * same measurement gives: the RATIO family is framing-INVARIANT (`clean-rect`
+ * 1.000 either way), which is its one genuine structural virtue and the reason
+ * it was worth measuring this carefully before discarding.
+ *
  * ⚠️ ONE SUPPORTING NUMBER WAS WRONG AND IS RETIRED. A measurement agent
  * reported that the owner's own plan, merely photographed smaller, reaches span
  * 0.347 — below the attack family — and that figure was briefly written down

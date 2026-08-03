@@ -41,7 +41,13 @@ import { initialMode, modeTheme, subStepForTool, type AppMode, type DesignSubSte
 import type { Deleted, DialogState } from './app-types';
 import { flipDoor, nudgeSelection, rotateSelectedRect, type KeyCommand } from './keyboard';
 import { cycleOrder, describePosition, selectionForEntry, stepCycle } from '../canvas/selection-cycle';
-import { keyboardPlacementPoint, openingNearPoint, openingOnWall, placeSpeakerAt } from '../canvas/placement';
+import {
+  keyboardPlacementPoint,
+  openingNearPoint,
+  openingOnWall,
+  placeSpeakerAt,
+  planAxis,
+} from '../canvas/placement';
 import { announcementFor, speakableUnits, type AnnounceInput } from './announce';
 import { useAnnouncer } from './hooks/useAnnouncer';
 import LiveAnnouncer from './LiveAnnouncer';
@@ -454,7 +460,13 @@ function AppInner({ initialStore, persistMode, showFirstRun, droppedCount, proje
             center,
             w: preset.w,
             h: preset.h,
-            rotation: 0,
+            // Arrive on the PLAN's axis, not the world's. The S23 drag magnet
+            // only fires within 0.35 m of a wall, so a piece dropped in the
+            // middle of a room — which is where most furniture goes — was never
+            // straightened by anything. `planAxis` is EXACTLY 0 on a Manhattan
+            // plan and null when there are no walls, so this is a no-op except
+            // where it is needed.
+            rotation: planAxis(scene.objects) ?? 0,
             absorption: preset.absorption,
             label: preset.label,
             role: preset.role ?? 'furniture',

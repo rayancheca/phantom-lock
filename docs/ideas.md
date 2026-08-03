@@ -797,6 +797,15 @@ sufficient alone — but a false number is corrected here rather than quietly dr
 agents disagreed about this and the disagreement was settled by measuring it directly; that is the
 adjudication rule working, and it is why the rule exists.
 
+- **THE LAST ESCAPE HATCH, ALSO CLOSED.** The only formulation that escapes the theorem is the
+  page-normalised one (divide by the PAGE rather than by the segments). It is defeated by **framing**,
+  which is free to an attacker and involuntary for a user: padding a legitimate fixture with plain
+  paper takes `clean-rect` from 0.819 to 0.511 at 30 % pad, while cropping the attack tight lifts it
+  from 0.445 to 0.572 — a cropped null outscoring a real plan with an ordinary margin. The corpus
+  cannot express this dimension at all, since all 26 fixtures are drawn to fill their page. The
+  counterpoint from the same measurement is worth keeping: the ratio family IS framing-invariant
+  (`clean-rect` 1.000 either way), which is its one genuine structural virtue.
+
 All of it is pinned as executable statements in `src/engine/__tests__/indistinguishable.test.ts`, and
 recorded in the `vision/quality.ts` header. If a future session finds a genuinely separating signal,
 several of those tests go red — which is the good news, not a regression.

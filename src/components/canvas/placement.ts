@@ -1,6 +1,8 @@
 import type { RectObj, Scene, SceneObject, SpeakerModel, Vec2 } from '../../engine/types';
 import { activeListener, createId, makeSpeaker } from '../../engine/scene';
 import { closestPointOnSegment, pointInRect } from '../../engine/geometry';
+import { dominantAngle } from '../../engine/vision/regularize';
+import type { PxSegment } from '../../engine/vision/types';
 import * as v from '../../engine/vec';
 import { makeOpening } from './interaction';
 
@@ -244,6 +246,83 @@ const finVec = (p: Vec2): boolean => fin(p.x) && fin(p.y);
 export function normalizeAngle(rad: number): number {
   if (!fin(rad)) return 0;
   return Math.atan2(Math.sin(rad), Math.cos(rad));
+}
+
+/**
+ * The rotation a NEWLY CREATED object should arrive at: the plan's own axis,
+ * folded to the SMALLEST turn that aligns to it. `null` when the scene has no
+ * usable wall to take an axis from, which is the caller's signal to keep 0.
+ *
+ * Why the plan's axis and not the nearest wall's. `wallSeatFor` only fires
+ * within `WALL_ALIGN_GAP_M` (0.35 m) of a wall, so a piece dropped in the middle
+ * of a room is never corrected by it — and the middle of a room is where most
+ * furniture goes. Creation needs an answer that does not depend on being near
+ * anything.
+ *
+ * Folded to (-PI/4, PI/4]: a quarter turn maps a rectangular grid onto itself,
+ * so on an 80-degree plan the honest answer is MINUS TEN. Returning +80 aligns
+ * the piece just as well and arrives visibly sideways, with the palette's `w`
+ * and `h` swapped on screen.
+ *
+ * ⚠️ COUPLING, DELIBERATE AND TESTED. This reuses `dominantAngle` — the very
+ * function that straightens a photographed plan in `vision/regularize.ts` — so
+ * "the axis the detector found" and "the axis new objects arrive on" cannot
+ * drift apart. It is a leaf (`vision/types` only), so there is no import cycle,
+ * and it is already in the bundle. The hazard is that a future session tunes it
+ * for DETECTION and silently moves placement; `__tests__/plan-axis.test.ts`
+ * pins the properties placement actually depends on, so that change goes red
+ * here rather than shipping.
+ */
+export function planAxis(objects: readonly SceneObject[]): number | null {
+  const segs: PxSegment[] = [];
+  for (const o of objects) {
+    if (o.kind !== 'wall') continue;
+    if (!finVec(o.a) || !finVec(o.b)) continue;
+    const len = Math.hypot(o.b.x - o.a.x, o.b.y - o.a.y);
+    // Same floor as `wallSeatFor`: below it `v.norm` degenerates and `atan2(0,0)`
+    // answers 0 — the world horizontal, the one answer never right here.
+    if (!fin(len) || len < MIN_WALL_LEN_M) continue;
+    segs.push({ a: o.a, b: o.b });
+  }
+  if (segs.length === 0) return null;
+  const quarter = Math.PI / 2;
+  const axis = dominantAngle(segs);
+  return axis > quarter / 2 ? axis - quarter : axis;
+}
+
+/** What a rubber-band drag from `a` to `b` describes, in the plan's frame. */
+export interface BandRect {
+  center: Vec2;
+  w: number;
+  h: number;
+  rotation: number;
+}
+
+/**
+ * The rubber-band rectangle two dragged points describe on an axis `th`.
+ *
+ * `a` and `b` come out as OPPOSITE CORNERS — which is what keeps the band under
+ * the pointer — because `d = b - a` decomposes exactly as `(d.u)u + (d.n)n`, so
+ * half of it is `(w/2)u + (h/2)n` up to the sign of each component, and the
+ * centre is the midpoint either way.
+ *
+ * At `th === 0` this is BIT-IDENTICAL to the world-axis form it replaced:
+ * `cos 0` is exactly 1 and `sin 0` exactly 0, so `d.x * 1 + d.y * 0` is `d.x`.
+ * That makes "a square plan is untouched" a property of the code rather than a
+ * coincidence a test happened to catch — the same discipline `grid.ts`
+ * `cappedStep` follows by returning `baseStep` through `Math.max`. It is tested
+ * anyway, over 2 000 randomised drags.
+ */
+export function bandRect(a: Vec2, b: Vec2, th: number): BandRect {
+  const d = v.sub(b, a);
+  const cos = Math.cos(th);
+  const sin = Math.sin(th);
+  return {
+    center: v.lerp(a, b, 0.5),
+    w: Math.abs(d.x * cos + d.y * sin),
+    h: Math.abs(-d.x * sin + d.y * cos),
+    rotation: th,
+  };
 }
 
 /** Half-extent of a `w` x `h` rect at rotation `th`, measured along unit `d`. */
