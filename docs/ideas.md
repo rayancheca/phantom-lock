@@ -772,11 +772,11 @@ protected population.
 - **THE INVERSION.** A legitimate terrace of three detached dwellings scores 0.333 where a tight
   furniture cluster scores 0.522. A detached duplex scores 0.500 against the same 0.522. Ordinary
   drawings, the wrong way round.
-- **THE OWNER'S OWN PLAN.** With no tone perturbation at all — merely photographed smaller — it
-  reaches span **0.347**, *below* the attack family's minimum of 0.374; at a 5 % resample it already
-  sits inside the attack band. The statistic is bistable rather than drifting: a 12.5 % scale change
-  moves `apartment-rotated` from 0.566 to 0.873, a swing **3.6x the entire margin**, as the shell
-  flips between arriving in one piece and two.
+- **BISTABILITY.** The statistic does not drift with resolution, it *flips*, as the shell arrives in
+  one piece or two. Measured on `apartment-rotated` through the app's real two-step chain
+  (`buildUnderlay` 1600, then `WORK_MAX` 900): span swings **0.4365** across the scale sweep, and
+  between k=1.40 and k=1.60 it moves **0.9882 -> 0.5554 at identical 900x669 pixel dimensions** — so
+  the flip is resampling phase, not resolution. That is several times any margin a floor could have had.
 - **SIZE ON THE PAGE CARRIES NOTHING.** `two-room` — a required-accept corpus fixture, floor 0.95 —
   is geometrically *two rectangles sharing a wall*. Shrunk to 60 %, 45 %, 45 %-in-a-corner and 30 %
   it reads **identically** (structure 0.833, confidence 1.00, support 1.000, explained 1.000). So
@@ -785,6 +785,17 @@ protected population.
   `detect.test.ts` at 0.35, 8 at 0.45 and 11 at 0.55, refusing `apartment-rotated` and
   `oblique-survey` outright. Even 0.35 — far under the 0.522 needed to reach the tight cluster —
   already refuses a plan photographed at phone resolution. **There is no safe value.**
+
+⚠️ **One supporting number was wrong and is retired.** A measurement agent reported that the owner's
+own plan, merely photographed smaller, reaches span 0.347 — below the attack family — and that figure
+was briefly written into this section and into `vision/quality.ts`. **It does not reproduce.**
+Re-measured directly against `docs/sessions/S26/bench/owner-appchain.bin`, the same pure-resample
+sweep gives 0.8346 at k=0.55 (not 0.3473) and 0.8277 at k=0.95 (not 0.377); the minimum over
+k in [0.50, 1.00] x all three levels is **0.7172**. The owner's plan is stable and never approaches
+the attack band. The refutation does not rest on it — the theorem and the inversion are each
+sufficient alone — but a false number is corrected here rather than quietly dropped. Two independent
+agents disagreed about this and the disagreement was settled by measuring it directly; that is the
+adjudication rule working, and it is why the rule exists.
 
 All of it is pinned as executable statements in `src/engine/__tests__/indistinguishable.test.ts`, and
 recorded in the `vision/quality.ts` header. If a future session finds a genuinely separating signal,

@@ -46,12 +46,24 @@
  *   - THE INVERSION. A legitimate terrace of three detached dwellings scores
  *     0.333 where a tight furniture cluster scores 0.522. Ordinary drawings,
  *     the wrong way round.
- *   - THE OWNER'S OWN PLAN. With NO tone perturbation — merely photographed
- *     smaller — it reaches span 0.347, BELOW the attack family's minimum of
- *     0.374. At a 5 % resample it already sits inside the attack band. The
- *     statistic is also bistable rather than drifting: a 12.5 % scale change
- *     moves `apartment-rotated` from 0.566 to 0.873, a swing 3.6x the entire
- *     margin, as the shell flips between arriving in one piece and two.
+ *   - BISTABILITY. The statistic does not drift with resolution, it FLIPS, as
+ *     the shell arrives in one piece or two. Measured on `apartment-rotated`
+ *     through the app's real two-step chain (`buildUnderlay` 1600, then
+ *     `WORK_MAX` 900): span swings 0.4365 across the scale sweep, and between
+ *     k=1.40 and k=1.60 it moves 0.9882 -> 0.5554 at IDENTICAL 900x669 pixel
+ *     dimensions — so the flip is resampling phase, not resolution. That swing
+ *     is several times any margin a floor could have had.
+ *
+ * ⚠️ ONE SUPPORTING NUMBER WAS WRONG AND IS RETIRED. A measurement agent
+ * reported that the owner's own plan, merely photographed smaller, reaches span
+ * 0.347 — below the attack family — and that figure was briefly written down
+ * here. It does not reproduce. Re-measured directly against
+ * `docs/sessions/S26/bench/owner-appchain.bin`, the same pure-resample sweep
+ * gives 0.8346 at k=0.55 (not 0.3473) and 0.8277 at k=0.95 (not 0.377); the
+ * MINIMUM over k in [0.50, 1.00] x all three levels is **0.7172**. The owner's
+ * plan is stable and never comes near the attack band. The refutation does not
+ * depend on it — the theorem and the inversion are each sufficient alone — but
+ * the number itself was false and is corrected rather than quietly dropped.
  *
  * And the naive fix was BUILT, in a throwaway tree, and swept: a cohesion floor
  * breaks 4 tests in `detect.test.ts` at 0.35, 8 at 0.45 and 11 at 0.55 —
