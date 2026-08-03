@@ -203,6 +203,13 @@ const MIN_WALL_LEN_M = SNAP_STEP;
  */
 const SEAT_TIE_EPS = 1e-6;
 
+/**
+ * Explicit `f` / button command: reach. Deliberately 3.4x the drag band, because
+ * an explicit request should reach the wall the user obviously means rather than
+ * the one their pointer happens to be near.
+ */
+export const WALL_SEAT_REACH_M = 1.2;
+
 export interface WallSeatOptions {
   /** Face gap at which rotation is corrected. */
   alignGap: number;
@@ -210,6 +217,24 @@ export interface WallSeatOptions {
   seatGap: number;
   /** Quantum for the ALONG-wall coordinate, or null for none. */
   grid: number | null;
+  /**
+   * Require the piece's whole along-wall extent to overlap the wall, instead of
+   * merely `min(halfAlong, len/2)`.
+   *
+   * REQUIRED, not optional: an optional flag lets a future band const omit it and
+   * be lenient by accident, where a missing field is a `tsc --noEmit` error.
+   *
+   * This exists because reach and capture are the same number. C3 closed the
+   * short-wall hazard for the 0.35 m drag band; at 1.2 m it reopens 3.4x wider,
+   * and the perpendicular reach is ungated by wall length. Measured on a 0.70 m
+   * closet stub with a 2.0x0.9 sofa: the one-sided capture area grows
+   * **1.20 -> 3.28 m²** and the worst jump **1.083 -> 1.540 m**, so a sofa sitting
+   * 1.65 m CLEAR of the stub is teleported 1.365 m — and unlike the drag, a
+   * one-shot key gives the user no frame-by-frame feedback to steer it back.
+   * Containment restores 1.21 m² / 1.09 m and is a measured **no-op for every
+   * wall >= 2.4 m**, so it bites exactly the stubs and nothing else.
+   */
+  contain: boolean;
 }
 
 /** Drag-time bands. */
@@ -217,6 +242,25 @@ export const DRAG_SEAT: WallSeatOptions = {
   alignGap: WALL_ALIGN_GAP_M,
   seatGap: WALL_SEAT_GAP_M,
   grid: SNAP_STEP,
+  contain: false,
+};
+
+/**
+ * Explicit-command bands.
+ *
+ * `seatGap === alignGap` is load-bearing, not tidiness. `wallSeatFor` gates on
+ * `gap <= alignGap` and then computes `seated = gap <= seatGap`; with the same
+ * operand the second comparison is bit-identical to the first, which has already
+ * returned true — so this const can never yield `seated: false`. That matters
+ * because an unseated result returns the INPUT centre while still reporting a
+ * snapped rotation, so a command built on a narrower `seatGap` would spin the
+ * piece in place, leave it half a metre off the wall, and push an undo entry.
+ */
+export const COMMAND_SEAT: WallSeatOptions = {
+  alignGap: WALL_SEAT_REACH_M,
+  seatGap: WALL_SEAT_REACH_M,
+  grid: SNAP_STEP,
+  contain: true,
 };
 
 export interface WallSeat {
@@ -330,16 +374,38 @@ export function wallSeatFor(
     // the same reason.
     const margin = Math.min(halfAlong, len / 2);
     const overlap = Math.min(along + halfAlong, len) - Math.max(along - halfAlong, 0);
-    if (!(overlap >= margin)) continue;
+    // `contain` demands the FULL along-extent, which a wall shorter than the piece
+    // can never supply — see `WallSeatOptions.contain` for the measured hazard.
+    if (!(overlap >= (opts.contain ? halfAlong : margin))) continue;
 
     const absGap = Math.abs(gap);
     // Strict `<` past a tolerance, so an exact tie really does fall to document
     // order instead of being decided by the last bit of a subtraction.
     if (best !== null && absGap >= bestAbs - SEAT_TIE_EPS) continue;
 
+    // Quantise, then clamp to the grid points INSIDE [margin, len - margin].
+    //
+    // Clamping to the RAW bound is what shipped, and it is not a fixed point: the
+    // bound is `margin`, which is generally not a grid multiple, so re-applying
+    // re-quantises it and the piece moves. Measured over off-grid wall lengths,
+    // **14.3 % of seated results slide by up to 1.5 cm** on a second application
+    // (it converges after one step, so a settle rather than a drift). Invisible to
+    // an on-grid corpus — every wall length and piece width whose `margin` lands on
+    // the grid is blind to it by construction — and fatal to the explicit command,
+    // whose whole no-op contract is "seating an already-seated piece changes
+    // nothing". Clamping to grid points makes every output a fixed point.
     let out = along;
-    if (opts.grid !== null && opts.grid > 0) out = Math.round(out / opts.grid) * opts.grid;
-    out = Math.max(margin, Math.min(len - margin, out));
+    if (opts.grid !== null && opts.grid > 0) {
+      const g = opts.grid;
+      const lo = Math.ceil((margin - 1e-9) / g) * g;
+      const hi = Math.floor((len - margin + 1e-9) / g) * g;
+      out = Math.round(out / g) * g;
+      // No grid point fits between the margins on a very short wall; the midpoint
+      // is a constant, so it is a fixed point too.
+      out = lo <= hi ? Math.max(lo, Math.min(hi, out)) : len / 2;
+    } else {
+      out = Math.max(margin, Math.min(len - margin, out));
+    }
 
     const seatedCenter = {
       x: w.a.x + u.x * out + n.x * halfPerp,
@@ -359,6 +425,76 @@ export function wallSeatFor(
   }
 
   return best;
+}
+
+/**
+ * Anything closer than this in BOTH centre and rotation is the same placement, so
+ * the command returns the input scene by reference. `historyPush` only dedups a
+ * repeated PRE-edit scene, so without a same-ref return here a second `f` pushes a
+ * real undo entry that appears to do nothing (the S14 lesson).
+ */
+const SEAT_EPS = 1e-9;
+
+/**
+ * The explicit "seat this against the nearest wall" command — the `f` key, the
+ * Inspector button and the touch HUD all route through THIS function, so the
+ * disabled state and the action can never disagree.
+ *
+ * Refuses, by returning the input scene unchanged: a missing id, a wall, a circle,
+ * and any rect that is not `furniture` or `tv`. Openings are refused HERE rather
+ * than only in the UI — a door's rotation is wall-locked (S17), and a claim like
+ * that has to be enforced or a future call site quietly detaches the door.
+ */
+export function seatObjectAgainstWall(
+  scene: Scene,
+  id: string,
+  opts?: { snapOn?: boolean },
+): Scene {
+  const target = scene.objects.find((o) => o.id === id);
+  if (!target || target.kind !== 'rect') return scene;
+  // Today `RectObj['role']` is exactly furniture | tv | window | door, so this is
+  // PROVABLY EQUIVALENT to `wallSeatFor`'s own door/window refusal — a negative
+  // control confirmed removing it passes every test, because nothing can observe
+  // the difference. It stays as the enforcement point for the S17 wall-lock claim
+  // if a fifth role is ever added, and is documented as redundant rather than
+  // presented as tested.
+  if (target.role !== 'furniture' && target.role !== 'tv') return scene;
+
+  const seat = wallSeatFor(scene.objects, target, target.center, target.rotation, {
+    ...COMMAND_SEAT,
+    // The caller's snap setting owns the along-wall quantum, exactly as
+    // `moveObjectTo` does. Baking the grid into the band const is how C5 —
+    // "`settings.snap` was silently ignored" — happened on the drag path.
+    grid: opts?.snapOn === false ? null : SNAP_STEP,
+  });
+  if (!seat || !seat.seated) return scene;
+
+  if (
+    v.dist(seat.center, target.center) < SEAT_EPS &&
+    Math.abs(normalizeAngle(seat.rotation - target.rotation)) < SEAT_EPS
+  ) {
+    return scene;
+  }
+
+  return {
+    ...scene,
+    objects: scene.objects.map((o) =>
+      o.id === id ? { ...o, center: seat.center, rotation: seat.rotation } : o,
+    ),
+  };
+}
+
+/**
+ * Would `seatObjectAgainstWall` change anything? Drives every `disabled` state.
+ *
+ * Deliberately implemented AS the command rather than as a parallel predicate:
+ * two implementations of "is there a wall in reach" drift, and the visible symptom
+ * of that drift is an enabled button that does nothing. The cost is one throwaway
+ * scene object per render, against a `scene.objects` array that `importRejection`
+ * caps at 5 000 and that the tracer already walks several times per frame.
+ */
+export function canSeatAgainstWall(scene: Scene, id: string): boolean {
+  return seatObjectAgainstWall(scene, id) !== scene;
 }
 
 /**

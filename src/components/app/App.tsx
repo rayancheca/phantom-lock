@@ -41,7 +41,13 @@ import { initialMode, modeTheme, subStepForTool, type AppMode, type DesignSubSte
 import type { Deleted, DialogState } from './app-types';
 import { flipDoor, nudgeSelection, rotateSelectedRect, type KeyCommand } from './keyboard';
 import { cycleOrder, describePosition, selectionForEntry, stepCycle } from '../canvas/selection-cycle';
-import { keyboardPlacementPoint, openingNearPoint, openingOnWall, placeSpeakerAt } from '../canvas/placement';
+import {
+  keyboardPlacementPoint,
+  openingNearPoint,
+  openingOnWall,
+  placeSpeakerAt,
+  seatObjectAgainstWall,
+} from '../canvas/placement';
 import { announcementFor, speakableUnits, type AnnounceInput } from './announce';
 import { useAnnouncer } from './hooks/useAnnouncer';
 import LiveAnnouncer from './LiveAnnouncer';
@@ -409,6 +415,20 @@ function AppInner({ initialStore, persistMode, showFirstRun, droppedCount, proje
 
   /** Break a wall in two at a point (or its midpoint) and select the first half.
    *  The id is computed synchronously so selection happens in this same handler. */
+  /**
+   * The ONE write seam for the seat command. The `f` key, the Inspector button and
+   * the touch HUD all land here, so none of them can bypass the same-ref no-op
+   * contract and push a phantom undo entry.
+   */
+  const seatSelection = (id: string) => {
+    const seated = seatObjectAgainstWall(scene, id, { snapOn: settings.snap });
+    if (seated === scene) {
+      setNotice('No wall within 1.2 m — drag it closer, then seat it.');
+      return;
+    }
+    setScene(() => seated);
+  };
+
   const splitWall = (id: string, at?: Vec2) => {
     const wall = scene.objects.find((o) => o.id === id);
     if (!wall || wall.kind !== 'wall') return;
@@ -831,14 +851,28 @@ function AppInner({ initialStore, persistMode, showFirstRun, droppedCount, proje
         if (selection?.type !== 'object') return;
         const next = flipDoor(scene, selection.id, cmd.field);
         // `flipDoor` returns the SAME ref for a non-door — the dispatcher is
-        // scene-independent so it can't tell a door from a wall/furniture. Say
-        // so rather than push a no-op scene (which would still spawn an undo
-        // entry, the S14 lesson).
-        if (next === scene) {
-          setNotice('Select a door to flip its hinge or swing side.');
+        // scene-independent so it can't tell a door from a wall/furniture. That
+        // same-ref result IS the router: fall through to the furniture seat.
+        if (next !== scene) {
+          setScene(() => next);
           return;
         }
-        setScene(() => next);
+        // Plain F only. Shift+F stays a door-swing command: the quarter-turned
+        // class is not representable in the ambient drag magnet's output space, so
+        // the very next drag un-turns it — measured, 4 of 5 realistic pieces, one
+        // of them WITHOUT the piece even moving. See docs/ideas.md §4d.
+        if (cmd.field === 'hinge') {
+          const seated = seatObjectAgainstWall(scene, selection.id, { snapOn: settings.snap });
+          if (seated !== scene) {
+            setScene(() => seated);
+            return;
+          }
+        }
+        setNotice(
+          cmd.field === 'swing'
+            ? 'Shift F flips a door’s swing side. Select furniture and press F to seat it flush.'
+            : 'Select a door to flip its hinge, or furniture within 1.2 m of a wall to seat it flush.',
+        );
         return;
       }
     }
@@ -961,6 +995,7 @@ function AppInner({ initialStore, persistMode, showFirstRun, droppedCount, proje
           onCalibrate={handleCalibrate}
           onRoomDrawn={(zone) => setDialog({ kind: 'room-name', zone })}
           onSplitWall={splitWall}
+          onSeatAgainstWall={seatSelection}
           onActivateSeat={switchSeat}
           onNotice={setNotice}
           appMode={appMode}
@@ -1056,6 +1091,7 @@ function AppInner({ initialStore, persistMode, showFirstRun, droppedCount, proje
           onSetPair={setPairForSpeaker}
           onUpdateListener={updateListener}
           onSplitWall={splitWall}
+          onSeatAgainstWall={seatSelection}
           onDeleteMulti={deleteMulti}
           onSettingsChange={setSettings}
         />

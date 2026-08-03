@@ -60,6 +60,7 @@ function renderInspector(obj: RectObj, onUpdateObject = vi.fn()) {
       onSetPair={noop}
       onUpdateListener={noop}
       onSplitWall={noop}
+      onSeatAgainstWall={noop}
       onDeleteMulti={noop}
     />,
   );

@@ -59,6 +59,8 @@ export async function renderPlanToBlob(input: PlanImageInput): Promise<Blob> {
     proposal: null,
     furnitureProposal: null,
     bestSpot,
+    // An exported PNG must never carry a transient drag halo.
+    snapGuide: null,
     theme,
     view: fitView(width, height, b),
     width,

@@ -61,6 +61,8 @@ export interface RenderState {
   proposal: Proposal | null;
   furnitureProposal: SceneObject[] | null;
   bestSpot: ListeningField | null;
+  /** The wall the wall-seat magnet has captured during a drag, if any. */
+  snapGuide: { wallId: string; seated: boolean } | null;
   theme: CanvasTheme;
   view: View;
   width: number;
@@ -485,6 +487,34 @@ function drawHandle(ctx: CanvasRenderingContext2D, T: ThemeColors, p: Vec2, r = 
   ctx.beginPath();
   ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
   ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
+
+/**
+ * Halo the wall the seat magnet has captured. Two states, not one: it
+ * disambiguates a corner (where two candidates carry different angles) and makes
+ * the 0.15 m seat threshold discoverable, which is otherwise invisible.
+ *
+ * Strokes the RAW a->b segment, deliberately NOT `wallKeptSpans`. That helper
+ * deletes door openings, so it would draw a GAP exactly where the magnet is about
+ * to seat a sofa across a doorway — pointing away from the thing being explained.
+ * The guide answers "which wall am I snapping to", which is the whole wall.
+ */
+function drawSnapGuide(ctx: CanvasRenderingContext2D, st: RenderState, T: ThemeColors): void {
+  if (!st.snapGuide) return;
+  const w = st.scene.objects.find((o) => o.id === st.snapGuide!.wallId);
+  if (!w || w.kind !== 'wall') return;
+  const a = w2s(w.a, st.view);
+  const b = w2s(w.b, st.view);
+  ctx.save();
+  ctx.globalAlpha = 0.55;
+  ctx.strokeStyle = st.snapGuide.seated ? T.ok : T.select;
+  ctx.lineWidth = Math.max(3, 0.09 * st.view.scale) + 6;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(a.x, a.y);
+  ctx.lineTo(b.x, b.y);
   ctx.stroke();
   ctx.restore();
 }
@@ -1051,6 +1081,9 @@ export function renderScene(ctx: CanvasRenderingContext2D, st: RenderState): voi
   }
 
   if (settings.showBestSpot) drawBestSpot(ctx, st, T);
+
+  // Under the normal wall stroke, so it reads as a halo rather than a recolour.
+  drawSnapGuide(ctx, st, T);
 
   for (const o of scene.objects) {
     drawObject(

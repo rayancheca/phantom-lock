@@ -49,6 +49,7 @@ function renderStage(over: Record<string, unknown> = {}) {
       onCalibrate={noop}
       onRoomDrawn={noop}
       onSplitWall={noop}
+      onSeatAgainstWall={noop}
       onActivateSeat={noop}
       onNotice={noop}
       appMode="tune"

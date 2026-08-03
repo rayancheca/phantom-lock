@@ -65,6 +65,7 @@ interface SidebarProps {
   onSetPair: (id: string, partnerId: string | null) => void;
   onUpdateListener: (patch: Partial<Scene['listener']>) => void;
   onSplitWall: (id: string) => void;
+  onSeatAgainstWall: (id: string) => void;
   onDeleteMulti: (objectIds: string[], speakerIds: string[]) => void;
   onSettingsChange: (settings: SimSettings) => void;
 }
@@ -185,6 +186,7 @@ export default function Sidebar(p: SidebarProps) {
         onSetPair={p.onSetPair}
         onUpdateListener={p.onUpdateListener}
         onSplitWall={p.onSplitWall}
+        onSeatAgainstWall={p.onSeatAgainstWall}
         onDeleteMulti={p.onDeleteMulti}
       />
       {isTune && (

@@ -4,6 +4,7 @@ import { activeListener, LISTENER_PRESETS, MATERIALS, sceneListeners } from '../
 import { dist3dTo, MODEL_IDS, SPEAKER_MODELS } from '../../engine/speakers';
 import * as v from '../../engine/vec';
 import Icon from '../ui/Icon';
+import { canSeatAgainstWall } from '../canvas/placement';
 import './panels.css';
 
 /** Real-world clear-opening widths (metres): 70 / 80 / 90 cm cover interior,
@@ -20,6 +21,7 @@ interface Props {
   onSetPair: (id: string, partnerId: string | null) => void;
   onUpdateListener: (patch: Partial<Scene['listener']>) => void;
   onSplitWall: (id: string) => void;
+  onSeatAgainstWall: (id: string) => void;
   onDeleteMulti: (objectIds: string[], speakerIds: string[]) => void;
 }
 
@@ -133,6 +135,7 @@ export default function InspectorPanel({
   onSetPair,
   onUpdateListener,
   onSplitWall,
+  onSeatAgainstWall,
   onDeleteMulti,
 }: Props) {
   if (selection?.type === 'multi') {
@@ -429,6 +432,26 @@ export default function InspectorPanel({
             />
             <output aria-live="off">{Math.round((obj.rotation * 180) / Math.PI)}°</output>
           </label>
+          {/* C6: the enclosing block is `role !== 'door'`, which also matches
+              WINDOWS — a permanently-disabled button with a false hint on every
+              one. Gate on what can actually be seated. */}
+          {(obj.role === 'furniture' || obj.role === 'tv') && (
+            <>
+              <button
+                type="button"
+                className="btn"
+                disabled={!canSeatAgainstWall(scene, obj.id)}
+                onClick={() => onSeatAgainstWall(obj.id)}
+              >
+                Seat against wall
+              </button>
+              <p className="card-sub">
+                {canSeatAgainstWall(scene, obj.id)
+                  ? 'Squares this to the nearest wall and slides it flush. Dragging it within 15 cm of a wall does the same — hold Shift while dragging to move it freely.'
+                  : 'No wall within 1.2 m — drag it closer, then seat it.'}
+              </p>
+            </>
+          )}
           {obj.role !== 'window' ? (
             <label className="field field-check">
               <input

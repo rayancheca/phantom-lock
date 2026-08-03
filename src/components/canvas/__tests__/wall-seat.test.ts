@@ -3,8 +3,12 @@ import type { RectObj, Scene, SceneObject, Vec2 } from '../../../engine/types';
 import { rectCorners } from '../../../engine/geometry';
 import * as v from '../../../engine/vec';
 import {
+  COMMAND_SEAT,
   DRAG_SEAT,
   SNAP_STEP,
+  WALL_SEAT_REACH_M,
+  canSeatAgainstWall,
+  seatObjectAgainstWall,
   WALL_ALIGN_GAP_M,
   WALL_SEAT_GAP_M,
   moveObjectTo,
@@ -483,4 +487,158 @@ describe('moveObjectTo — doors keep their own magnet, unchanged', () => {
   });
 
   it('SNAP_STEP is still the shared 5 cm step', () => expect(SNAP_STEP).toBe(0.05));
+});
+
+// ---------------------------------------------------------------------------
+// S32 — the EXPLICIT seat command (§4b).
+//
+// Three properties are load-bearing here and each was forced by a measurement,
+// not chosen:
+//
+//   1. `COMMAND_SEAT`'s reach is 1.2 m — 3.4x the drag band — which re-opens the
+//      C3 short-wall capture hazard S23 closed. Measured on a 0.70 m closet stub
+//      with a 2.0x0.9 sofa, the one-sided capture area grows 1.20 -> 3.28 m² and
+//      a sofa 1.65 m CLEAR of the stub is teleported 1.365 m. So the command band
+//      additionally requires the piece to be CONTAINED along the wall.
+//   2. The command must be IDEMPOTENT — a second press is a no-op returning the
+//      same scene ref, or it pushes a phantom undo entry (the S14 lesson).
+//   3. `wallSeatFor` quantises the along coordinate and THEN clamps, so when the
+//      clamp fires the output is `margin`, generally NOT a grid multiple.
+//      Measured on off-grid wall lengths: 14.3 % of seated results move by up to
+//      1.5 cm on re-application. It converges after one step, so it is a settle
+//      rather than a drift — but it defeats the same-ref contract above.
+// ---------------------------------------------------------------------------
+
+describe('S32 — COMMAND_SEAT and the explicit seat command', () => {
+  it('COMMAND_SEAT reaches further than the drag band', () => {
+    expect(WALL_SEAT_REACH_M).toBeGreaterThan(WALL_ALIGN_GAP_M);
+    expect(COMMAND_SEAT.alignGap).toBe(WALL_SEAT_REACH_M);
+  });
+
+  it('can never return seated:false — alignGap and seatGap are the SAME operand', () => {
+    // `gap <= alignGap` has already returned true when `seated = gap <= seatGap`
+    // is evaluated, so with identical operands the second is bit-identical to the
+    // first. A structural property, not a corpus coincidence — but a caller that
+    // rendered an unseated result would spin the piece in place without moving it.
+    expect(COMMAND_SEAT.seatGap).toBe(COMMAND_SEAT.alignGap);
+    const objs = [wallAt('w', 22, 6)];
+    let n = 0;
+    for (let a = -2; a <= 8; a += 0.13) {
+      for (let off = 0.02; off <= 2.2; off += 0.07) {
+        const c = { x: a * Math.cos(deg(22)) - off * Math.sin(deg(22)), y: a * Math.sin(deg(22)) + off * Math.cos(deg(22)) };
+        const s = wallSeatFor(objs, SOFA, c, 0, COMMAND_SEAT);
+        if (s) { n++; expect(s.seated).toBe(true); }
+      }
+    }
+    expect(n).toBeGreaterThan(100);
+  });
+
+  it('THE C3 HAZARD: a 0.70 m closet stub does NOT capture a sofa 1.65 m clear of it', () => {
+    // Without the containment rule this is a 1.365 m teleport, on a one-shot key
+    // with no pointer feedback to steer it back.
+    const stub = [wallAt('w', 0, 0.7)];
+    expect(wallSeatFor(stub, SOFA, { x: 1.0, y: 1.65 }, 0, COMMAND_SEAT)).toBeNull();
+    expect(wallSeatFor(stub, SOFA, { x: 1.0, y: 1.0 }, 0, COMMAND_SEAT)).toBeNull();
+  });
+
+  it('but a real wall still seats a piece parked well out in the room', () => {
+    // The containment rule must bite ONLY on short walls. Measured: it is a
+    // literal no-op for every wall >= 2.4 m.
+    const w = [wallAt('w', 13, 4.0)];
+    for (const p of [SOFA, BED, piece(1.4, 0.8), piece(0.9, 0.6)]) {
+      const along = 2.0, off = 0.9 + p.h / 2;
+      const c = { x: along * Math.cos(deg(13)) - off * Math.sin(deg(13)), y: along * Math.sin(deg(13)) + off * Math.cos(deg(13)) };
+      const s = wallSeatFor(w, p, c, 0, COMMAND_SEAT);
+      expect(s).not.toBeNull();
+      expect(s!.seated).toBe(true);
+    }
+  });
+
+  it('is a FIXED POINT on off-grid wall lengths — the shipped quantise-then-clamp settle', () => {
+    // Off-grid `L` and `w` so that `margin = min(halfAlong, L/2)` is not a grid
+    // multiple. An on-grid corpus cannot see this at all.
+    let tested = 0;
+    for (const L of [0.73, 0.91, 1.13, 1.37, 1.71, 2.13, 2.37, 3.31]) {
+      for (const [w, h] of [[2.03, 0.91], [1.97, 1.63], [1.43, 0.83], [1.19, 0.87], [0.93, 0.61]]) {
+        const objs = [wallAt('w', 0, L)];
+        const p = piece(w, h);
+        for (let ax = -1.5; ax <= L + 1.5; ax += 0.031) {
+          const s1 = wallSeatFor(objs, p, { x: ax, y: h / 2 + 0.05 }, 0, DRAG_SEAT);
+          if (!s1?.seated) continue;
+          tested++;
+          const s2 = wallSeatFor(objs, p, s1.center, s1.rotation, DRAG_SEAT);
+          expect(s2).not.toBeNull();
+          expect(v.dist(s2!.center, s1.center)).toBeLessThan(1e-9);
+        }
+      }
+    }
+    expect(tested).toBeGreaterThan(1000);
+  });
+
+  it('seatObjectAgainstWall returns the SAME REF when nothing would change', () => {
+    // (3, 1.5) is a face gap of 0.337 m — inside the 1.2 m reach. (3, 3) measures
+    // 1.798 m and is correctly refused, which is a different test.
+    const s = scene([wallAt('w', 13, 6), rect('r', { x: 3, y: 1.5 }, 0)]);
+    const once = seatObjectAgainstWall(s, 'r');
+    expect(once).not.toBe(s);
+    expect(seatObjectAgainstWall(once, 'r')).toBe(once);
+  });
+
+  it('refuses a piece BEYOND the reach — 1.2 m is a real bound, not decoration', () => {
+    // The same fixture the same-ref test uses, moved out to a 1.798 m face gap.
+    const s = scene([wallAt('w', 13, 6), rect('r', { x: 3, y: 3 }, 0)]);
+    expect(seatObjectAgainstWall(s, 'r')).toBe(s);
+    expect(canSeatAgainstWall(s, 'r')).toBe(false);
+  });
+
+  it('seatObjectAgainstWall refuses a wall, a circle, an opening and a missing id', () => {
+    const s = scene([
+      wallAt('w', 13, 6),
+      rect('door', { x: 2, y: 0.4 }, 0, 0.9, 0.1, 'door'),
+      rect('win', { x: 3, y: 0.4 }, 0, 0.9, 0.1, 'window'),
+      { id: 'c', kind: 'circle', center: { x: 3, y: 1 }, r: 0.4, absorption: 0.2, label: 'Plant', height: 1 },
+    ]);
+    for (const id of ['w', 'door', 'win', 'c', 'nope']) {
+      expect(seatObjectAgainstWall(s, id)).toBe(s);
+    }
+  });
+
+  it('canSeatAgainstWall is FALSE on an ALREADY-SEATED piece — the one case the two can differ', () => {
+    // An independent predicate ("is there a candidate wall?") reads TRUE here,
+    // because `wallSeatFor` does return a seat — it is just the seat the piece is
+    // already in. The button would be enabled and do nothing. A position sweep
+    // cannot find this: no arbitrary probe lands exactly flush. Measured as a
+    // negative control — the independent form passes all 49 other tests.
+    const s = scene([wallAt('w', 13, 6), rect('r', { x: 3, y: 1.5 }, 0)]);
+    expect(canSeatAgainstWall(s, 'r')).toBe(true);
+    const seated = seatObjectAgainstWall(s, 'r');
+    expect(canSeatAgainstWall(seated, 'r')).toBe(false);
+  });
+
+  it('canSeatAgainstWall agrees with seatObjectAgainstWall on every case', () => {
+    // A disagreement is an enabled button that does nothing — the S14 defect.
+    const objs = [wallAt('w', 13, 6)];
+    for (let x = -2; x <= 8; x += 0.37) {
+      for (let y = -2; y <= 4; y += 0.31) {
+        const s = scene([...objs, rect('r', { x, y }, 0)]);
+        expect(canSeatAgainstWall(s, 'r')).toBe(seatObjectAgainstWall(s, 'r') !== s);
+      }
+    }
+  });
+
+  it('a seated piece is FLUSH — its nearest face touches the wall line', () => {
+    const w = wallAt('w', -11.73, 5);
+    const s = scene([w, rect('r', { x: 2, y: 1.0 }, 0)]);   // face gap 0.936 m
+    const out = seatObjectAgainstWall(s, 'r');
+    const o = out.objects.find((x) => x.id === 'r') as RectObj;
+    const wall = w as Extract<SceneObject, { kind: 'wall' }>;
+    expect(faceGap(o, wall.a, wall.b)).toBeCloseTo(0, 9);
+  });
+
+  it('leaves every OTHER object identical — it maps exactly one', () => {
+    const s = scene([wallAt('w', 13, 6), rect('a', { x: 3, y: 3 }, 0), rect('b', { x: 4, y: 3.5 }, 0.3)]);
+    const out = seatObjectAgainstWall(s, 'a');
+    expect(out.objects.find((x) => x.id === 'b')).toBe(s.objects.find((x) => x.id === 'b'));
+    expect(out.speakers).toBe(s.speakers);
+  });
 });

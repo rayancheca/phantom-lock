@@ -114,9 +114,11 @@ interface Props {
   /** Rotate is meaningful only for a rect selection (computed by the parent from
    *  the scene) — otherwise the button is disabled, never a silent no-op. */
   canRotate: boolean;
+  canSeat: boolean;
   /** `held` is true for repeats within one press-and-hold, so the whole gesture
    *  collapses into a single undo entry. */
   onRotate: (dir: -1 | 1, held: boolean) => void;
+  onSeat: () => void;
   onNudge: (dx: number, dy: number, held: boolean) => void;
   onDelete: () => void;
 }
@@ -137,7 +139,7 @@ interface Props {
  * would let a tap mutate the scene straight through an open dialog — the exact
  * gate the keyboard dispatcher applies.
  */
-export default function SelectionActions({ selection, hidden, canRotate, onRotate, onNudge, onDelete }: Props) {
+export default function SelectionActions({ selection, hidden, canRotate, canSeat, onRotate, onSeat, onNudge, onDelete }: Props) {
   if (!selection || hidden) return null;
   const canDelete = selection.type !== 'listener';
 
@@ -154,6 +156,9 @@ export default function SelectionActions({ selection, hidden, canRotate, onRotat
         <ActionButton label="Nudge left" icon="chevron-down" transform="rotate(90deg)" onStep={(h) => onNudge(-TOUCH_NUDGE_M, 0, h)} />
         <ActionButton label="Nudge right" icon="chevron-down" transform="rotate(-90deg)" onStep={(h) => onNudge(TOUCH_NUDGE_M, 0, h)} />
       </div>
+      {/* `repeatable={false}`: the seat is IDEMPOTENT, so a held key would fire
+          30-60 no-ops a second, and `ActionButton` defaults `repeatable` to true. */}
+      <ActionButton label="Seat against wall" icon="flush" onStep={onSeat} disabled={!canSeat} repeatable={false} />
       <ActionButton label="Delete selection" icon="trash" onStep={onDelete} disabled={!canDelete} repeatable={false} />
     </div>
   );

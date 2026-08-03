@@ -34,7 +34,8 @@ export type IconName =
   | 'rotate'
   | 'ear'
   | 'layers'
-  | 'compass';
+  | 'compass'
+  | 'flush';
 
 /** Each icon is one or more path `d` strings drawn with round 1.7px strokes. */
 const PATHS: Record<IconName, string[]> = {
@@ -64,6 +65,8 @@ const PATHS: Record<IconName, string[]> = {
   cursor: ['M6 3 L18 12 L12 13.5 L15 20 L12.5 21 L9.5 14.5 L6 18 Z'],
   wall: ['M4 20 L20 4', 'M4 20 l0 -3 M20 4 l-3 0'],
   box: ['M5 7 h14 v10 h-14 Z'],
+  // A block pushed flush into an L-bracket — the seat command's whole meaning.
+  flush: ['M4 4 v16 h16', 'M7 9 h9 v8 h-9 Z', 'M19 6 l-3 3 M19 6 l0 3 M19 6 l-3 0'],
   circle: ['M12 5 a7 7 0 1 0 0.001 0 Z'],
   speaker: ['M12 4 a8 8 0 0 1 8 8', 'M12 8 a4 4 0 0 1 4 4', 'M12 12 m-1.6 0 a1.6 1.6 0 1 0 3.2 0 a1.6 1.6 0 1 0 -3.2 0'],
   star: ['M12 4 l2.2 5 5.3 0.5 -4 3.6 1.2 5.2 L12 15.6 7.3 18.3 l1.2 -5.2 -4 -3.6 5.3 -0.5 Z'],

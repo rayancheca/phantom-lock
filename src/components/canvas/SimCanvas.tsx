@@ -161,6 +161,9 @@ export default function SimCanvas({
   const [hoverGrab, setHoverGrab] = useState(false);
   /** A reposition drag is live (→ 'grabbing' cursor). */
   const [grabbing, setGrabbing] = useState(false);
+  /** The wall the seat magnet has captured this drag. Identity-preserving setter,
+   *  so React bails out — it changes at most twice per gesture. */
+  const [snapGuide, setSnapGuide] = useState<{ wallId: string; seated: boolean } | null>(null);
   /** Screen-space rubber band: 2 pts = marquee corners, 3+ = lasso path. */
   const [band, setBand] = useState<Vec2[] | null>(null);
   const bandRef = useRef<Vec2[] | null>(null);
@@ -307,6 +310,7 @@ export default function SimCanvas({
       proposal,
       furnitureProposal,
       bestSpot,
+      snapGuide,
       theme,
       view,
       width: size.w,
@@ -323,6 +327,7 @@ export default function SimCanvas({
     proposal,
     furnitureProposal,
     bestSpot,
+    snapGuide,
     theme,
     view,
     size,
@@ -480,6 +485,9 @@ export default function SimCanvas({
       setGrabbing(false);
     }
     setPreview(null);
+    // Outside the guard above: that branch matches only 'draw'/'band', and a
+    // move-rc drag is neither — a clear placed inside it could never fire.
+    setSnapGuide(null);
     updateChain(null);
     chainWallsRef.current = []; // keep id-groups in sync when the chain ends
     calibRef.current = null;
@@ -519,6 +527,7 @@ export default function SimCanvas({
       dragRef.current = null;
       onDragging(false);
       setPreview(null);
+      setSnapGuide(null);
       setGrabbing(false);
     }
     // A 2nd finger promotes to a pinch — drop any half-drawn selection band.
@@ -1009,12 +1018,17 @@ export default function SimCanvas({
       // keep their straddle magnet; circles are position-only. All of it lives in
       // the pure, node-tested `moveObjectTo` — this branch only supplies the
       // gesture. Shift suppresses the magnet for a free move.
-      const { scene: next } = moveObjectTo(cur, drag.id, v.add(drag.c0, d), drag.rot0, {
+      const { scene: next, guide } = moveObjectTo(cur, drag.id, v.add(drag.c0, d), drag.rot0, {
         snapOn: settings.snap,
         seat: native.shiftKey ? null : DRAG_SEAT,
       });
       const wrote = next.objects.find((o) => o.id === drag.id);
       lastRotRef.current = wrote && wrote.kind === 'rect' ? wrote.rotation : null;
+      // Identity-preserving: React bails out unless the captured wall or the
+      // seated flag actually changed, so this is at most two renders per gesture.
+      setSnapGuide((prev) =>
+        prev?.wallId === guide?.wallId && prev?.seated === guide?.seated ? prev : guide,
+      );
       onScene(next);
       return;
     }
@@ -1096,6 +1110,7 @@ export default function SimCanvas({
     dragRef.current = null;
     onDragging(false);
     setGrabbing(false);
+    setSnapGuide(null);
 
     if (drag.kind === 'band') {
       const pts = bandRef.current;

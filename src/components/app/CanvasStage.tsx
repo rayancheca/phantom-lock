@@ -15,6 +15,7 @@ import type { ArrangeItem, ArrangeResult } from '../../engine/arrange';
 import type { ListeningField } from '../../engine/bestspot';
 import SimCanvas from '../canvas/SimCanvas';
 import SelectionActions from '../canvas/SelectionActions';
+import { canSeatAgainstWall } from '../canvas/placement';
 import Legend from '../canvas/Legend';
 import DetectionProposalCard from '../canvas/DetectionProposalCard';
 import type { WallDetection } from './hooks/useWallDetection';
@@ -46,6 +47,7 @@ interface CanvasStageProps {
   onCalibrate: (a: Vec2, b: Vec2) => void;
   onRoomDrawn: (zone: { center: Vec2; w: number; h: number }) => void;
   onSplitWall: (id: string, at: Vec2) => void;
+  onSeatAgainstWall: (id: string) => void;
   onActivateSeat: (id: string) => void;
   /** Transient hint (e.g. the opening tool clicked off every wall). */
   onNotice: (msg: string) => void;
@@ -99,6 +101,9 @@ export default function CanvasStage(p: CanvasStageProps) {
   // and `rotateSelectedRect` no-ops on them), so the touch HUD must not offer a
   // rotate button that would silently do nothing.
   const canRotateSel = selObj?.kind === 'rect' && selObj.role !== 'door';
+  // Read the SAME pure predicate the command itself uses, so the disabled state
+  // can never disagree with what the button does (the S14 lesson).
+  const canSeatSel = sel?.type === 'object' && canSeatAgainstWall(p.scene, sel.id);
   const hudHidden = p.overlayOpen || p.mode === 'wall';
   const photoRef = useRef<HTMLInputElement>(null);
   return (
@@ -141,6 +146,8 @@ export default function CanvasStage(p: CanvasStageProps) {
         selection={p.selection}
         hidden={hudHidden}
         canRotate={!!canRotateSel}
+        canSeat={canSeatSel}
+        onSeat={() => sel?.type === 'object' && p.onSeatAgainstWall(sel.id)}
         onRotate={p.onRotateSel}
         onNudge={p.onNudgeSel}
         onDelete={p.onDeleteSel}
