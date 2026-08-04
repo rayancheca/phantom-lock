@@ -41,8 +41,9 @@ export default function AppHeader({
     <header className="topbar">
       <div className="topbar-left">
         <div className="brand" title="Phantom Lock — acoustic room planner">
-          {/* aria-label names the heading directly, so it survives the ≤560px
-              monogram swap (both spans are aria-hidden / display-toggled). */}
+          {/* aria-label names the heading directly, so it survives the ≤720px
+              monogram swap (both spans are aria-hidden / display-toggled), and
+              the ≤480px clip that hides the whole brand in the header. */}
           <h1 aria-label="Phantom Lock">
             <span className="wm-full" aria-hidden="true">
               PHANTOM<span>LOCK</span>

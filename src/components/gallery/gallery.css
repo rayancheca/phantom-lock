@@ -250,6 +250,48 @@
   }
 }
 
+/* The gallery head is a single un-shrinkable row, and it was pushing its own
+   Close button off the screen (ideas.md §17c, re-diagnosed in S35).
+
+   `.gallery-head` is `justify-content: space-between` with no wrapping, and
+   `.gallery-head-actions` is 329px of buttons — New folder, Compare, Export all,
+   Close. Measured, the head's right edge sat at a fixed 430px at EVERY viewport,
+   so at 320 and 390 the Close button was entirely outside the viewport: exposed
+   width 0, reachable only by scrolling the document sideways. That is SC 1.4.10
+   Reflow — content requiring scrolling in two dimensions at 320px — and the
+   gallery's only pointer exit (there is no click-the-scrim path; the other route
+   out is the Escape key, which a touch user does not have).
+
+   §17c had recorded the offenders as the toolbar rail's `.strip-btn`s. They are
+   not: measured, every one of those is inside `.toolstrip`'s own
+   `overflow-x: auto` and contributes nothing to `documentElement.scrollWidth` —
+   with the gallery CLOSED the document does not overflow at all at 390px.
+
+   Wrapping both rows is what closes it; wrapping only the outer one still left
+   353px of content in a 320px viewport. It is inert wherever the head already
+   fits — head height is unchanged at 560px and above. */
+@media (max-width: 720px) {
+  .gallery-head {
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+
+  /* Direct child only: the in-folder title is `.gallery-crumb h2`, which already
+     carries `min-width: 0` and its own ellipsis. */
+  .gallery-head > h2 {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .gallery-head-actions {
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .gallery-layer {
     animation: none;

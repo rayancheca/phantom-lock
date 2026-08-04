@@ -43,7 +43,7 @@
 }
 
 /* The wordmark collapses to a "PL" monogram when the header is tight, so the
-   layout switcher beside it is never squeezed out (swap in the ≤560 media). */
+   layout switcher beside it is never squeezed out (swap in the ≤720 media). */
 .wm-mono {
   display: none;
 }
@@ -154,12 +154,19 @@
    much: `.segment-label` is shared with the sidebar's Build/Furnish switch,
    which has a whole column of room and must keep its words. */
 @media (max-width: 480px) {
-  /* Clipped, never `display: none` — this element holds the page's only <h1>,
+  /* SCOPED TO THE HEADER, and that is not tidiness. `.brand` has a SECOND
+     consumer: the async-bootstrap splash (App.tsx), whose entire content is a
+     `.brand` wordmark centred in an otherwise empty page. An unscoped rule here
+     clips it, so every phone-width cold start shows a blank screen for the
+     duration of the boot — and nothing in the suite would catch it, because
+     jsdom ignores @media.
+
+     Clipped, never `display: none` — this element holds the page's only <h1>,
      and removing it from the accessibility tree would leave the narrow layout
-     with no level-1 heading. Nothing in the vitest suite could catch that:
-     shell.a11y.test.tsx counts DOM nodes, and jsdom ignores @media entirely.
-     Kept in step with global.css `.sr-only`, legacy `clip` included. */
-  .brand {
+     with no level-1 heading. shell.a11y.test.tsx counts DOM nodes, so it cannot
+     see that either. Kept in step with global.css `.sr-only`, legacy `clip`
+     included. */
+  .topbar .brand {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -187,15 +194,23 @@
   }
 }
 
-/* Under ~344px the name box is narrower than a single glyph, so it renders one
-   clipped stroke that reads as a rendering artefact rather than as text. Hide it
-   — but CLIP it, because `Icon` is `aria-hidden="true"`, so `display: none` here
-   would leave the button with no accessible name at all. Clipped, the name still
-   answers "which layout am I in?" for assistive tech, and SC 2.5.3 Label in Name
-   is satisfied vacuously because no visible text remains.
-   40px is the house target (`.topbar-actions .btn`, `.segment`); 41px of track is
-   available at the 320px reflow floor, so it fits with a pixel to spare. */
-@media (max-width: 360px) {
+/* Where the name box can no longer hold even one character plus an ellipsis.
+   Below 480 the trigger gets `W - 279` px of track, so the name box is `W - 319`:
+   41px at 360 (about five characters — worth keeping), 25px at 344, and 1px at
+   320, where it renders a single clipped stroke that reads as a rendering
+   artefact rather than as text. 344 is that boundary, not a round number.
+
+   CLIP it, never `display: none` — `Icon` is `aria-hidden="true"`, so removing
+   the name would leave the button with no accessible name at all. Clipped, it
+   still answers "which layout am I in?" for assistive tech, and SC 2.5.3 Label
+   in Name is satisfied vacuously because no visible text remains.
+
+   Both dimensions are restored explicitly. Clipping the name takes it OUT of
+   flex flow, so the only in-flow child left is a 14px icon and the height would
+   otherwise collapse to 6 + 14 + 6 = 26px — under the 40px the neighbouring
+   `.topbar-actions .btn` and `.segment` both ship, and under this rule's own
+   claim. 41px of track is available at the 320px reflow floor, so 40 fits. */
+@media (max-width: 344px) {
   .room-trigger-name {
     position: absolute;
     width: 1px;
@@ -210,6 +225,7 @@
 
   .room-trigger {
     min-width: 40px;
+    min-height: 40px;
     justify-content: center;
   }
 }
