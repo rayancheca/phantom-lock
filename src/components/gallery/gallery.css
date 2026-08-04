@@ -213,6 +213,41 @@
   .gallery-new-lead {
     min-height: 52px;
   }
+
+  /*
+     `min-height` alone is not enough, and a self-review lens found the hole by
+     measuring at 320x200 — a 1280px display at 400% zoom, which is SC 1.4.10's
+     reflow target. In a two-column tray that narrow, "Maple Court apartment" and
+     "Import layout (JSON)…" wrap to two lines under the stacked (column) layout,
+     so those buttons render 62px and the 44px floor never binds. MEASURED there:
+
+       pre-S34   tray 190px, rows 82/82/82/82, nothing fully below the fold
+       compacted tray 193px, rows 52/45/45/62/62, TWO buttons entirely offscreen
+
+     i.e. the compaction cancelled the lead row's cost everywhere except the one
+     regime where the labels are what set the height. Laying icon and label on a
+     ROW — which is what `.gallery-new-lead` already does, and why it was the only
+     button unaffected — gives the text the button's full width instead of a
+     centred column, so it stays on one line.
+  */
+  .gallery-new-btn {
+    flex-direction: row;
+    gap: 6px;
+  }
+
+  /*
+     Row layout alone still leaves the last pair below the fold at 320x200 —
+     five buttons need three rows where four needed two, and the tray was ALREADY
+     clipped by 78px there before S34. So bound it and let it scroll itself. The
+     `.gallery-layer` is `inset: 0`, so without this the overflow escapes the
+     overlay entirely and the only recovery is scrolling the document behind it.
+     50vh is a no-op wherever the tray already fits (174px vs 195px at 844x390),
+     so it bites only in the regime that is genuinely too short.
+  */
+  .gallery-new {
+    max-height: 50vh;
+    overflow-y: auto;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
