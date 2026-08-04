@@ -184,10 +184,18 @@ describe('handleAt — the hit test', () => {
   });
 
   it('THE TIE-BREAK: prefers the NEAREST grip, so adjacent grips never fight', () => {
-    // At a small on-screen size the corner and edge grips overlap. Returning the
-    // first match in declaration order would make 'n' unreachable on a short rect,
-    // because 'nw' is declared first and its hit disc reaches past the midpoint.
-    const o = rect({ w: 0.4, h: 0.4 });
+    // At a small on-screen size the corner and edge grips overlap, and returning
+    // the FIRST match in declaration order makes the edge grips unreachable —
+    // 'nw' is declared first and its disc reaches past the midpoint.
+    //
+    // The fixture size is load-bearing and was got wrong first time: at w = 0.4
+    // and scale 60 the half-extent is 12 px, just OUTSIDE the 11 px hit disc, so
+    // the grips never overlap and a first-match implementation passes. Measured —
+    // that control went green. 0.2 m gives a 6 px half-extent, so every grip is
+    // genuinely inside its neighbour's disc and the tie-break has to do real work.
+    const half = (0.2 * VIEW.scale) / 2;
+    expect(half).toBeLessThan(HANDLE_HIT_PX);
+    const o = rect({ w: 0.2, h: 0.2 });
     const hs = handlesFor(o, VIEW);
     for (const h of hs) {
       if (h.id === 'rot') continue;
@@ -302,6 +310,40 @@ describe('resizeObject — the anchor is what stays put', () => {
     const o = rect(); // 4 x 2, ratio 2
     const next = resizeObject(o, 'se', { x: 8, y: 6 }, { ...NO_OPTS, aspect: true }) as RectObj;
     expect(next.w / next.h).toBeCloseTo(o.w / o.h, 9);
+  });
+
+  it('SHIFT follows the DOMINANT axis — a mostly-vertical drag still grows it', () => {
+    // The ratio test above cannot see this: scaling from the x ratio alone also
+    // preserves the ratio, so that control went green. What separates the two is
+    // a drag that is almost entirely along local +y — with `max` of the two
+    // ratios the object grows, with x-only it barely moves.
+    const o = rect();
+    const c = Math.cos(o.rotation);
+    const s = Math.sin(o.rotation);
+    const anchor = localToWorld(o, -1, -1);
+    // Local (+hw, +5*hh): a small x reach and a large y reach.
+    const at = {
+      x: anchor.x + o.w * c - 5 * o.h * s,
+      y: anchor.x * 0 + anchor.y + o.w * s + 5 * o.h * c,
+    };
+    const next = resizeObject(o, 'se', at, { ...NO_OPTS, aspect: true }) as RectObj;
+    expect(next.h).toBeGreaterThan(o.h * 2);
+    expect(next.w / next.h).toBeCloseTo(o.w / o.h, 9);
+  });
+
+  it('every clamp bound is a multiple of the snap grid — which is why order is free', () => {
+    // `snapSpan` then `clampSpan` and the reverse give identical results ONLY
+    // because each bound already lies on the 0.05 m grid: a negative control that
+    // swapped the two was a literal no-op on all 93 tests. That is the code being
+    // redundant, not the tests being weak — but it stops holding the moment
+    // someone picks an off-grid bound, so the property itself is pinned here.
+    for (const bound of [MIN_SPAN_M, MIN_RADIUS_M, DOOR_MIN_W_M, DOOR_MAX_W_M]) {
+      expect(Math.abs(Math.round(bound / 0.05) * 0.05 - bound)).toBeLessThan(1e-12);
+    }
+    // …and above the sanitizer's own floors (0.05 for both w/h and r), so a
+    // clamped value survives a save->load unchanged.
+    expect(MIN_SPAN_M).toBeGreaterThanOrEqual(0.05);
+    expect(MIN_RADIUS_M).toBeGreaterThanOrEqual(0.05);
   });
 
   it('SHIFT still keeps the opposite corner pinned', () => {
