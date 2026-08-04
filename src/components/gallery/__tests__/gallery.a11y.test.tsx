@@ -4,6 +4,7 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import LayoutGallery from '../LayoutGallery';
 import { expectNoAxeViolationsOnPage } from '../../../test/axe';
 import { seededDefaultStore } from '../../../engine/seed';
+import { defaultStore } from '../../../engine/scene';
 import {
   addProject,
   dissolveEmptyProject,
@@ -772,5 +773,103 @@ describe('S30 — a committed move SAYS so', () => {
     expect(screen.getByRole('status').textContent).toBe('Position 2');
     fireEvent.keyDown(opener, { key: 'Enter' });
     expect(screen.getByRole('status').textContent).toBe(`Moved ${first.name} to position 2.`);
+  });
+});
+
+/**
+ * S34 — the owner's report: *"why is there no delete layout button and wheres
+ * the generate layout button. impossible to find"*.
+ *
+ * Both existed. Measured live in headless Chrome against the shipped build
+ * (`docs/sessions/S34/look.mjs`), the home grid offered exactly four creation
+ * buttons — New room… / Empty layout / Maple Court apartment / Import layout
+ * (JSON)… — and `generateOnHome` was **false**. The generator, an entire engine
+ * session's work, was reachable ONLY after drilling into a folder, and a
+ * workspace with no folders could not reach it at all.
+ *
+ * These tests pin REACHABILITY FROM THE HOME GRID, which is the property that
+ * was broken. They deliberately do not assert the tray's length or button order
+ * — that would freeze a layout decision rather than the affordance.
+ */
+describe('S34 — the two affordances the owner could not find', () => {
+  it('offers "Generate a design" on the HOME grid, not only inside a folder', () => {
+    const store = withFolder();
+    const onGenerate = vi.fn();
+    render(<LayoutGallery {...props(store)} onGenerate={onGenerate} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /generate a design/i }));
+    // Filed into HOME — `useGenerateDesign.keep` writes the new layout into the
+    // id it was opened with, so the wrong argument would silently bury a
+    // generated design inside some folder the user never opened.
+    expect(onGenerate).toHaveBeenCalledWith(homeProject(store).id);
+  });
+
+  it('reaches the generator with NO folders in the workspace at all', () => {
+    // The regression's WORST shape, and the one no seeded fixture can express:
+    // `seededDefaultStore()` ships two folders, so every existing test had a
+    // tile to drill into. A workspace with one home project and zero tiles —
+    // which is what `defaultStore()` is, and what a user reaches by deleting
+    // their folders — had no path to the generator whatsoever.
+    const store = defaultStore();
+    expect(store.projects).toHaveLength(1);
+    const onGenerate = vi.fn();
+    render(<LayoutGallery {...props(store)} onGenerate={onGenerate} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /generate a design/i }));
+    expect(onGenerate).toHaveBeenCalledWith(homeProject(store).id);
+  });
+
+  it('still files a generated design into the folder it was launched from', () => {
+    // The negative control for the change above: making the home path work must
+    // not re-point the in-folder path at home. The folder is named uniquely —
+    // `withFolder()` adds a second "Sketches" beside the seeded one, and
+    // `itemFor` would then match whichever tile came first.
+    const base = seededDefaultStore();
+    const home = homeProject(base);
+    const inHome = layoutsInProject(base, home.id);
+    const withNew = addProject(base, 'Bench');
+    const folder = withNew.projects[withNew.projects.length - 1];
+    const store = moveLayoutToProject(withNew, inHome[inHome.length - 1].id, folder.id);
+    const onGenerate = vi.fn();
+    render(<LayoutGallery {...props(store)} onGenerate={onGenerate} />);
+
+    fireEvent.click(openerIn(itemFor(folder.name)));
+    fireEvent.click(screen.getByRole('button', { name: /generate a design/i }));
+    expect(onGenerate).toHaveBeenCalledWith(folder.id);
+  });
+
+  it('can delete a design from the home grid, through the card actions menu', () => {
+    // Delete was never missing — it is a MenuItem behind the card's "⋯". This
+    // pins the path end to end, which nothing did before: the closest existing
+    // test opens the same menu and asserts something else entirely.
+    const store = withFolder();
+    const first = layoutsInProject(store, homeProject(store).id)[0];
+    const onDelete = vi.fn();
+    render(<LayoutGallery {...props(store)} onDelete={onDelete} />);
+
+    fireEvent.click(within(itemFor(first.name)).getByRole('button', { name: /actions/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /^delete$/i }));
+    expect(onDelete).toHaveBeenCalledWith(first.id);
+  });
+
+  it('names the card menu so its trigger is not just "⋯" to a screen reader', () => {
+    // The glyph carries no meaning on its own. It measures 9.14:1 against the
+    // card, so this is NOT a contrast defect — the accessible NAME is what
+    // makes it findable non-visually, and the visible boundary (1.04:1 before
+    // S34) is what makes it findable visually. The latter is a CSS fact jsdom
+    // cannot resolve; it is guarded in `styles/__tests__/contrast.test.ts`.
+    const store = withFolder();
+    const first = layoutsInProject(store, homeProject(store).id)[0];
+    render(<LayoutGallery {...props(store)} />);
+
+    const trigger = within(itemFor(first.name)).getByRole('button', { name: /actions/i });
+    // No jest-dom in this repo — `toHaveAttribute` is not a chai property here.
+    expect(trigger.getAttribute('aria-haspopup')).toBe('menu');
+    expect(trigger.getAttribute('aria-label')).toBe(`${first.name} actions`);
+  });
+
+  it('has no axe violations page-wide with the generator entry on the home tray', async () => {
+    render(<LayoutGallery {...props(withFolder())} />);
+    await expectNoAxeViolationsOnPage();
   });
 });

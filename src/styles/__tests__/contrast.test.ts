@@ -249,6 +249,118 @@ describe('S7 fix C-3: the <Term> / spec-label dotted underline is perceivable', 
   }
 });
 
+describe('S34: the gallery card actions button has a perceivable BOUNDARY', () => {
+  /*
+    The owner reported "why is there no delete layout button". Delete is a
+    MenuItem behind the card's `⋯` trigger, and the trigger had no boundary at
+    all — so nothing on the card said a control was there.
+
+    The numbers are the point, and they are why the obvious fix is wrong: the
+    GLYPH was never the problem, and darkening the fill makes the body WORSE.
+    These assertions are read straight off `gallery.css .gallery-kebab-btn`.
+  */
+  const KEBAB_FILL = 'rgba(5, 7, 12, 0.6)';
+  const KEBAB_FILL_HOVER = 'rgba(5, 7, 12, 0.85)';
+
+  /*
+     THE BACKDROP IS NOT THE CARD, and the first cut of this test got that wrong
+     — an adversarial pass caught it. `.gallery-kebab` is `top:14px; right:14px`,
+     while `.gallery-open` pads by --space-2 (8px) and `.gallery-thumb` runs
+     130px tall. So the 28x28 chip lands ENTIRELY inside the thumbnail band:
+     over the mini-plan CANVAS on a design card, and over `.folder-mosaic`
+     (--surface-0) on a folder tile. It never touches --surface-1/--surface-2.
+
+     The canvas fill is read from `thumb.ts` on disk rather than hardcoded, for
+     the reason the file header gives: a constant copied into a test stops
+     tracking the thing it claims to measure the moment someone edits the source.
+  */
+  const THUMB_BG = (() => {
+    const src = readFileSync(new URL('../../components/canvas/thumb.ts', import.meta.url), 'utf8');
+    const m = src.match(/fillStyle\s*=\s*'(#[0-9a-fA-F]{6})'/);
+    if (!m) throw new Error('thumb.ts no longer starts by filling the canvas — re-derive this test');
+    return m[1];
+  })();
+
+  /** Every backdrop the chip can actually sit on, worst case included. */
+  const UNDER: readonly (readonly [string, string])[] = [
+    ['card thumbnail canvas', THUMB_BG],
+    ['folder mosaic', c('--surface-0')],
+    // Kept as belt-and-braces: if the thumbnail band is ever resized or the chip
+    // moved, these are what it would fall onto.
+    ['card surface', c('--surface-1')],
+    ['folder tile surface', c('--surface-2')],
+  ];
+
+  it('reads the thumbnail canvas colour from thumb.ts, not from a copy', () => {
+    expect(THUMB_BG).toMatch(/^#[0-9a-f]{6}$/i);
+  });
+
+  /*
+     THE ONE THAT MATTERS. Everything else here measures TOKENS, so all of it
+     would keep passing if someone deleted the border from gallery.css — the
+     ratios are properties of the palette, not of the rule that uses it. This
+     reads the shipped stylesheet and pins the APPLICATION, which is what turns
+     the block from documentation into a guard. Verified load-bearing: reverting
+     `border` to `none` reds this and nothing else in the file.
+  */
+  it('gallery.css actually GIVES the trigger that border', () => {
+    const css = readFileSync(
+      new URL('../../components/gallery/gallery.css', import.meta.url),
+      'utf8',
+    );
+    const rule = css.match(/\.gallery-kebab-btn\s*\{([^}]*)\}/);
+    expect(rule, '.gallery-kebab-btn rule not found').toBeTruthy();
+    const border = rule![1].match(/border:\s*([^;]+);/);
+    expect(border, '.gallery-kebab-btn declares no border').toBeTruthy();
+    // Any token would satisfy "has a border"; the point is that it is one the
+    // measurements above cleared. --border-strong/--border are asserted to FAIL
+    // 3:1, so naming either here would be a silent regression.
+    expect(border![1]).toContain('var(--text-3)');
+  });
+
+  it('the glyph was ALREADY fine — this was never a text-contrast defect', () => {
+    for (const [name, bg] of UNDER) {
+      expect(contrastRatio(c('--text-2'), [bg, KEBAB_FILL]), name).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it('THE DEFECT: the fill alone cannot make the button visible, at any alpha', () => {
+    // Every backdrop is already near-black, so the fill is essentially the
+    // backdrop. This is the negative control for "just darken it" — the
+    // intuitive fix, which would have read as an improvement in a diff and
+    // changed nothing a user can see. Measured: 1.05 / 1.01 / 1.04 / 1.10.
+    for (const [name, bg] of UNDER) {
+      for (const fill of [KEBAB_FILL, KEBAB_FILL_HOVER, 'rgb(5, 7, 12)']) {
+        expect(contrastRatio(fill, bg), `${name} @ ${fill}`).toBeLessThan(1.5);
+      }
+    }
+  });
+
+  it('the border clears the 3:1 non-text contrast floor on EVERY backdrop', () => {
+    // Measured: 5.93 thumbnail · 6.36 mosaic · 6.04 card · 5.57 tile.
+    for (const [name, bg] of UNDER) {
+      expect(contrastRatio(c('--text-3'), bg), name).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it('the hover border stays above the floor too', () => {
+    for (const [name, bg] of UNDER) {
+      expect(contrastRatio(c('--text-2'), bg), name).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it('rejects the weaker border tokens that were measured and passed over', () => {
+    // --border-strong reads 1.59-1.68 and --border 1.16-1.22 across these
+    // backdrops. Either would look like a fix in the diff and leave the button
+    // invisible; without this control a later "use the standard border token"
+    // simplification passes.
+    for (const [name, bg] of UNDER) {
+      expect(contrastRatio(c('--border-strong'), bg), name).toBeLessThan(3);
+      expect(contrastRatio(c('--border'), bg), name).toBeLessThan(3);
+    }
+  });
+});
+
 describe('S7 fixes C-4/C-5/C-6: disabled controls stay readable', () => {
   // Element `opacity` fades the whole composited element — glyph AND fill — over
   // the parent. Modelling only the glyph (as the design pass did) overstates every

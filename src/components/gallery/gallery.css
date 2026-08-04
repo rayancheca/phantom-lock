@@ -101,12 +101,36 @@
   right: 14px;
 }
 
+/*
+   S34 — the card's actions button needs a BOUNDARY, not a brighter glyph.
+
+   The owner reported "why is there no delete layout button". Delete was never
+   missing: it is a MenuItem behind this trigger. What was missing was any sign
+   that the trigger IS a control. MEASURED with the real token values through
+   `styles/contrast.ts` (which composites alpha properly):
+
+     glyph  --text-2 on rgba(5,7,12,.6) over --surface-1 =  9.14:1   (fine)
+     BODY   rgba(5,7,12,.6)             vs   --surface-1 =  1.04:1   (invisible)
+
+   So this is not a "too dim" defect and darkening the fill makes it WORSE, not
+   better — the card is already near-black, and .85/1.0 alpha only reach 1.06 and
+   1.07. The fix has to be a border in a colour that clears WCAG 1.4.11's 3:1:
+
+     --text-3 vs --surface-1 (design card)  = 6.04:1
+     --text-3 vs --surface-2 (folder tile)  = 5.57:1
+
+   `--text-3` as a BORDER, not as text, is the same move S7 made for the <Term>
+   dotted underline (--border-strong 1.65:1 was invisible) — and it sidesteps the
+   contrast ratchet's sub-12px --text-3 rule, which is about type, not strokes.
+   --border-strong (1.65) and --border (1.19) were both measured and are too weak.
+   Pinned by `styles/__tests__/contrast.test.ts`.
+*/
 .gallery-kebab-btn {
   display: grid;
   place-items: center;
   width: 28px;
   height: 28px;
-  border: none;
+  border: 1px solid var(--text-3);
   border-radius: var(--radius-sm);
   background: rgba(5, 7, 12, 0.6);
   color: var(--text-2);
@@ -116,6 +140,7 @@
 
 .gallery-kebab-btn:hover {
   color: var(--text);
+  border-color: var(--text-2);
   background: rgba(5, 7, 12, 0.85);
 }
 
@@ -145,9 +170,49 @@
   cursor: pointer;
 }
 
+/* S34 — the generator spans both columns and leads the tray. Five buttons in a
+   two-column grid otherwise leave a hole, and the flagship action should not be
+   one of four equal tiles. `1 / -1` is the only rule needed: the remaining four
+   flow into the 2x2 beneath it. */
+.gallery-new-lead {
+  grid-column: 1 / -1;
+  min-height: 64px;
+  flex-direction: row;
+  color: var(--text);
+}
+
 .gallery-new-btn:hover {
   background: var(--surface-hover);
   color: var(--accent);
+}
+
+/*
+   SHORT VIEWPORTS — the tray must not starve the grid.
+
+   `.gallery-new` is content-sized with no shrinkable minimum, while
+   `.gallery-surface` is `flex: 1 1 0; min-height: 0`, so every pixel the tray
+   grows comes straight out of the grid. Adding the lead button cost 72px (one
+   more row plus its gap) and a self-review lens caught what that does on a
+   landscape phone. MEASURED, 844x390, five seeded cards:
+
+     tray 190 -> 262px · grid 137 -> 65px · first card visible 133 -> 61 of 196
+
+   i.e. under a third of a card. At 390x640 and 1440x900 nothing moved (grid 224
+   on both trees), so this is a SHORT-viewport defect, not a narrow one — the
+   query keys on height, and `max-height` is the only correct axis for it.
+
+   The compacted tray totals ~172px, which is BELOW the 190px this screen had
+   before the lead button existed, so the regression is not merely cancelled.
+   44px keeps every button a comfortable touch target.
+*/
+@media (max-height: 640px) {
+  .gallery-new-btn {
+    min-height: 44px;
+  }
+
+  .gallery-new-lead {
+    min-height: 52px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

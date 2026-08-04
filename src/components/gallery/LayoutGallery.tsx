@@ -719,6 +719,28 @@ export default function LayoutGallery(p: GalleryProps) {
 
       {!folder && (
         <div className="gallery-new">
+          {/*
+            S34 — the generator leads the home tray, spanning both columns.
+
+            It used to be reachable ONLY from inside a folder (the `{folder &&}`
+            row below, and a folder tile's kebab), which made the app's flagship
+            feature invisible on the screen every session opens on — and
+            completely unreachable in a workspace with no folders at all. The
+            owner reported it as "wheres the generate layout button. impossible
+            to find". Measured live before the fix: `generateOnHome === false`.
+
+            `home.id` is the right argument, not a folder's: `useGenerateDesign`
+            files the kept design into the id it was opened with, so anything
+            else would bury a generated design in a folder the user never opened.
+          */}
+          <button
+            type="button"
+            className="gallery-new-btn gallery-new-lead"
+            onClick={() => p.onGenerate(home.id)}
+          >
+            <Icon name="sparkles" size={18} />
+            Generate a design…
+          </button>
           <button type="button" className="gallery-new-btn" onClick={() => p.onNewRoom(home.id)}>
             <Icon name="rectangle" size={18} />
             New room…
