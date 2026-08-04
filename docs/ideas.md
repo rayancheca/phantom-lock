@@ -13,6 +13,8 @@ effort — a small high-value item beats a large one.
 | 13 | ✅ **Detection refuses the owner's floorplan** — **REFUTED S26** (measured at a resolution the app never uses) | ~~P0~~ done | — |
 | 13d | ✅ **S27's fix had a MIRROR regression** — **DONE S28** (both threshold rules kept as candidates; polarity case REFUSED → 14/16/26 walls live) | ~~P0~~ done | — |
 | 13b | ✅ **Detection's verdict was unstable under a tone curve** — **DONE S27, LANDED S28** (owner 38/138 → 0/138; corpus 94.82 % → 95.48 %) | ~~P1~~ done | — |
+| 17b | ✅ **The layout switcher was COVERED at phone widths** — **DONE S35** (exposed 0 px at 320 → 40 px; SC 2.4.11 + 2.5.8) | ~~P1~~ done | — |
+| 17c | ✅ **The gallery head pushed Close off-screen** — **DONE S35** (re-diagnosed: not the toolbar rail; SC 1.4.10) | ~~P3~~ done | — |
 | 14 | **Gallery home screen (owner-requested)** — ✅ **DONE S29**: flat grid, folders as tiles, drag to merge/reorder, persisted arrangement. Residuals below. | ~~P1~~ done | — |
 | 13e | **REFUTED AT THIS SEAM (S31)** — no function of the detected segments separates a floorplan from furniture outlines; proven three ways and pinned. Redirected to metric scale, which needs a calibrated-scale flow first. | P2 | 1 session |
 | 1 | ✅ **Auto-detect walls accuracy overhaul** — **DONE S22** (52.1 % → 95.6 %, and it refuses) | ~~P0~~ done | — |
@@ -1360,37 +1362,78 @@ so the home grid — the screen every session opens on — offered no path to it
 said a control was there. The glyph was already 9.09–9.30:1, so "too dim" was the wrong diagnosis and
 darkening the fill makes it worse. Fixed with a `--text-3` stroke (5.57–6.36:1). See the S34 handoff.
 
-## 17b. The layout switcher is COVERED at phone widths — **P1, pre-existing, NOT caused by S34**
+## 17b. The layout switcher was COVERED at phone widths — ✅ **DONE S35**
 
-Found while verifying S34 at 390 px, and it is worse than either bug S34 fixed, because the gallery
-is the only home for both of them.
+`.room-trigger` opens the layout gallery and nothing else does, so open / rename / duplicate /
+export / delete / generate all lived behind it. Below ~817 px the DESIGN/TUNE `SegmentSwitch`
+painted over it.
 
-`.room-trigger` — the header pill that opens the gallery, and **the only control that opens it** — is
-overlapped by the DESIGN/TUNE `SegmentSwitch`'s `.segment-label` spans. Measured by sweeping 21 points
-across the trigger's width and calling `document.elementFromPoint` at each, on a **pre-S34 baseline
-tree** and on the S34 branch, byte-identically:
+**The S34 filing under-measured it.** A 21-point sweep has an 8.7 px pitch at 390 px and SC 2.5.8's
+threshold is 24 px — 2.75 pitches — so "0.143" could not decide the question it was being asked.
+Re-measured as the widest CONTIGUOUS unoccluded run at 1 px resolution, which is what the criterion
+actually means (occluded area is not part of a target):
 
-| viewport width | fraction of the trigger that is hit-testable |
-|---|---|
-| 390 px | **0.143** (3 of 21 points) |
-| 560 px | 0.714 |
-| 760 px | 0.667 |
-| 960 px | 1.000 |
-| 1440 px | 1.000 |
+| width | exposed BEFORE | exposed AFTER | note |
+|---|---|---|---|
+| 320 | **0 px** | 40 | entirely hidden — and it is the FIRST Tab stop, so SC 2.4.11 too |
+| 360 | 4 | 40 | |
+| 390 | **22** | 111 | fails SC 2.5.8 by 2 px |
+| 430 | 46 | 151 | |
+| **561** | **27** | 113 | the worst width in the range — see below |
+| 640 | 75 | 160 | |
+| 721 | 91 | 79 | |
+| 817+ | 175 | 175 | unchanged |
 
-So on a phone the gallery is very nearly unopenable, which makes *every* layout action — open,
-rename, duplicate, export, delete, generate — unreachable. This is the S21 lesson verbatim
-(*"two absolutely-positioned overlays at the same coordinates is a HIT-TESTING bug, not a cosmetic
-one"*), and the S21 fix note applies here too: anchor the smaller element to the opposite edge rather
-than nudging an offset, because the header can wrap.
+**Root cause, one level up from where it looks.** `.room-trigger` is a flex item with the default
+`min-width: auto`, so its automatic minimum size is its MIN-CONTENT size — and `.room-trigger-name`
+is `white-space: nowrap`, so that is the whole layout name. The button measured **exactly 174.8 px
+at 560, 640, 760, 860 AND 1440**: it never shrank anywhere. The ellipsis already on the name could
+therefore never engage, and `min-width: 0` on the NAME is a measured no-op.
 
-Harness: `/tmp` throwaway in S34; re-derivable in ten lines from `docs/sessions/S32/cdp.mjs` —
-launch at width W, `document.elementFromPoint` across `.room-trigger`'s rect, count `SELF` hits.
+**Reachability is not monotonic in viewport width.** 561 px measured worse than 430 px, because the
+wordmark returns there and costs 96.6 px. Any future guard must sample 561 and 721, not round phone
+widths. The fix moves the monogram rule 560 → 720, which is what `app.css` already says that rule is
+for ("so the layout switcher beside it is never squeezed out").
 
-## 17c. The page scrolls horizontally at 390 px — **P3, pre-existing**
+**Three measurements that killed the obvious fixes:**
+- Hiding `.segment-label` frees **exactly 0 px** — the switch is `width: min(300px, 40vw)`, not
+  content-sized. And `width: auto` alone is a REGRESSION at 390 (max-content 160.4 > the 156 it
+  replaces). They ship together or not at all.
+- `min-width: 0` alone scores a perfect hit test on a **20 × 30 unlabelled stub** — an SC 2.5.8
+  failure in its own right, not merely poor taste.
+- A two-row header reflow costs **+42 px**, taking the header from 28.5 % to 49.5 % of the viewport
+  at 320 × 200. Rejected.
 
-`documentElement.scrollWidth` is **430** against a `clientWidth` of 390 while the gallery is open.
-The offenders are the un-floated toolbar rail's `.strip-btn` children (right edges at 467, 557).
-Measured identically on the pre-S34 baseline tree and the S34 branch — same 430, same six offenders —
-so it is not the S34 tray. `docs/sessions/S34/mobile.mjs` asserts the number has not MOVED rather than
-asserting it is zero, so a future change that makes it worse still reds.
+Removing the Tour button or undo/redo was also rejected: the Tour button is the only permanent entry
+to the tutorial, and `app.css` states the header undo/redo are the only ones on mobile.
+
+Harness: `docs/sessions/S35/{verify,probe-fix,probe-shapes,probe-candidates,diagnose-header}.mjs`.
+
+### 17b-i. The trigger's PURPOSE still lives only in a hover `title=` — **P3, pre-existing**
+
+Adjudicated during S35's self-review and returned **PRE_EXISTING**: `.room-trigger`'s visible text is
+the layout NAME, which describes state and never purpose, so "this pill opens open/rename/duplicate/
+export/delete/generate" has only ever existed in `title="All layouts — switch, create, manage"`. That
+is the UX-4 rule ("no load-bearing meaning lives only in a hover title") and it holds identically on
+`main` at every width, so S35 did not worsen it. The clean fix needs no `aria-label` (which would
+break SC 2.5.3 Label in Name by dropping the visible text out of the accessible name): add an
+`.sr-only` suffix span inside the button, so the name becomes the layout name PLUS the purpose.
+
+## 17c. The gallery head pushed its own Close button off-screen — ✅ **DONE S35**
+
+**Filed wrong, and the correction matters.** §17c blamed the un-floated toolbar rail's `.strip-btn`
+children (right edges 467, 557). Measured, every one of those is inside `.toolstrip`'s own
+`overflow-x: auto` and contributes **nothing** to `documentElement.scrollWidth` — with the gallery
+CLOSED the document does not overflow at all at 390 px. The condition was wrong too: it only
+happens while the gallery is OPEN.
+
+The real cause is `.gallery-head`, a non-wrapping `space-between` row whose 329 px of actions put its
+right edge at a **fixed 430 px at every viewport**. So at 320 and 390 the **Close button was entirely
+outside the screen** (exposed width 0), reachable only by scrolling the document sideways — SC 1.4.10
+Reflow, on the gallery's only pointer exit (the other way out is Escape, which a touch user lacks).
+"Export all" measured 13 px at 320, also under SC 2.5.8.
+
+Fixed by wrapping BOTH rows. Wrapping only the outer one still left 353 px of content in a 320 px
+viewport. Inert at ≥560 px — head height is unchanged there. After: `scrollWidth == clientWidth` at
+every width, in both gallery states, every head button ≥26 px, and a real click on Close closes the
+gallery at 320 px. S34's 320 × 200 tray guarantee re-verified (5/5 reachable, tray bounded at 62 px).

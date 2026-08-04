@@ -912,6 +912,112 @@ speed. Confirm the next kickoff you write re-states this protocol.*
 
 ## Progress log
 
+### Session 35 — 2026-08-04 — the header covered the gallery's only door (`docs/ideas.md` §17b, §17c)
+
+**Both closed.** `.room-trigger` opens the layout gallery and nothing else does, so open / rename /
+duplicate / export / delete / generate all lived behind it — and below ~817 px the DESIGN/TUNE
+switch painted over it. Then the gallery, once open, pushed its own Close button off the screen.
+
+**§17b — the trigger.** Re-measured at 1 px resolution as the widest CONTIGUOUS unoccluded run,
+because the S34 filing's 21-point sweep has an 8.7 px pitch at 390 px and SC 2.5.8's threshold is
+24 px — it could not decide its own question.
+
+| width | before | after | |
+|---|---|---|---|
+| 320 | **0 px** | 40 | entirely hidden; it is the first Tab stop, so SC 2.4.11 as well |
+| 390 | **22** | 111 | fails SC 2.5.8 by 2 px |
+| **561** | **27** | 113 | the worst width in the range — worse than 430 |
+| 721 | 91 | 79 | |
+| 817+ | 175 | 175 | unchanged |
+
+Root cause: `.room-trigger` is a flex item with the default `min-width: auto`, so its automatic
+minimum size is its MIN-CONTENT — and the name is `white-space: nowrap`. It measured **exactly
+174.8 px at 560, 640, 760, 860 AND 1440**: it never shrank anywhere, and the ellipsis already on the
+name could never engage. Fixed with `min-width: 0`, an icon-only mode switch and a clipped brand
+below 480, a clipped name below 344, and the existing monogram rule extended 560 → 720 (which is
+what `app.css` already said that rule was for).
+
+**§17c — the gallery head. Filed wrong, and the correction was the work.** It blamed the toolbar
+rail's `.strip-btn`s; measured, every one is inside `.toolstrip`'s own `overflow-x: auto` and
+contributes **nothing** — with the gallery closed the document does not overflow at all. The real
+cause was `.gallery-head`, whose 329 px of non-wrapping actions put its right edge at a fixed 430 px
+at every viewport, leaving **Close entirely off-screen** at 320 and 390. SC 1.4.10 Reflow, on the
+gallery's only pointer exit.
+
+#### Evidence
+
+**Agents spawned (role → verdict).** Design workflow: 3 understanding agents completed
+(dependency map · a11y envelope · space budget) — **the other 9 died on a session usage limit
+(TRAP 24)**, so the design/judge/skeptic phases never ran and the design was settled by
+measurement in the main thread instead. The three that landed were decisive: they corrected my
+candidate CSS (unscoped `.segment-label` also blanks the sidebar switch), corrected my measurement
+method (1 px resolution, not 21 points), and found the 561 px cliff. Self-review workflow: 4 review
+lenses (css-correctness · a11y · test-quality · ux-and-doctrine), all `SHIP_WITH_FIXES`, 17 findings
+→ 9 verified by independent refuters → **8 CONFIRMED and fixed, 1 PRE_EXISTING** (the trigger's
+purpose living only in `title=`, which holds identically on `main`; filed as §17b-i, P3).
+
+**Before/after test count: 1628 → 1640** (+12, ratchet held). New file
+`src/components/app/__tests__/header-responsive.test.ts`.
+
+**Gate output (literal tails).**
+```
+ Test Files  74 passed (74)
+      Tests  1640 passed (1640)
+```
+```
+dist/index.html                   1.31 kB │ gzip:   0.63 kB
+dist/assets/index-DIrwgzZG.css   54.75 kB │ gzip:  10.21 kB
+dist/assets/index-a676D3Aa.js   506.04 kB │ gzip: 165.05 kB
+```
+```
+> phantom-lock@0.1.0 lint
+> eslint .
+```
+The JS is **byte-identical** to S34's — the whole diff is CSS and comments.
+
+**Coverage.** No `.ts`/`.tsx` source file changed, so no coverage line moved; `npm run test:coverage`
+green, `AppHeader.tsx` unchanged at 95.45 %.
+
+**Negative controls: 18, all caught, each by the test written FOR it.** Eight in the first round;
+self-review then found **six more that PASSED** and they were closed (unscoped label in a *different*
+media block · a selector LIST whose sibling compound blanks the sidebar · `min-width: auto`
+satisfying `/width:\s*auto/` · `.topbar-left` satisfying `/\.topbar\b/` · unpinned segment padding ·
+missing `min-height`). NC2 was additionally proven in a browser: shipped keeps `["Build","Furnish"]`
+visible in the sidebar, unscoped blanks both.
+
+**Live verification** (headless Chrome, fresh profile per run — the owner's layouts untouched):
+- `docs/sessions/S35/verify.mjs` — 20 widths × 2 layout names; worst exposed trigger **40 px**, worst
+  segment 39, Tour 41, undo/redo 36; one `<h1>` at every width; the boot splash proven unclipped; the
+  sidebar scoping proven **in DESIGN mode** (my first probe read 0 sidebar labels and would have
+  passed vacuously, because the app boots into TUNE); a real mouse click opens the gallery at 320.
+- `docs/sessions/S35/verify-gallery.mjs` — no horizontal overflow at any width in **either** gallery
+  state, breadcrumb reachable in-folder, a real click on Close closes the gallery at 320, and S34's
+  320 × 200 tray guarantee re-checked (5/5 reachable after scrolling, tray bounded at 62 px).
+- Screenshots: `docs/sessions/S35/shots/v-after-{320,390,561,721,1440}.jpg`, `g-320-in-folder.jpg`,
+  `g-320x200.jpg`, plus the before/after pairs `hdr-{before,after}-{320,390,561,721}.jpg`.
+
+**Acceptance bullets.**
+- *`elementFromPoint` reports SELF for ≥0.95 of the trigger at 320/390/560/760/960/1440* — **met, and
+  strengthened**: the fraction was replaced by the widest contiguous unoccluded run in px (the
+  fraction cannot decide SC 2.5.8), measured ≥40 px at 20 widths including the 561 and 721 cliffs.
+- *The DESIGN/TUNE switch stays fully operable at every width; sweep IT too* — **met**: worst exposed
+  segment 39 px, every segment ≥40 px wide, roles/`aria-checked`/roving tabindex untouched.
+- *A CDP guard pins the fractions* — **met** (`verify.mjs`), and a committed disk-reading test pins
+  the declarations, since jsdom ignores `@media`.
+- *The ≤960 px bottom rail re-checked* — **met**: header height unchanged (57/53), and the rail's own
+  overflow proven self-clipped.
+- *§17c (P3 stretch)* — **met and upgraded**: re-diagnosed as SC 1.4.10 with Close off-screen, fixed,
+  and the old attribution corrected in `ideas.md`.
+- *Task 2b, §16 Word-style handles* — **DEFERRED**, untouched. It is a full session (new `Drag` kind,
+  rotated-frame hit-testing, interaction with the S23 wall-seat magnet) and remains the head of the
+  queue.
+
+**Stated honestly.** Live checks ran ONE browser (headless Chrome over CDP). No real screen reader
+has ever been driven on this project. Touch is CDP emulation, not a physical device. The design
+workflow was **partial** — 9 of 12 agents died on a usage limit, so there was no independent judge
+panel or design skeptic; the design rests on main-thread measurement plus the self-review that
+followed it.
+
 ### Session 34 — 2026-08-04 — the two affordances the owner could not find (`docs/ideas.md` §17)
 
 **The owner's report,** mid-session and unprompted: *"why is there no delete layout button and
