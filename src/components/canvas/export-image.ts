@@ -61,6 +61,10 @@ export async function renderPlanToBlob(input: PlanImageInput): Promise<Blob> {
     bestSpot,
     // An exported PNG must never carry a transient drag halo.
     snapGuide: null,
+    // …nor editing chrome. `selection: null` above would already suppress the
+    // grips, since SimCanvas derives this from the selection — but stating it
+    // keeps the exporter's "no UI, only the plan" contract readable in one place.
+    handleTarget: null,
     theme,
     view: fitView(width, height, b),
     width,

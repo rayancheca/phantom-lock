@@ -93,6 +93,29 @@ export function verdictSentence(i: AnnounceInput): string {
   return `${lead}${v.headline}.${cause} Quality ${q} percent.`;
 }
 
+/**
+ * The selection sentence to put in the IMMEDIATE region, given whether a pointer
+ * drag is live (S36).
+ *
+ * The selection region is deliberately un-settled — a discrete, user-initiated
+ * change should be spoken at once. That was safe while every drag moved an object
+ * without changing its spoken label, and §16's resize grips break it:
+ * `selection-cycle.ts` `labelOf` puts the DIMENSIONS in that label
+ * (`"Sofa, 4.00 by 2.00 m"`), so a grip drag at rAF cadence would push a distinct
+ * string into an `aria-atomic` `role="status"` roughly sixty times a second.
+ *
+ * Going quiet for the duration is the whole fix, and it loses nothing: the
+ * selection itself was announced when the pointer went down, and the final
+ * geometry is announced the moment the drag ends and this returns the live text
+ * again. It also happens to close a pre-existing, rarer version of the same
+ * churn — `describePosition` appends "7 of 24" from a position-sorted order, so a
+ * plain MOVE drag already re-announced whenever the object crossed a neighbour in
+ * reading order.
+ */
+export function spokenSelection(text: string, dragging: boolean): string {
+  return dragging ? '' : text;
+}
+
 /** Did anything about the room's INVENTORY change? (Verdict changes don't count.) */
 export function countsChanged(a: AnnounceInput, b: AnnounceInput): boolean {
   return (

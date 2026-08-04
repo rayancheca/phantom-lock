@@ -8,6 +8,7 @@ import {
   initSettle,
   sceneSentence,
   speakableUnits,
+  spokenSelection,
   stepSettle,
   verdictSentence,
 } from '../announce';
@@ -208,5 +209,41 @@ describe('stepSettle', () => {
   it('tracks the announced value so a later revert to it stays silent', () => {
     const { state } = run('A', [['B', 0], ['B', 800]]);
     expect(state.announced).toBe('B');
+  });
+});
+
+describe('spokenSelection — the immediate region during a drag (S36)', () => {
+  // The settle reducer above protects the READOUT region. The SELECTION region is
+  // deliberately un-settled, and §16's resize grips are what make that unsafe:
+  // `selection-cycle.ts` `labelOf` puts the object's DIMENSIONS in the spoken
+  // label, so a grip drag would push a distinct string into an `aria-atomic`
+  // `role="status"` on every rAF frame.
+
+  it('goes quiet while a pointer drag is live', () => {
+    expect(spokenSelection('Sofa, 4.00 by 2.00 m, 7 of 24', true)).toBe('');
+  });
+
+  it('speaks the FINAL geometry the moment the drag ends', () => {
+    expect(spokenSelection('Sofa, 2.35 by 2.00 m, 7 of 24', false)).toBe(
+      'Sofa, 2.35 by 2.00 m, 7 of 24',
+    );
+  });
+
+  it('THE POINT: 60 resize frames produce ONE spoken string, not sixty', () => {
+    // The negative control for the whole change: without the gate this array is
+    // 60 distinct strings. `labelOf` really does embed w/h, so these are the
+    // strings the region would receive.
+    const spoken = new Set<string>();
+    for (let i = 0; i < 60; i++) {
+      spoken.add(spokenSelection(`Sofa, ${(4 + i * 0.05).toFixed(2)} by 2.00 m, 7 of 24`, true));
+    }
+    spoken.add(spokenSelection('Sofa, 6.95 by 2.00 m, 7 of 24', false));
+    // The empty string is not an announcement; exactly one real sentence lands.
+    expect([...spoken].filter(Boolean)).toEqual(['Sofa, 6.95 by 2.00 m, 7 of 24']);
+  });
+
+  it('does not suppress anything when no drag is live', () => {
+    expect(spokenSelection('', false)).toBe('');
+    expect(spokenSelection('Wall, 3.20 m, 1 of 4', false)).toBe('Wall, 3.20 m, 1 of 4');
   });
 });

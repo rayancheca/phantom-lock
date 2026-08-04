@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
+  CircleObj,
+  RectObj,
   Scene,
   SceneObject,
   Selection,
@@ -29,6 +31,13 @@ import {
   type WallChain,
 } from './render';
 import {
+  applyHandleDrag,
+  handleAt,
+  handleCursor,
+  handleTargetFor,
+  type HandleId,
+} from './handles';
+import {
   canvasKeyAction,
   hoverCursor,
   isDraggableAt,
@@ -56,7 +65,10 @@ const MAX_SCALE = 500;
 const CLOSE_RADIUS = 0.25;
 /** Wall segments snap to 45° multiples when within this many degrees. */
 const ANGLE_SNAP_DEG = 7;
-/** Drag kinds that reposition scene items (→ 'grabbing' cursor). */
+/** Drag kinds that reposition scene items (→ 'grabbing' cursor). `handle` is
+ *  deliberately NOT here: a resize or rotate gesture keeps the directional
+ *  cursor its grip earned, which `handleCursor` supplies from the grip's
+ *  SCREEN direction. */
 const MOVE_KINDS = new Set<Drag['kind']>(['node', 'wall-end', 'move-wall', 'move-rc', 'move-multi']);
 /** Hover this near a wall (screen px) before the door/window chip appears. */
 const WALL_HOVER_APPEAR_PX = 18;
@@ -109,6 +121,21 @@ type Drag =
   // what makes the transform a pure function of the gesture: leaving a wall's field
   // restores the identical float, and one undo restores centre AND rotation.
   | { kind: 'move-rc'; pointerId: number; id: string; start: Vec2; c0: Vec2; rot0: number }
+  // §16 (S36). Its OWN kind, deliberately, so the S23 wall-seat magnet never sees
+  // it: `moveObjectTo` rewrites `rotation` from `rot0` on every frame, and a
+  // resize or rotate sharing the move branch would fight it exactly as a mid-drag
+  // `q`/`e` did. `obj0` is the object as it was at pointerdown — every frame is
+  // recomputed from it rather than from the live value, which is what makes the
+  // gesture a pure function of the pointer and one undo restore all of it.
+  | {
+      kind: 'handle';
+      pointerId: number;
+      id: string;
+      handle: HandleId;
+      obj0: RectObj | CircleObj;
+      /** atan2 of (pointerdown - centre); only the 'rot' grip reads it. */
+      grabAngle: number;
+    }
   | { kind: 'draw'; pointerId: number; tool: DrawTool; anchor: Vec2 }
   | { kind: 'band'; pointerId: number; shape: 'marquee' | 'lasso'; additive: boolean }
   | {
@@ -164,6 +191,26 @@ export default function SimCanvas({
   /** The wall the seat magnet has captured this drag. Identity-preserving setter,
    *  so React bails out — it changes at most twice per gesture. */
   const [snapGuide, setSnapGuide] = useState<{ wallId: string; seated: boolean } | null>(null);
+  /**
+   * Is this a precise pointer? The §16 grips are an 11 px target and are hidden
+   * on a coarse pointer, where they would be worse than useless: a finger aimed
+   * at a sofa's corner to DRAG it would resize it instead. The touch surface for
+   * the same commands is `SelectionActions`, whose buttons are 40 px — so this is
+   * the exact inverse of that component's own media query, and the two together
+   * mean every pointer type has one appropriate affordance and no ambiguity.
+   * Defaults to true where `matchMedia` is absent (node, older jsdom).
+   */
+  const [finePointer, setFinePointer] = useState(true);
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return;
+    const mq = window.matchMedia('(hover: none) and (pointer: coarse)');
+    const sync = () => setFinePointer(!mq.matches);
+    sync();
+    mq.addEventListener('change', sync);
+    return () => mq.removeEventListener('change', sync);
+  }, []);
+  /** Which grip the pointer is hovering, for the directional resize cursor. */
+  const [hoverHandle, setHoverHandle] = useState<HandleId | null>(null);
   /** Screen-space rubber band: 2 pts = marquee corners, 3+ = lasso path. */
   const [band, setBand] = useState<Vec2[] | null>(null);
   const bandRef = useRef<Vec2[] | null>(null);
@@ -264,6 +311,18 @@ export default function SimCanvas({
     return to;
   }, []);
 
+  /**
+   * The object whose §16 grips are live, or null (S36).
+   *
+   * Derived, never stored — and read by BOTH the renderer (via `RenderState`)
+   * and the pointerdown hit test, so "a grip is drawn" and "a grip is grabbable"
+   * are the same condition by construction rather than by two guards that agree
+   * today (the S30 `containerIntentFor` lesson).
+   */
+  const handleTarget: RectObj | CircleObj | null = finePointer
+    ? handleTargetFor(scene, selection, { mode, overlayOpen })
+    : null;
+
   // --- sizing -------------------------------------------------------------
   useEffect(() => {
     const el = containerRef.current;
@@ -311,6 +370,7 @@ export default function SimCanvas({
       furnitureProposal,
       bestSpot,
       snapGuide,
+      handleTarget,
       theme,
       view,
       width: size.w,
@@ -328,6 +388,7 @@ export default function SimCanvas({
     furnitureProposal,
     bestSpot,
     snapGuide,
+    handleTarget,
     theme,
     view,
     size,
@@ -707,6 +768,27 @@ export default function SimCanvas({
       return;
     }
 
+    // §16 grips (S36). This rung is chosen, not incidental: it is BELOW ⌘-click
+    // (which must keep toggling a multi-selection) and ABOVE the node, seat,
+    // wall-end and object tests — because `drawHandles` paints last, on top of
+    // the opaque speaker and seat discs, and a grip you can see must be the thing
+    // you grab. `handleTarget` is null for a multi-selection, so the group drag
+    // just below is unaffected.
+    if (handleTarget && view) {
+      const grip = handleAt(handleTarget, view, { x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY });
+      if (grip) {
+        startDrag({
+          kind: 'handle',
+          pointerId: e.pointerId,
+          id: handleTarget.id,
+          handle: grip,
+          obj0: handleTarget,
+          grabAngle: Math.atan2(p.y - handleTarget.center.y, p.x - handleTarget.center.x),
+        });
+        return;
+      }
+    }
+
     // Dragging any member of a multi-selection moves the whole group.
     if (selection?.type === 'multi') {
       const nh = hitTestNodes(scene, p, tol);
@@ -881,10 +963,17 @@ export default function SimCanvas({
       });
       const grab = isDraggableAt(sceneRef.current, hp, 10 / view.scale);
       setHoverGrab((prev) => (prev === grab ? prev : grab));
+      // §16: a directional resize cursor is the grip's only affordance before
+      // you press, so it is what makes an 11 px target findable at all.
+      const grip = handleTarget
+        ? handleAt(handleTarget, view, { x: native.offsetX, y: native.offsetY })
+        : null;
+      setHoverHandle((prev) => (prev === grip ? prev : grip));
     } else {
       // A drag is live or we left select mode — drop any hover affordance.
       if (wallHover) setWallHover(null);
       if (hoverGrab) setHoverGrab(false);
+      if (hoverHandle) setHoverHandle(null);
     }
 
     // Wall chain preview follows the cursor without a drag.
@@ -996,6 +1085,30 @@ export default function SimCanvas({
             : o,
         ),
       });
+      return;
+    }
+
+    // §16 (S36). Everything is recomputed from `drag.obj0`, the object as it was
+    // at pointerdown — never from its live value — so the gesture is a pure
+    // function of the pointer: returning the pointer to where it started restores
+    // the identical floats, and the whole drag is one undo entry.
+    //
+    // It deliberately does NOT re-seat against a wall. An Inspector Width/Depth
+    // edit does not re-seat either, so a grip introduces no new behaviour class,
+    // and `seatObjectAgainstWall`'s COMMAND_SEAT reaches 1.2 m — enough to
+    // teleport a piece that was never near a wall (the S32 reach lesson). The
+    // existing explicit `F` command is the way to re-seat after resizing.
+    if (drag.kind === 'handle') {
+      onScene(
+        applyHandleDrag(cur, drag.obj0, drag.handle, p, {
+          // Shift is aspect-lock on a resize and 15° snapping on a rotate; Alt is
+          // resize-about-centre. The Word contract.
+          aspect: native.shiftKey,
+          fromCentre: native.altKey,
+          snapOn: settings.snap,
+          grabAngle: drag.grabAngle,
+        }),
+      );
       return;
     }
 
@@ -1167,7 +1280,15 @@ export default function SimCanvas({
     setWallHover(null);
   };
 
-  const cursor = hoverCursor(mode, { hoverGrab, dragging: grabbing });
+  // A live grip drag keeps its own cursor for the whole gesture; otherwise a
+  // hovered grip wins over the plain 'grab'. `handleCursor` derives the direction
+  // from the grip's SCREEN position, so it stays right on a rotated object under
+  // a rotated view — both of which this app has.
+  const gripCursorFor = dragRef.current?.kind === 'handle' ? dragRef.current.handle : hoverHandle;
+  const cursor =
+    handleTarget && view && gripCursorFor
+      ? handleCursor(handleTarget, view, gripCursorFor)
+      : hoverCursor(mode, { hoverGrab, dragging: grabbing });
   const rotDeg = view ? Math.round((((view.rot * 180) / Math.PI + 180) % 360 + 360) % 360) - 180 : 0;
 
   return (

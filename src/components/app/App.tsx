@@ -48,7 +48,7 @@ import {
   placeSpeakerAt,
   seatObjectAgainstWall,
 } from '../canvas/placement';
-import { announcementFor, speakableUnits, type AnnounceInput } from './announce';
+import { announcementFor, spokenSelection, speakableUnits, type AnnounceInput } from './announce';
 import { useAnnouncer } from './hooks/useAnnouncer';
 import LiveAnnouncer from './LiveAnnouncer';
 import { useLayoutStore } from './hooks/useLayoutStore';
@@ -1207,7 +1207,7 @@ function AppInner({ initialStore, persistMode, showFirstRun, droppedCount, proje
       {/* Last child of the app root: always mounted (so it is never a freshly
           inserted region), outside every scroll container, and outside the
           conditionally-rendered mode columns. */}
-      <LiveAnnouncer readout={readout} selection={selectionText} />
+      <LiveAnnouncer readout={readout} selection={spokenSelection(selectionText, dragging)} />
     </div>
   );
 }

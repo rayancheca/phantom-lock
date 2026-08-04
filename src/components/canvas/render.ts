@@ -1,4 +1,6 @@
 import type {
+  CircleObj,
+  RectObj,
   Scene,
   SceneObject,
   Selection,
@@ -7,6 +9,7 @@ import type {
   TraceResult,
   Vec2,
 } from '../../engine/types';
+import { HANDLE_R_PX, handlesFor } from './handles';
 import type { AudioMetrics, PairMetrics } from '../../engine/stereo';
 import type { Proposal } from '../../engine/optimize';
 import type { ListeningField } from '../../engine/bestspot';
@@ -17,31 +20,14 @@ import { SPEAKER_MODELS } from '../../engine/speakers';
 import { activeListener, sceneBounds, sceneListeners } from '../../engine/scene';
 import * as v from '../../engine/vec';
 
-export interface View {
-  scale: number; // px per metre
-  ox: number;
-  oy: number;
-  /** View rotation in radians — the whole floor plan spins around the screen. */
-  rot: number;
-}
-
-/** Rotate a world-space vector into screen orientation. */
-export const rotVec = (p: Vec2, rot: number): Vec2 => {
-  const c = Math.cos(rot);
-  const s = Math.sin(rot);
-  return { x: p.x * c - p.y * s, y: p.x * s + p.y * c };
-};
-
-export const worldToScreen = (p: Vec2, v: View): Vec2 => {
-  const r = rotVec(p, v.rot);
-  return { x: r.x * v.scale + v.ox, y: r.y * v.scale + v.oy };
-};
-
-export const screenToWorld = (q: Vec2, v: View): Vec2 => {
-  const dx = (q.x - v.ox) / v.scale;
-  const dy = (q.y - v.oy) / v.scale;
-  return rotVec({ x: dx, y: dy }, -v.rot);
-};
+// The world<->screen transform lives in the pure leaf `view.ts` (S36) so
+// `handles.ts` can project a grip without importing this file — which would be a
+// `render -> handles -> render` cycle. Re-exported here so every existing
+// importer of `render.ts` is unchanged (the S20 `ids.ts` pattern). The plain
+// import is separate because a re-export does NOT bind the names locally, and
+// this file uses all three itself.
+import { screenToWorld, worldToScreen, type View } from './view';
+export { rotVec, screenToWorld, worldToScreen, type View } from './view';
 
 export type CanvasTheme = 'sound' | 'plan';
 
@@ -63,6 +49,15 @@ export interface RenderState {
   bestSpot: ListeningField | null;
   /** The wall the wall-seat magnet has captured during a drag, if any. */
   snapGuide: { wallId: string; seated: boolean } | null;
+  /** The object whose §16 resize/rotate grips are live, or null (S36).
+   *  SimCanvas derives it from `handles.ts` `handleTargetFor`, which the pointer
+   *  hit test consults too — so "drawn" and "grabbable" cannot drift apart. It is
+   *  a whole object rather than a boolean because the grips are a SEPARATE pass:
+   *  `drawObject`'s `selected` branch is reused as the ghost renderer for the
+   *  opening-tool preview and for every furniture-proposal rect, so grips added
+   *  there would sprout on a door ghost chasing the cursor and on N ungrabbable
+   *  proposal boxes at once. */
+  handleTarget: RectObj | CircleObj | null;
   theme: CanvasTheme;
   view: View;
   width: number;
@@ -488,6 +483,52 @@ function drawHandle(ctx: CanvasRenderingContext2D, T: ThemeColors, p: Vec2, r = 
   ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
+  ctx.restore();
+}
+
+/**
+ * The §16 resize/rotate grips (S36), as a pass of their own.
+ *
+ * Runs LAST in `renderScene`, after `drawNodes`, and that ordering is
+ * load-bearing rather than tidy: `drawNode` fills an OPAQUE disc of
+ * `max(9, radiusM * scale)` px, so a grip drawn earlier is simply covered by any
+ * speaker puck or seat parked near the object's corner — and the rotate grip
+ * floats outside the outline, which is exactly where such a puck tends to sit.
+ * The pointer hit test correspondingly runs BEFORE the node hit tests, so a grip
+ * that is visible is always the thing you grab.
+ *
+ * Reuses `drawHandle`, the primitive already used for wall ends and chain
+ * corners, so the grips inherit the established selection vocabulary
+ * (`T.bg` fill, `T.select` stroke) and introduce NO new colour role — the S13
+ * discipline reserves accent/accent-r for channel identity and ok/warn/bad for
+ * acoustic status, none of which a piece of UI chrome may borrow.
+ *
+ * `setLineDash([])` is explicit: this file's own convention is to reset dashes by
+ * hand between steps rather than to rely on save/restore, so a pass that assumes
+ * a clean context can inherit a dash from whatever drew last.
+ */
+function drawHandles(ctx: CanvasRenderingContext2D, st: RenderState, T: ThemeColors): void {
+  if (!st.handleTarget) return;
+  ctx.save();
+  ctx.setLineDash([]);
+  const hs = handlesFor(st.handleTarget, st.view);
+  const rot = hs.find((h) => h.id === 'rot');
+  if (rot) {
+    // A tether, so the floating rotate grip reads as belonging to this object
+    // rather than as a stray point of interest.
+    const n = hs.find((h) => h.id === 'n');
+    if (n) {
+      ctx.strokeStyle = T.select;
+      ctx.globalAlpha = 0.5;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(n.at.x, n.at.y);
+      ctx.lineTo(rot.at.x, rot.at.y);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+  }
+  for (const h of hs) drawHandle(ctx, T, h.at, HANDLE_R_PX);
   ctx.restore();
 }
 
@@ -1120,4 +1161,7 @@ export function renderScene(ctx: CanvasRenderingContext2D, st: RenderState): voi
   drawProposal(ctx, st, T);
   drawNodes(ctx, st, T);
   drawRuler(ctx, st, T);
+  // LAST: grips must sit above the opaque speaker/seat discs drawNodes paints,
+  // or a grip beside a pod is visible-but-unreachable. See `drawHandles`.
+  drawHandles(ctx, st, T);
 }
