@@ -205,3 +205,15 @@
     forced-color-adjust: none;
   }
 }
+
+/* §16 resize/rotate grip (S36) — mirrors the canvas `drawHandle` primitive:
+   a small disc filled with the canvas ground and ringed in the selection
+   colour, so the swatch reads as the same object the renderer draws. */
+.legend-grip {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--overlay-bg, #0a1220);
+  border: 2px solid var(--overlay-text);
+}

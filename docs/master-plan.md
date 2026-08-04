@@ -912,6 +912,101 @@ speed. Confirm the next kickoff you write re-states this protocol.*
 
 ## Progress log
 
+### Session 36 — 2026-08-04 — Word-style resize/rotate grips (`docs/ideas.md` §16, owner-requested)
+
+> *"i also want to be able to change the shape and size and rotation of objects with my mouse
+> just like in microsoft word"* — owner, 2026-08-03.
+
+Eight resize grips plus a rotate grip, in the object's own ROTATED frame, as a pure leaf plus a
+`handle` Drag kind plus a `drawHandles` pass. Shift = aspect lock (resize) / 15° snap (rotate),
+Alt = resize about centre. **The last P1 in the backlog is closed.**
+
+**Evidence block**
+
+*Agents spawned (role → verdict).* **Understanding workflow (7):** six read-only mappers
+(drag-lifecycle · render · magnet · constraints · test-conventions · a11y-touch) → all reported;
+one synthesizer → produced an integration map that caught the tree had moved under the mappers
+and re-derived every stale line number. Its C1 (put the hit test at rung 709, not 756) was
+adopted and then REVERSED on measurement — see below. **Self-review workflow (5 lenses):**
+correctness → 2 findings · integration → 5 · regression → 4 · a11y → 6 · silent-failure →
+reported. **17 raw findings adjudicated against HEAD: 8 real and fixed, 6 already fixed by the
+round in flight when they were written, 3 refuted or reframed.**
+
+*The two that mattered.* (1) A flat 11 px hit tolerance took **66.5 % of a Bookshelf's footprint,
+54.6 % of a Window's, 54.1 % of a Plant's** away from the move gesture at the demo's own default
+fit view — the app's most-used interaction, silently resizing. Fixed with a size gate plus an
+interior core; **worst case 66.5 % → 16.6 %**, re-measured the same way. (2) The grip hit test
+originally outranked the node tests, which made a HomePod parked at the head of the Bed
+undraggable *in the shipped first-run demo* (measured 3.30 px from a grip). Reversed: pucks now
+win both the paint order and the hit test.
+
+*Test count.* **1640 → 1706** (+66). `canvas/__tests__/handles.test.ts` 56 ·
+`handles-render.test.ts` 6 · `announce.test.ts` +6. Every fixture is deliberately OFF-AXIS at the
+owner's −12.83°, because at rotation 0 the local basis degenerates to the world basis and a
+transform that ignores rotation passes everything.
+
+*Negative controls.* **16 run in a copied tree; 15 caught by the test written for them.** Three
+tests had to be strengthened first — the tie-break fixture was arithmetically incapable of
+expressing its own bug (12 px half-extent against an 11 px disc, so the grips never overlapped).
+The one control that passed, clamp/snap ORDERING, is redundant-by-construction, and the property
+that makes it so is now pinned instead (`MIN_SPAN_M = 0.07` turns it red).
+
+*Bugs the tests caught rather than review.* The no-op check cannot be exact equality across a
+cos/sin round trip (`h = 1.9999999999999998` for 2). Comparing the computed object against the
+gesture BASELINE rather than the LIVE one stranded it at its mid-drag size when the pointer came
+home (14.00 × 0.10 m instead of 4 × 2) — written, fixed, reintroduced by the field-merge
+refactor, and caught again by the same test.
+
+*Gate (literal tails).*
+
+```
+ Test Files  76 passed (76)
+      Tests  1706 passed (1706)
+   Duration  10.66s
+```
+```
+> eslint .           (0 problems)
+```
+```
+dist/index.html                   1.31 kB │ gzip:   0.62 kB
+dist/assets/index-j_hTKTEs.css   54.90 kB │ gzip:  10.24 kB
+dist/assets/index-DQRKdybK.js   511.83 kB │ gzip: 167.18 kB
+✓ built in 600ms
+```
+
+*Live verification.* `docs/sessions/S36/live-s36.mjs`, real `Input.dispatchMouseEvent` drags in
+headless Chrome on a fresh profile (fresh origin asserted, so the owner's workspace is never
+read or written). ALL CHECKS PASSED: SE grip 2.00×1.55 → 2.90×2.55 · opposite corner drift
+**0.0 mm** · rotation untouched by a resize · ONE undo restores · ROT grip −13.00° → 83.43°
+(96.4° swept) with spans and centre bit-identical · body drag still moves 0.31 m and does not
+resize · grips present in both canvas themes. Log: `docs/sessions/S36/live-run.txt`.
+Screenshots: `docs/sessions/S36/shots/01-selected-grips.jpg`, `02-after-resize.jpg`,
+`03-after-rotate.jpg`, `04-final.jpg`, `05-sound-theme-grips.jpg`.
+
+*Harness bugs found and fixed before any number was trusted (TRAP 22 working as designed — it
+aborted four times rather than reporting vacuous passes).* Wrong Inspector selector · reading
+the panel TEXT when `NumField` renders `"2"` not `"2.00"` · probing before arming the Select tool,
+so every probe click was DRAWING WALLS · reading IndexedDB 140 ms after a ~400 ms autosave
+debounce, which made all three drag checks report "changed nothing" including the pre-existing
+body move · choosing a target by size instead of by reachability · not re-selecting after ⌘Z,
+which clears the selection.
+
+*Acceptance, bullet by bullet.* Pure hit-test + transform module with node tests over rotated
+frames → **met** (`handles.ts`, 56 tests). Its own `Drag` kind → **met** (`kind: 'handle'`).
+Shift aspect-lock and Alt resize-about-centre → **met**. Rotation snapping to the plan's axis →
+**deliberately NOT met, and the reason is S31's own measurement**: `dominantAngle` is BISTABLE on
+the owner's plan (one square-drawn 4.6 m wall flips it −12.829° → 0.000°), which is why §4c was
+reverted; Shift snaps to 15° world increments instead and the stable answer to "align to the
+plan" remains the wall-seat magnet and `F`. Recorded in `docs/ideas.md` §16. SC 2.1.1 stated
+explicitly → **met**, and 2.5.7/2.5.8 are stated precisely rather than flattered. Live-verified
+with real mouse drags → **met**.
+
+*Honest limits.* One browser (headless Chrome), no real screen reader, touch is CDP emulation
+rather than a physical device. The `spokenSelection` mute is a HOLD rather than a blank, so a pan
+no longer re-announces — but a ROTATE still announces a byte-identical sentence, because
+`labelOf` carries no rotation; that is pre-existing (`q`/`e` has it too) and left alone.
+
+
 ### Session 35 — 2026-08-04 — the header covered the gallery's only door (`docs/ideas.md` §17b, §17c)
 
 **Both closed.** `.room-trigger` opens the layout gallery and nothing else does, so open / rename /

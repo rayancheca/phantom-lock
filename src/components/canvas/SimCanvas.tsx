@@ -194,11 +194,13 @@ export default function SimCanvas({
   /**
    * Is this a precise pointer? The §16 grips are an 11 px target and are hidden
    * on a coarse pointer, where they would be worse than useless: a finger aimed
-   * at a sofa's corner to DRAG it would resize it instead. The touch surface for
-   * the same commands is `SelectionActions`, whose buttons are 40 px — so this is
-   * the exact inverse of that component's own media query, and the two together
-   * mean every pointer type has one appropriate affordance and no ambiguity.
-   * Defaults to true where `matchMedia` is absent (node, older jsdom).
+   * at a sofa's corner to DRAG it would resize it instead. This is the exact
+   * inverse of `SelectionActions`'s own query, so no pointer type is left without
+   * an affordance — but note the HUD covers rotate/nudge/delete and NOT resize,
+   * so on touch the Inspector is what resizes. Both queries key on the PRIMARY
+   * pointer, so a hybrid touch laptop is treated as fine-pointer: the grips are
+   * live for its trackpad, and a finger gets them too. Defaults to true where
+   * `matchMedia` is absent (node, older jsdom).
    */
   const [finePointer, setFinePointer] = useState(true);
   useEffect(() => {
@@ -206,8 +208,17 @@ export default function SimCanvas({
     const mq = window.matchMedia('(hover: none) and (pointer: coarse)');
     const sync = () => setFinePointer(!mq.matches);
     sync();
-    mq.addEventListener('change', sync);
-    return () => mq.removeEventListener('change', sync);
+    // Safari <= 13 exposes `matchMedia` but its MediaQueryList has only the
+    // deprecated addListener/removeListener, so an unguarded `addEventListener`
+    // THROWS inside the effect — and with no ErrorBoundary in the tree that takes
+    // the whole app down. `interaction.ts` `watchDevicePixelRatio` already guards
+    // exactly this; matching it here rather than inventing a second answer.
+    if (typeof mq.addEventListener === 'function') {
+      mq.addEventListener('change', sync);
+      return () => mq.removeEventListener('change', sync);
+    }
+    mq.addListener(sync);
+    return () => mq.removeListener(sync);
   }, []);
   /** Which grip the pointer is hovering, for the directional resize cursor. */
   const [hoverHandle, setHoverHandle] = useState<HandleId | null>(null);
@@ -768,27 +779,6 @@ export default function SimCanvas({
       return;
     }
 
-    // §16 grips (S36). This rung is chosen, not incidental: it is BELOW ⌘-click
-    // (which must keep toggling a multi-selection) and ABOVE the node, seat,
-    // wall-end and object tests — because `drawHandles` paints last, on top of
-    // the opaque speaker and seat discs, and a grip you can see must be the thing
-    // you grab. `handleTarget` is null for a multi-selection, so the group drag
-    // just below is unaffected.
-    if (handleTarget && view) {
-      const grip = handleAt(handleTarget, view, { x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY });
-      if (grip) {
-        startDrag({
-          kind: 'handle',
-          pointerId: e.pointerId,
-          id: handleTarget.id,
-          handle: grip,
-          obj0: handleTarget,
-          grabAngle: Math.atan2(p.y - handleTarget.center.y, p.x - handleTarget.center.x),
-        });
-        return;
-      }
-    }
-
     // Dragging any member of a multi-selection moves the whole group.
     if (selection?.type === 'multi') {
       const nh = hitTestNodes(scene, p, tol);
@@ -833,6 +823,30 @@ export default function SimCanvas({
       onSelection({ type: 'listener' });
       startDrag({ kind: 'node', pointerId: e.pointerId, node: 'listener' });
       return;
+    }
+
+    // §16 grips (S36). Deliberately BELOW the node and seat tests, and
+    // `drawHandles` paints below `drawNodes` to match: a speaker puck or a seat
+    // wins over a grip in BOTH the paint order and the hit test, so the two can
+    // never disagree. Putting the grips first was measured against the shipped
+    // demo and rejected — a pod parked at the head of the Bed sits within 11 px
+    // of a grip, and dragging that pod would have resized the bed instead. Pods
+    // are the primary thing a user drags; a grip lost under one is recoverable by
+    // deselecting, moving the pod, or the Inspector, which resize has and
+    // dragging a pod does not.
+    if (handleTarget && view) {
+      const grip = handleAt(handleTarget, view, { x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY });
+      if (grip) {
+        startDrag({
+          kind: 'handle',
+          pointerId: e.pointerId,
+          id: handleTarget.id,
+          handle: grip,
+          obj0: handleTarget,
+          grabAngle: Math.atan2(p.y - handleTarget.center.y, p.x - handleTarget.center.x),
+        });
+        return;
+      }
     }
 
     if (selection?.type === 'object') {
@@ -963,17 +977,23 @@ export default function SimCanvas({
       });
       const grab = isDraggableAt(sceneRef.current, hp, 10 / view.scale);
       setHoverGrab((prev) => (prev === grab ? prev : grab));
-      // §16: a directional resize cursor is the grip's only affordance before
-      // you press, so it is what makes an 11 px target findable at all.
-      const grip = handleTarget
-        ? handleAt(handleTarget, view, { x: native.offsetX, y: native.offsetY })
-        : null;
-      setHoverHandle((prev) => (prev === grip ? prev : grip));
     } else {
       // A drag is live or we left select mode — drop any hover affordance.
       if (wallHover) setWallHover(null);
       if (hoverGrab) setHoverGrab(false);
-      if (hoverHandle) setHoverHandle(null);
+    }
+
+    // §16: the directional resize cursor is a grip's only affordance before you
+    // press, so it is what makes an 11 px target findable at all. Deliberately
+    // OUTSIDE the block above, which is gated on `theme === 'plan'` for the
+    // door/window chip — the grips are live in TUNE too, and a self-review found
+    // this update stranded inside that gate, leaving an 11 px capture zone on the
+    // sound canvas with no cursor warning at all.
+    if (!drag && mode === 'select' && handleTarget && view) {
+      const grip = handleAt(handleTarget, view, { x: native.offsetX, y: native.offsetY });
+      setHoverHandle((prev) => (prev === grip ? prev : grip));
+    } else if (hoverHandle && !drag) {
+      setHoverHandle(null);
     }
 
     // Wall chain preview follows the cursor without a drag.
@@ -1334,6 +1354,10 @@ export default function SimCanvas({
           if (!dragRef.current) {
             setWallHover(null);
             setHoverGrab(false);
+            // …and the §16 grip cursor, or it lingers after the pointer has left
+            // and can then name a grip the newly-selected object does not offer
+            // (a circle has no 'nw'), which `handleCursor` answers 'default' to.
+            setHoverHandle(null);
             // Clear the opening-tool ghost too — otherwise the dashed door/window
             // ghost freezes on the plan when the cursor moves onto a panel.
             if (mode === 'opening') setPreview(null);

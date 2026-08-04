@@ -60,6 +60,28 @@ export const MIN_RADIUS_M = 0.1;
 export const DOOR_MIN_W_M = 0.6;
 export const DOOR_MAX_W_M = 2.4;
 
+/**
+ * Below this on-screen size (px, the SHORTER side) an object gets no grips at all.
+ *
+ * Not a taste call — without it the grips eat the object's own move area, which is
+ * the app's most-used gesture. A self-review measured the shipped demo at its
+ * default fit view (66.23 px/m): the fraction of an object's footprint that would
+ * start a RESIZE instead of a MOVE was **Bookshelf 66.5 %, Window 54.6 %, Plant
+ * 54.1 %, Cabinet 41 %**. A bookshelf is ~0.3 m deep — 20 px on screen — so two
+ * opposing 11 px grip discs cover it completely and there is no interior left.
+ *
+ * Editors solve this by hiding the handles and making you zoom in, and so does
+ * this: below the threshold the object is move-only, and the Inspector still
+ * resizes it. `INTERIOR_CORE_PX` then protects the middle of everything larger.
+ */
+export const MIN_GRIP_SPAN_PX = 46;
+/**
+ * The object's own interior always MOVES: a grip can only be grabbed within this
+ * many px of the outline. Without it a big object is still mostly grip discs at a
+ * zoomed-out view, and "select, look, drag to nudge" — the standard placement
+ * loop — silently resizes instead.
+ */
+export const INTERIOR_CORE_PX = 12;
 /** Drawn grip radius, screen px. Matches the existing `drawHandle` primitive. */
 export const HANDLE_R_PX = 4.5;
 /** Grab tolerance, screen px. Comfortably above the 4.5 px glyph so the grip is
@@ -118,9 +140,30 @@ const SIGN: Record<ResizeHandleId, { x: -1 | 0 | 1; y: -1 | 0 | 1 }> = {
 };
 
 const RECT_HANDLES: ResizeHandleId[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
-/** A door's `w` is its CLEAR OPENING and its `h` is the leaf thickness, which the
- *  Inspector deliberately hides — so only the two along-wall grips are offered. */
-const DOOR_HANDLES: ResizeHandleId[] = ['e', 'w'];
+/** An OPENING's `w` is its clear opening and its `h` is the leaf/pane thickness —
+ *  so only the two along-wall grips are offered. */
+const OPENING_HANDLES: ResizeHandleId[] = ['e', 'w'];
+
+/**
+ * Doors AND windows: both are holes cut into a wall, both keep `w` as the clear
+ * opening and `h` as a thickness the user has no reason to drag, and both are
+ * held on their wall by `openingMagnetFor`.
+ *
+ * Windows are grouped with doors here even though `canRotateSel` does not, and
+ * that divergence is deliberate and measured rather than an oversight. A window
+ * is built at `w 1.2 / h 0.12` (`makeOpening`), so at an ordinary zoom its n/s
+ * grips sit ~3 px either side of its spine: a self-review measured **63 % of a
+ * window's footprint** starting a resize, where a mis-aim silently changes the
+ * PANE THICKNESS (h 0.12 -> 0.10) or, via the rotate grip, turns it off its wall.
+ * And the turn would not even survive: `moveObjectTo` routes every window through
+ * `openingMagnetFor`, which overwrites `rotation` with the host wall's angle on
+ * the very next drag — the §4d failure, whose lesson is not to ship an affordance
+ * the app revokes. `q`/`e` and the Inspector slider still offer window rotation,
+ * unchanged; that pre-existing inconsistency is filed as ideas.md §16b.
+ */
+function isOpening(o: Sizable): boolean {
+  return o.kind === 'rect' && (o.role === 'door' || o.role === 'window');
+}
 const CIRCLE_HANDLES: ResizeHandleId[] = ['n', 'e', 's', 'w'];
 
 type Sizable = RectObj | CircleObj;
@@ -139,7 +182,7 @@ function isRotatable(o: Sizable): o is RectObj {
   // EXACTLY `canRotateSel` (CanvasStage.tsx:103) and `rotateSelectedRect`
   // (keyboard.ts:205). Restated rather than re-derived on purpose: a second,
   // independently-written predicate is how the two drift apart.
-  return o.kind === 'rect' && o.role !== 'door';
+  return o.kind === 'rect' && !isOpening(o);
 }
 
 /**
@@ -151,11 +194,22 @@ function isRotatable(o: Sizable): o is RectObj {
  * the gallery, compare and proposal overlays with its listeners live, so grips
  * drawn there would be a mutate-through-a-dialog path.
  *
- * A11y note, stated rather than implied: the grips are a POINTER ACCELERATOR. The
- * keyboard and single-pointer-without-dragging paths already exist and are
- * untouched — `InspectorPanel`'s Width/Depth/Radius number fields and its rotation
- * slider, plus `q`/`e` on the canvas — so SC 2.1.1 and SC 2.5.7 are met by those,
- * not by anything here. The grips are deliberately NOT claimed to meet SC 2.5.8.
+ * A11y note, stated precisely rather than flattered:
+ *   - SC 2.1.1 is met and untouched: `InspectorPanel`'s Width/Depth/Radius number
+ *     fields and its rotation slider are keyboard-operable, and `q`/`e` rotate.
+ *   - SC 2.5.7 (Dragging Movements) is met FOR SIZE AND ANGLE: both are reachable
+ *     with a single pointer and no dragging, via those same `<input type="number">`
+ *     spinners and the range slider. What is NOT reachable that way is the
+ *     incidental re-anchoring — an anchored resize also moves `center` — because
+ *     the app has no non-drag pointer path for object POSITION at all. That gap is
+ *     pre-existing (it is equally true of the plain move drag) and app-wide, not
+ *     something these grips introduce; Alt-resize keeps the centre fixed and so
+ *     has no such residue.
+ *   - SC 2.5.8 (Target Size) is met under the *Equivalent control* exception: the
+ *     same Inspector controls are on the same page and comfortably exceed 24 px.
+ *     The grips are additionally hidden on coarse pointers.
+ * `SelectionActions` is the coarse-pointer surface for ROTATE, nudge and delete —
+ * it has no resize button, so touch resizing is the Inspector's job, not its.
  */
 export function handleTargetFor(
   scene: Scene,
@@ -169,8 +223,53 @@ export function handleTargetFor(
   return o;
 }
 
-/** Every grip for this object, in SCREEN space. */
+/** The object's on-screen size along its own two axes, px. */
+export function screenSpan(o: Sizable, view: View): { a: number; b: number } {
+  return o.kind === 'circle'
+    ? { a: o.r * 2 * view.scale, b: o.r * 2 * view.scale }
+    : { a: o.w * view.scale, b: o.h * view.scale };
+}
+
+/**
+ * Too small on screen for grips to coexist with its own move area.
+ *
+ * Only the axes that actually CARRY grips are considered, which matters for
+ * exactly one case and it is not a corner case: a DOOR's `h` is the leaf
+ * thickness, 0.1 m — about 6 px at any ordinary zoom — so a gate on the shorter
+ * side would refuse a door grips at every scale and silently delete the one
+ * resize a door is for. A door has grips on `w` only, so `w` is what is asked
+ * about. (Caught by the door test the moment the gate was added.)
+ */
+export function tooSmallForGrips(o: Sizable, view: View): boolean {
+  const s = screenSpan(o, view);
+  if (isOpening(o)) return s.a < MIN_GRIP_SPAN_PX;
+  return Math.min(s.a, s.b) < MIN_GRIP_SPAN_PX;
+}
+
+/**
+ * Is this screen point deep enough inside the object to be a MOVE rather than a
+ * grip? Measured in the object's own frame, in screen px.
+ */
+function insideCore(o: Sizable, view: View, p: Vec2): boolean {
+  const c = worldToScreen(o.center, view);
+  const dx = p.x - c.x;
+  const dy = p.y - c.y;
+  if (o.kind === 'circle') {
+    return Math.hypot(dx, dy) < o.r * view.scale - INTERIOR_CORE_PX;
+  }
+  // The object's local axes as they appear ON SCREEN: its own rotation plus the
+  // view's. Forgetting `view.rot` here would misjudge the core on a twisted plan.
+  const a = o.rotation + view.rot;
+  const ca = Math.cos(a);
+  const sa = Math.sin(a);
+  const lx = Math.abs(dx * ca + dy * sa);
+  const ly = Math.abs(-dx * sa + dy * ca);
+  return lx < (o.w * view.scale) / 2 - INTERIOR_CORE_PX && ly < (o.h * view.scale) / 2 - INTERIOR_CORE_PX;
+}
+
+/** Every grip for this object, in SCREEN space. Empty when it is too small. */
 export function handlesFor(o: Sizable, view: View): Handle[] {
+  if (tooSmallForGrips(o, view)) return [];
   const centre = worldToScreen(o.center, view);
 
   if (o.kind === 'circle') {
@@ -184,7 +283,7 @@ export function handlesFor(o: Sizable, view: View): Handle[] {
   }
 
   const [ux, uy] = basis(o.rotation);
-  const ids = o.role === 'door' ? DOOR_HANDLES : RECT_HANDLES;
+  const ids = isOpening(o) ? OPENING_HANDLES : RECT_HANDLES;
   const at = (sx: number, sy: number): Vec2 => {
     const lx = (sx * o.w) / 2;
     const ly = (sy * o.h) / 2;
@@ -223,6 +322,10 @@ export function handleAt(
   screenPt: Vec2,
   tolPx: number = HANDLE_HIT_PX,
 ): HandleId | null {
+  // The object's own interior is always a MOVE. Checked BEFORE the grips, so a
+  // press well inside a large object can never be captured by a grip disc that
+  // happens to reach in — the "select, look, drag to nudge" loop must not resize.
+  if (insideCore(o, view, screenPt)) return null;
   let best: HandleId | null = null;
   let bestD = tolPx;
   for (const h of handlesFor(o, view)) {
@@ -273,10 +376,11 @@ export function resizeObject(o: Sizable, handle: ResizeHandleId, worldPt: Vec2, 
   if (o.kind === 'circle') return resizeCircle(o, handle, worldPt, opts);
 
   const s = SIGN[handle];
+  const opening = isOpening(o);
   const isDoor = o.role === 'door';
-  // A door only ever gets 'e'/'w' from `handlesFor`; this restates that so a
-  // caller passing 'n' by hand cannot change the leaf thickness.
-  const sy = isDoor ? 0 : s.y;
+  // An opening only ever gets 'e'/'w' from `handlesFor`; this restates it so a
+  // caller passing 'n' by hand cannot change the leaf/pane thickness.
+  const sy = opening ? 0 : s.y;
   const sx = s.x;
 
   const [ux, uy] = basis(o.rotation);
@@ -396,10 +500,38 @@ export function applyHandleDrag(
 ): Scene {
   const live = scene.objects.find((o) => o.id === obj0.id);
   if (!live || live.kind === 'wall') return scene;
-  const next =
-    handle === 'rot'
-      ? rotateObject(obj0, worldPt, opts.grabAngle, { snap: opts.aspect })
-      : resizeObject(obj0, handle, worldPt, opts);
+  // Write ONLY the fields this gesture owns, onto the LIVE object — never spread
+  // `obj0` wholesale. `q`/`e` need nothing but an object selection (keyboard.ts),
+  // which a grip drag guarantees, so a rotate can land mid-resize; spreading the
+  // baseline would silently revert it on the very next pointermove, which is the
+  // S23 bug that `move-rc` carries `lastRotRef` for. Merging by field means the
+  // two gestures compose instead of fighting, with no provenance tracking at all.
+  // NOTE the shape: the gesture's result is used even when it equals `obj0` (the
+  // pointer is back where it started), and the early-out is decided by comparing
+  // against LIVE. Short-circuiting on `result === obj0` instead looks equivalent
+  // and is not — that is precisely the frame on which the scene is still holding
+  // a mid-drag value, so the object would stay stranded at 14.00 x 0.10 m while
+  // the pointer says 4 x 2. Caught by a test twice: once when this function was
+  // first written, and again when the field-merge above reintroduced it.
+  let next: Sizable = live;
+  const moved = (a: Vec2, b: Vec2) => !Object.is(a.x, b.x) || !Object.is(a.y, b.y);
+  if (handle === 'rot') {
+    const turned = rotateObject(obj0, worldPt, opts.grabAngle, { snap: opts.aspect });
+    if (turned.kind === 'rect' && live.kind === 'rect' && !Object.is(live.rotation, turned.rotation)) {
+      next = { ...live, rotation: turned.rotation };
+    }
+  } else {
+    const sized = resizeObject(obj0, handle, worldPt, opts);
+    if (sized.kind === 'circle' && live.kind === 'circle') {
+      if (!Object.is(live.r, sized.r) || moved(live.center, sized.center)) {
+        next = { ...live, r: sized.r, center: sized.center };
+      }
+    } else if (sized.kind === 'rect' && live.kind === 'rect') {
+      if (!Object.is(live.w, sized.w) || !Object.is(live.h, sized.h) || moved(live.center, sized.center)) {
+        next = { ...live, w: sized.w, h: sized.h, center: sized.center };
+      }
+    }
+  }
   // Compare against the LIVE object, NOT against `obj0`. `next === obj0` means
   // "the pointer is back where it started", which is precisely when the scene is
   // still holding some MID-DRAG size — returning early there would strand the

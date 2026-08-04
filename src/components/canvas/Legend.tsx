@@ -20,7 +20,10 @@ const dot = (color: string) => <span className="legend-dot" style={{ background:
  * A collapsible on-canvas legend keyed to the current mode — UX-4 / Session 16
  * (item I). It explains the glyphs the renderer draws (ray colours, ★ best spot,
  * sweet-spot ring, the 60° triangle, the YOU puck, other seats, blocked sight
- * lines) so a first-timer isn't left decoding the canvas.
+ * lines, and the §16 resize/rotate grips) so a first-timer isn't left decoding
+ * the canvas. The grip row is in BOTH lists because `select` is a tool in every
+ * mode, so the grips can appear on either canvas — and because nine new discs
+ * arriving with no explanation anywhere is exactly what the UX-4 rule forbids.
  *
  * Read-only: it dispatches no scene/settings commands, so it needs no
  * `overlayOpen` gate. But it IS focusable and sits over the canvas whose key
@@ -59,6 +62,10 @@ export default function Legend({ appMode, settings }: Props) {
           { swatch: dot('var(--ok)'), label: 'YOU — turns green when locked' },
           { swatch: <span className="legend-dot legend-dot-hollow" />, label: 'Other listening spots' },
           { swatch: <span className="legend-line legend-line-dashed" />, label: 'Blocked line of sight' },
+          {
+            swatch: <span className="legend-grip" />,
+            label: 'Selected: drag a dot to resize, the top one to turn',
+          },
         ]
       : [
           { swatch: <span className="legend-line" />, label: 'Walls' },
@@ -67,6 +74,10 @@ export default function Legend({ appMode, settings }: Props) {
           { swatch: <span className="legend-square legend-square-tv" />, label: 'TV (cinema anchor)' },
           { swatch: <span className="legend-square legend-square-area" />, label: 'Marked area' },
           { swatch: dot('var(--text)'), label: 'Your seat (YOU)' },
+          {
+            swatch: <span className="legend-grip" />,
+            label: 'Selected: drag a dot to resize, the top one to turn',
+          },
         ];
 
   return (

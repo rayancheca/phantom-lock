@@ -146,10 +146,19 @@ describe('drawHandles', () => {
     expect(drawn).toEqual(want);
   });
 
-  it('THE ORDERING: grips are painted after every node, so a puck cannot cover one', () => {
-    // `drawNode` fills an opaque disc of max(9, r*scale) px. A speaker parked on
-    // the sofa's corner would hide a grip drawn earlier — visible in a screenshot
-    // review, unreachable in the app.
+  it('THE ORDERING: grips are painted BEFORE the nodes, matching the hit ladder', () => {
+    // Deliberately this direction, and it was measured the other way first.
+    // `drawNode` fills an opaque disc of max(9, r*scale) px, so a puck near the
+    // object's corner covers a grip either way — the only question is which one
+    // the POINTER gives you, and the paint order must agree with that answer or
+    // the app shows an affordance it will not honour.
+    //
+    // Grips-on-top plus grips-first-in-the-ladder was tried and rejected against
+    // the shipped demo: a pod at the head of the Bed sits within 11 px of a grip,
+    // and dragging that pod resized the bed instead. Pods are the primary thing a
+    // user drags in TUNE, and resize has an Inspector alternative that dragging a
+    // pod does not. So the pucks win BOTH, and `onPointerDown` puts the grip test
+    // below `hitTestNodes` to match this assertion.
     const withSpeaker = scene([SOFA]);
     withSpeaker.speakers = [
       { id: 'sp1', model: 'homepod', pos: { x: 4, y: 3.5 }, z: 0.9, label: 'L', trimDb: 0 },
@@ -160,7 +169,7 @@ describe('drawHandles', () => {
     const others = arcs.filter((a) => Math.abs(a.r - 4.5) >= 1e-9);
     expect(grips.length).toBeGreaterThan(0);
     expect(others.length).toBeGreaterThan(0);
-    expect(Math.min(...grips.map((g) => g.seq))).toBeGreaterThan(Math.max(...others.map((o) => o.seq)));
+    expect(Math.max(...grips.map((g) => g.seq))).toBeLessThan(Math.max(...others.map((o) => o.seq)));
   });
 
   it('THE GHOST TRAP: a furniture proposal draws no grips', () => {

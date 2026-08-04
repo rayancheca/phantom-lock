@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { CircleObj, RectObj, Scene, Selection } from '../../../engine/types';
 import { pointInRect, rectCorners } from '../../../engine/geometry';
 import { sanitizeScene } from '../../../engine/scene';
+import { rotateSelectedRect } from '../../app/keyboard';
 import type { View } from '../render';
 import { worldToScreen } from '../render';
 import {
@@ -17,6 +18,7 @@ import {
   handlesFor,
   resizeObject,
   rotateObject,
+  tooSmallForGrips,
 } from '../handles';
 
 /**
@@ -154,17 +156,114 @@ describe('handlesFor — where the grips live', () => {
     expect(ids).toEqual(['e', 'w']);
   });
 
-  it('a WINDOW keeps the full set — only DOORS are refused rotation', () => {
-    // Deliberately mirrors `canRotateSel`: `kind === 'rect' && role !== 'door'`.
-    // Inventing a second predicate here is how the two drift apart.
-    const ids = handlesFor(rect({ role: 'window' }), VIEW).map((h) => h.id);
-    expect(ids).toContain('rot');
-    expect(ids).toHaveLength(9);
+  it('a WINDOW is treated as an OPENING too — along-wall grips only, no rotate', () => {
+    // Deliberately DIVERGES from `canRotateSel` (which refuses only doors), and
+    // the divergence is measured. `makeOpening` builds a window at w 1.2 / h 0.12,
+    // so its n/s grips sit ~3 px either side of its spine and a self-review
+    // measured 63 % of its footprint starting a resize — where a mis-aim changes
+    // the PANE THICKNESS or, via rot, turns it off its wall. And the turn would
+    // not survive anyway: `openingMagnetFor` overwrites a window's rotation on the
+    // next drag (ideas.md §16b), so a rotate grip here ships an affordance the app
+    // revokes — the §4d mistake. `q`/`e` and the Inspector are untouched.
+    const win = rect({ role: 'window', w: 1.2, h: 0.12 });
+    const wide: View = { scale: 400, ox: 0, oy: 0, rot: 0 }; // big enough for grips
+    const ids = handlesFor(win, wide).map((h) => h.id).sort();
+    expect(ids).toEqual(['e', 'w']);
+    expect(rotateObject(win, { x: 9, y: 9 }, 0, { snap: false })).toBe(win);
+  });
+
+  it('an opening never lets a grip touch its thickness, even called by hand', () => {
+    for (const role of ['door', 'window'] as const) {
+      const o = rect({ role, w: 1.2, h: 0.12 });
+      // 'n' is never offered, but a hand-written caller must not be able to use it.
+      expect((resizeObject(o, 'n', { x: 9, y: 9 }, NO_OPTS) as RectObj).h).toBe(o.h);
+    }
   });
 
   it('a CIRCLE offers four cardinal grips and no rotate grip', () => {
     const ids = handlesFor(circle(), VIEW).map((h) => h.id).sort();
     expect(ids).toEqual(['e', 'n', 's', 'w']);
+  });
+});
+
+describe('the grips must not eat the object\'s own MOVE area', () => {
+  /**
+   * The defect this block exists for was measured, not imagined. With a flat
+   * 11 px tolerance and no size gate, a self-review measured the shipped demo at
+   * its default fit view (66.23 px/m) and found the fraction of an object's
+   * footprint that starts a RESIZE instead of a MOVE at **Bookshelf 66.5 %,
+   * Window 54.6 %, Plant 54.1 %, Cabinet 41 %**. "Select it, look at it, drag it
+   * to nudge" is the app's most-used gesture, and it was silently resizing.
+   */
+  const fractionResizing = (o: RectObj, view: View): number => {
+    let inside = 0;
+    let resize = 0;
+    const N = 40;
+    for (let i = 0; i <= N; i++) {
+      for (let j = 0; j <= N; j++) {
+        const p = localToWorld(o, (i / N - 0.5) * 2, (j / N - 0.5) * 2);
+        if (!pointInRect(p, o)) continue;
+        inside++;
+        if (handleAt(o, view, worldToScreen(p, view)) !== null) resize++;
+      }
+    }
+    return inside ? resize / inside : 0;
+  };
+
+  it('a THIN object gets no grips at all — it is move-only until you zoom in', () => {
+    // 0.3 m deep at 66 px/m is 20 px: two opposing 11 px discs cover it whole,
+    // so there is no interior left to grab. Below the gate the answer is none.
+    const shelf = rect({ w: 1.8, h: 0.3 });
+    const view: View = { scale: 66.23, ox: 100, oy: 80, rot: 0 };
+    expect(tooSmallForGrips(shelf, view)).toBe(true);
+    expect(handlesFor(shelf, view)).toHaveLength(0);
+    expect(handleAt(shelf, view, worldToScreen(shelf.center, view))).toBeNull();
+    expect(fractionResizing(shelf, view)).toBe(0);
+  });
+
+  it('the same object DOES get grips once it is big enough on screen', () => {
+    // The gate is on-screen size, not world size — zooming in must restore them.
+    const shelf = rect({ w: 1.8, h: 0.3 });
+    const zoomed: View = { scale: 300, ox: 100, oy: 80, rot: 0 };
+    expect(tooSmallForGrips(shelf, zoomed)).toBe(false);
+    expect(handlesFor(shelf, zoomed)).toHaveLength(9);
+  });
+
+  it('a NORMAL object keeps most of its footprint as a move target', () => {
+    // The couch is the worst real case in the bundled demo. Pre-fix the same
+    // measurement on comparable objects ran to 66.5 %; the ceiling asserted here
+    // is what stops a future tolerance bump from quietly undoing that.
+    const couch = rect({ w: 2.1, h: 0.85 });
+    const view: View = { scale: 66.23, ox: 100, oy: 80, rot: 0 };
+    expect(handlesFor(couch, view).length).toBeGreaterThan(0);
+    expect(fractionResizing(couch, view)).toBeLessThan(0.25);
+  });
+
+  it('THE CORE: the middle of an object is always a MOVE, never a grip', () => {
+    const o = rect({ w: 3, h: 2.4 });
+    const view: View = { scale: 66.23, ox: 100, oy: 80, rot: 0 };
+    expect(handleAt(o, view, worldToScreen(o.center, view))).toBeNull();
+    // …and so is a point a little off centre, still well inside.
+    expect(handleAt(o, view, worldToScreen(localToWorld(o, 0.3, 0.3), view))).toBeNull();
+    // …while the corner itself is still grabbable.
+    expect(handleAt(o, view, worldToScreen(localToWorld(o, 1, 1), view))).toBe('se');
+  });
+
+  it('the core is measured in the object\'s own frame, under a ROTATED view too', () => {
+    // `insideCore` must add `view.rot` to the object's rotation. Omitting it
+    // misjudges the core on a twisted plan — and the view can be twisted four ways.
+    const o = rect({ w: 3, h: 2.4 });
+    expect(handleAt(o, VIEW_ROT, worldToScreen(o.center, VIEW_ROT))).toBeNull();
+    expect(handleAt(o, VIEW_ROT, worldToScreen(localToWorld(o, 1, 1), VIEW_ROT))).toBe('se');
+  });
+
+  it('a small CIRCLE is move-only, and a big one keeps a free centre', () => {
+    const small = circle({ r: 0.2 }); // 26 px across at 66 px/m
+    const view: View = { scale: 66.23, ox: 100, oy: 80, rot: 0 };
+    expect(handlesFor(small, view)).toHaveLength(0);
+    const big = circle({ r: 0.9 });
+    expect(handlesFor(big, view)).toHaveLength(4);
+    expect(handleAt(big, view, worldToScreen(big.center, view))).toBeNull();
   });
 });
 
@@ -579,9 +678,54 @@ describe('applyHandleDrag — the gesture baseline', () => {
     for (const p of [world(o, 4, 2), world(o, -2, 3), world(o, 6, -1), home]) {
       s = applyHandleDrag(s, o, 'se', p, opts);
     }
-    expect(s.objects[0]).toBe(o);
-    // …and a further identical frame is then a true no-op.
+    // Compared by VALUE, not reference: `scene()` runs `sanitizeScene`, which
+    // rebuilds each object field by field, so the live object is a copy of `o`
+    // from the very first frame. What the contract actually promises is that the
+    // GEOMETRY comes home.
+    const back = s.objects[0] as RectObj;
+    expect(back.w).toBe(o.w);
+    expect(back.h).toBe(o.h);
+    expect(back.center).toEqual(o.center);
+    expect(back.rotation).toBe(o.rotation);
+    // …and a further identical frame is then a true no-op, scene reference and all.
     expect(applyHandleDrag(s, o, 'se', home, opts)).toBe(s);
+  });
+
+  it('THE COMPOSE: a q/e rotate landing MID-RESIZE is not reverted', () => {
+    // `keyboard.ts` gates `q`/`e` on nothing but an object selection, which a grip
+    // drag guarantees — so a rotate really can land mid-gesture. Spreading `obj0`
+    // wholesale would rewrite every field from the pointerdown baseline and undo
+    // it on the very next pointermove: the S23 bug that `move-rc` carries
+    // `lastRotRef` for. Writing only the fields the gesture OWNS composes instead.
+    const o = sofa();
+    const opts = { aspect: false, fromCentre: false, snapOn: false, grabAngle: 0 };
+    let s = scene([o]);
+    s = applyHandleDrag(s, o, 'se', world(o, 3, 2), opts); // frame 1: resizing
+    // …the user presses `q` mid-drag.
+    const turned = rotateSelectedRect(s, o.id, 1);
+    expect((turned.objects[0] as RectObj).rotation).not.toBe(o.rotation);
+    // …and one more pointermove arrives.
+    const after = applyHandleDrag(turned, o, 'se', world(o, 3.2, 2.2), opts)
+      .objects[0] as RectObj;
+    expect(after.rotation).toBe((turned.objects[0] as RectObj).rotation);
+    expect(after.w).toBeGreaterThan(o.w); // and the resize still tracks the pointer
+  });
+
+  it('the same holds the other way: a nudge landing MID-ROTATE survives', () => {
+    const o = sofa();
+    const opts = { aspect: false, fromCentre: false, snapOn: false, grabAngle: 0 };
+    let s = scene([o]);
+    s = applyHandleDrag(s, o, 'rot', { x: o.center.x, y: o.center.y + 4 }, opts);
+    // An arrow nudge moves the centre while the rotate drag is live.
+    const bumped = {
+      ...s,
+      objects: s.objects.map((x) =>
+        x.id === o.id && x.kind !== 'wall' ? { ...x, center: { x: x.center.x + 0.25, y: x.center.y } } : x,
+      ),
+    };
+    const after = applyHandleDrag(bumped, o, 'rot', { x: o.center.x, y: o.center.y + 5 }, opts)
+      .objects[0] as RectObj;
+    expect(after.center.x).toBeCloseTo(o.center.x + 0.25, 9);
   });
 
   it('returns the SAME SCENE reference when the target was deleted mid-gesture', () => {

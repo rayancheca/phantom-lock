@@ -489,13 +489,17 @@ function drawHandle(ctx: CanvasRenderingContext2D, T: ThemeColors, p: Vec2, r = 
 /**
  * The §16 resize/rotate grips (S36), as a pass of their own.
  *
- * Runs LAST in `renderScene`, after `drawNodes`, and that ordering is
- * load-bearing rather than tidy: `drawNode` fills an OPAQUE disc of
- * `max(9, radiusM * scale)` px, so a grip drawn earlier is simply covered by any
- * speaker puck or seat parked near the object's corner — and the rotate grip
- * floats outside the outline, which is exactly where such a puck tends to sit.
- * The pointer hit test correspondingly runs BEFORE the node hit tests, so a grip
- * that is visible is always the thing you grab.
+ * Runs BEFORE `drawNodes`, and that ordering is load-bearing rather than tidy.
+ * `drawNode` fills an OPAQUE disc of `max(9, radiusM * scale)` px, so a puck
+ * parked near the object's corner covers a grip — and the pointerdown ladder
+ * puts the grip test BELOW the node tests to match, so a covered grip is also
+ * not grabbable and the two can never disagree.
+ *
+ * The opposite order was tried first and measured against the shipped demo: a
+ * pod at the head of the Bed lands within 11 px of a grip, and with grips on top
+ * that pod became undraggable — it resized the bed instead. Pods are the primary
+ * thing a user drags in TUNE, and resize has an Inspector alternative that
+ * dragging a pod does not, so the pucks win.
  *
  * Reuses `drawHandle`, the primitive already used for wall ends and chain
  * corners, so the grips inherit the established selection vocabulary
@@ -1159,9 +1163,10 @@ export function renderScene(ctx: CanvasRenderingContext2D, st: RenderState): voi
     }
   }
   drawProposal(ctx, st, T);
+  // BEFORE the nodes, matching the pointerdown ladder: a speaker puck or a seat
+  // wins over a grip in both the paint order and the hit test, so the two cannot
+  // disagree. See `drawHandles` for why that direction was chosen.
+  drawHandles(ctx, st, T);
   drawNodes(ctx, st, T);
   drawRuler(ctx, st, T);
-  // LAST: grips must sit above the opaque speaker/seat discs drawNodes paints,
-  // or a grip beside a pod is visible-but-unreachable. See `drawHandles`.
-  drawHandles(ctx, st, T);
 }

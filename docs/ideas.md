@@ -30,7 +30,8 @@ effort — a small high-value item beats a large one.
 | 11 | ✅ **Generate a design** (owner-requested randomizer) — **DONE S22** | ~~P1~~ done | — |
 | 15 | ✅ **Generator QUALITY (owner-reported)** — **DONE S33**: skips 26.3 % → 1.9 %, no-speaker 9.6 % → 1.5 %, coverage 12.7 % → 18.4 %. Filed cause was WRONG (see below). Residual → 15b | ~~P1~~ done | — |
 | 15b | Per-ROOM furniture quotas — `two-bed` programme 0.800, both beds can land in one bedroom | P2 | ½ session |
-| 16 | **Word-style direct-manipulation handles (owner-requested 2026-08-03)** — resize + rotate an object with the mouse | **P1 — high** | 1 session |
+| 16 | ✅ **Word-style direct-manipulation handles (owner-requested 2026-08-03)** — **DONE S36**: 8 resize grips + a rotate grip in the object's own rotated frame, Shift/Alt modifiers, clamp-not-mirror | ~~P1~~ done | — |
+| 16b | A WINDOW's rotate grip is revoked by `openingMagnetFor` on the next drag — pre-existing, affects `q`/`e` and the Inspector identically | P3 | ½ session |
 | 5 | Read-only 3D view | P2 | 1 session *(plan exists)* |
 | 6 | Component/hook tests | P2 | 1 session |
 | 10 | ✅ **Projects (folders) + N-up compare** (owner-requested) — **DONE S20** | ~~P1~~ done | — |
@@ -1258,7 +1259,64 @@ instrument.
 
 ---
 
-## 16. Word-style direct-manipulation handles — owner-requested, **P1**
+## 16. Word-style direct-manipulation handles — ✅ **DONE (S36)** — owner-requested
+
+Shipped: eight resize grips plus a rotate grip, in the object's own ROTATED frame, as the pure
+leaf `components/canvas/handles.ts` + a `handle` Drag kind + a `drawHandles` pass. Shift =
+aspect lock (resize) / 15° snap (rotate), Alt = resize about centre. Live-verified with real
+`Input.dispatchMouseEvent` drags in both canvas themes (`docs/sessions/S36/live-run.txt`).
+
+**The three decisions that were measured rather than argued:**
+
+- **CLAMP, never mirror.** `rectCorners` emits the IDENTICAL four corners for `w = -4` (swapped
+  winding), so a mirrored rect draws and blocks sound normally — while `pointInRect` compares
+  `Math.abs(local.x)` against the SIGNED half-extent and accepts **0 of 1681** footprint samples
+  against 1587 at `w = +4`. The object becomes unselectable and undeletable, recoverable only by
+  `n`/`Shift+N`, and `sanitizeObject` then collapses it to a 5 cm sliver on the next save→load.
+- **The minimums are the INSPECTOR's (0.1 m), not the sanitizer's (0.05).** One control must not
+  reach a value the other refuses, and 0.1 is a multiple of `SNAP_STEP`, so a clamped+snapped
+  result is a fixed point of both the grid and a round trip.
+- **Grips are hidden on a coarse pointer.** An 11 px target where a finger aims at a corner to
+  DRAG it would resize instead; `SelectionActions` (40 px buttons) is the touch surface, and the
+  media query here is its exact inverse.
+
+**A11y, stated rather than implied:** the grips are a POINTER ACCELERATOR. SC 2.1.1 and SC 2.5.7
+are met by the Inspector's `<input type="number">` Width/Depth/Radius fields and its rotation
+range slider — single pointer, no dragging — plus `q`/`e`, all untouched. SC 2.5.8 is met by the
+same controls under the *Equivalent control* exception. `spokenSelection` mutes the immediate live
+region during a drag, because `selection-cycle.ts` `labelOf` embeds the DIMENSIONS in the spoken
+label and a grip drag would otherwise push ~60 distinct strings a second into an `aria-atomic`
+`role="status"`.
+
+**Deferred, deliberately, with the reason:**
+
+- **Rotation does NOT snap to the plan's axis**, which the original Acceptance asked for. S31
+  measured `dominantAngle` to be BISTABLE on the owner's own plan — one ordinary 4.6 m wall drawn
+  square flips it from −12.829° to exactly 0.000° — and reverted a whole feature for it (§4c). A
+  Shift-snap to a bistable axis would put furniture at −12.83° one session and 0° the next. Shift
+  snaps to **15° world increments** (the Word contract) instead, and the app's stable, local answer
+  to "align to the plan" remains the wall-seat magnet and the `F` command.
+- **A resize does not re-seat a wall-seated piece.** An Inspector Width/Depth edit does not either,
+  so this adds no new behaviour class; `seatObjectAgainstWall`'s `COMMAND_SEAT` reaches 1.2 m and
+  could teleport a piece that was never near a wall (the S32 reach lesson). `F` re-seats.
+- **A window keeps its rotate grip**, matching `canRotateSel` exactly — see §16b below.
+
+### 16b. A window's rotation is destroyed by the opening magnet — **P3, pre-existing**
+
+`canRotateSel` (`CanvasStage.tsx:103`) is `kind === 'rect' && role !== 'door'`, so a WINDOW is
+rotatable via `q`/`e`, via the touch HUD, via the Inspector slider — and now via a rotate grip. But
+`moveObjectTo` routes every window through `openingMagnetFor`, which unconditionally overwrites
+`rotation` with the host wall's angle on the next drag. So the turn is real and then silently
+revoked, the measured §4d failure in a new costume.
+
+S36 did NOT introduce this and deliberately did not diverge from `canRotateSel` — inventing a
+second rotatability predicate is how the two drift apart. Fixing it means deciding whether a
+window's rotation is user-owned or wall-owned, and applying that answer to all four writers at
+once. P3 because a window's angle is nearly always the wall's angle anyway.
+
+---
+
+## 16-original. Word-style direct-manipulation handles — owner-requested, **P1**
 
 > *"i also want to be able to change the shape and size and rotation of objects with my mouse
 > just like in microsoft word"* — owner, 2026-08-03.
