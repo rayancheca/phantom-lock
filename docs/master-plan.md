@@ -912,6 +912,99 @@ speed. Confirm the next kickoff you write re-states this protocol.*
 
 ## Progress log
 
+### Session 34 — 2026-08-04 — the two affordances the owner could not find (`docs/ideas.md` §17)
+
+**The owner's report,** mid-session and unprompted: *"why is there no delete layout button and
+wheres the generate layout button. impossible to find"*.
+
+**Both existed. One was genuinely unreachable.** "Generate a design" had TWO entry points and both
+were gated on a folder — the action-row button behind `{folder && …}` at `LayoutGallery.tsx:762`,
+and a folder tile's kebab item at `:530`. Measured live in headless Chrome against the shipped
+build, the home grid offered four creation buttons (New room / Empty layout / Maple Court apartment
+/ Import layout) and **`generateOnHome === false`**. A workspace with **no folders at all** — which
+is what `defaultStore()` is, and what a user reaches by deleting their folders — could not reach the
+generator by any route. Every gallery test rendered `seededDefaultStore()`, which ships two folders,
+so the 36-test corpus could not express the failing case, and the failing case is the DEFAULT one.
+
+**Delete was never missing, and "too dim" was the wrong diagnosis.** It is a `MenuItem` behind the
+card's `⋯`. Measured through `styles/contrast.ts` against the backdrop the chip actually sits on —
+it is `top:14px` inside `.gallery-thumb`'s 130px band, so the mini-plan CANVAS on a card (`#0d1320`,
+read from `thumb.ts`) and `.folder-mosaic` on a tile, NOT `--surface-1`/`--surface-2`, which the
+first cut of the test wrongly used and an adversarial lens caught:
+
+| | measured | verdict |
+|---|---|---|
+| glyph `--text-2` over the fill | 9.09 – 9.30 : 1 | already fine |
+| the fill itself vs its backdrop | **1.01 – 1.10 : 1** | no boundary at all |
+
+Every backdrop is near-black, so the intuitive fix is backwards: 0.6 → 0.85 alpha buys **0.02**.
+Only a stroke works. `1px solid var(--text-3)` measures 5.93 / 6.36 / 6.04 / 5.57 across the four
+backdrops, clearing WCAG 1.4.11's 3:1. `--border-strong` (1.59–1.68) and `--border` (1.16–1.22) were
+measured, rejected, and are now asserted to FAIL, so a later "use the standard token" reds the suite.
+
+**One regression introduced, caught by self-review, fixed in two rounds.** `.gallery-new` is
+content-sized with no shrinkable minimum while `.gallery-surface` is `flex: 1 1 0; min-height: 0`,
+so the lead button's 72px came straight out of the grid.
+
+| viewport | pre-S34 grid | S34 v1 | shipped |
+|---|---|---|---|
+| 844 x 390 | 137 px (133 of a 196 px card) | **65 px (61 px)** | **153 px (149 px)** |
+| 390 x 640 | 362 | 290 | 376 |
+| 1440 x 900 | 224 | 224 | 224 |
+
+`min-height: 44px` under `max-height: 640px` fixed that — and a fourth review lens then found the
+hole in it at **320 x 200** (a 1280px display at 400 % zoom, SC 1.4.10's reflow target): the two
+longest labels WRAP under the stacked column layout, so those buttons render 62px and the floor never
+binds — tray 193px against a pre-S34 190px, with two buttons entirely below the fold where before
+none were. `flex-direction: row` (what `.gallery-new-lead` already did, and why it was the one button
+unaffected) takes the tray to 174px; the residual is structural (five buttons need three rows where
+four needed two) so the tray is bounded to `50vh` and scrolls ITSELF, since `.gallery-layer` is
+`inset: 0` and the overflow was otherwise escaping the overlay. Shipped guarantee is REACHABILITY:
+**5 of 5** after scrolling the tray, against 4 of 4 pre-S34 on a tray already clipped by 78px.
+
+**Two PRE-EXISTING defects found while verifying, both measured on a baseline tree and filed rather
+than attributed.** §17b (**P1**): `.room-trigger` — the only control that opens the gallery — is
+overlapped by the DESIGN/TUNE `.segment-label` spans. Sweeping 21 points with `elementFromPoint`,
+the hit-testable fraction is **0.143 at 390px**, 0.714 at 560, 0.667 at 760, 1.000 at 960 and 1440 —
+byte-identical on `git show 0216209:` restored files served on a second port. On a phone that makes
+the gallery nearly unopenable, which is a superset of the complaint this session answered. §17c
+(P3): 430px of horizontal overflow at 390px, same six `.strip-btn` offenders on both trees; the
+harness asserts it has not MOVED rather than asserting it is absent.
+
+**Evidence.**
+- *Agents:* an audit workflow (27 agents, 0 errors) — 24 skeptics, **6 refutations, all corrections
+  to OTHER agents' overstatements**, none contradicting the two measured facts. A design workflow
+  (17 agents) that landed AFTER the fix was implemented; retrospective, but it independently produced
+  the wrong-backdrop correction. A self-review workflow (4 agents): 3 HIGH (all the same finding —
+  the contrast block did not read `gallery.css`; fixed mid-flight), 3 MEDIUM (wrong backdrop — fixed;
+  short-viewport collapse — fixed; "only 2 of 6 tests load-bearing" — **partly refuted**, NC5/NC6
+  show the in-folder and delete tests are load-bearing against plausible regressions), 3 LOW (hover
+  backdrops — **refuted**, the chip sits over an opaque canvas so the card's hover fill is never
+  visible under it; idle-action-during-move — real but pre-existing, `New room…` and `Import…`
+  behave identically; 400 % zoom — real, fixed).
+- *Negative controls, six, each caught by the test written for it:* border → `none` · border →
+  `--border-strong` · home Generate button deleted · home button re-pointed at a folder · in-folder
+  button re-pointed at home · the Delete `MenuItem` deleted. The first two are caught ONLY by the
+  assertion that reads `gallery.css` from disk — without it the whole contrast block is documentation.
+- *Tests* 1615 → **1628** (+13). `gallery.a11y.test.tsx` 36 → 42, `contrast.test.ts` 112 → 119.
+- *Coverage:* `LayoutGallery.tsx` **92.02 %** stmts / 88.81 % branch; `contrast.ts` 100 %;
+  `components/gallery` 83.09 %. `gallery.css` has no coverage concept.
+- *Gates:* `Tests 1628 passed (1628)` · build **506.04 kB / 165.05 kB gz** JS + **53.97 kB /
+  10.06 kB gz** CSS + 1.31 kB HTML · `eslint .` clean.
+- *Live* (`docs/sessions/S34/{look,verify,mobile}.mjs`, fresh Chrome profile, fresh origin — the
+  owner's layouts never touched): Generate renders and hit-tests on home, the dialog opens, "Create
+  design" lands the design on the HOME grid (5 → 6 cards, `inFolder: false`), the card menu's Delete
+  removes it (6 → 5) with an undo toast. Screenshots `docs/sessions/S34/shots/01-08`.
+- *Acceptance:* Generate reachable from the home grid → **met**. Reachable with no folders → **met**.
+  In-folder path unchanged → **met** (NC5). Delete reachable and perceivable → **met**. No
+  responsive regression → **met after two rounds** (the first fix was itself incomplete).
+- *Stated honestly:* live checks ran ONE browser (headless Chrome over CDP); touch is CDP emulation,
+  not a physical device; **no real screen reader has ever been driven on this project**; the §17b
+  header collision is filed, not fixed.
+
+**Deferred with a reason:** §17b (P1, pre-existing, its own session) · §17c (P3) · the tray running
+its idle action while a move is armed (pre-existing class shared with three other tray buttons).
+
 ### Session 33 — 2026-08-03 — the design generator's QUALITY (§15)
 
 **The owner's report.** *"generate a design is broken as fuck. i want actual good generations with
