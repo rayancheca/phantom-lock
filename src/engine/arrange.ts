@@ -234,7 +234,16 @@ function wallSlots(ctx: Ctx, depth: number): Slot[] {
     // The centroid-facing side FIRST, so that where both sides are floor and
     // score equally the pre-S33 choice still wins and the diff stays small.
     const towardCentroid = v.dot(perp, v.sub(ctx.centroid, mid)) < 0 ? v.scale(perp, -1) : perp;
-    const sides = [towardCentroid, v.scale(towardCentroid, -1)];
+    // WITHOUT a walkable region there is no way to tell floor from not-floor,
+    // so offer the centroid-facing side ONLY — the pre-S33 behaviour. Not
+    // defensive tidiness: `ctx.walkable` is null whenever the flood-fill comes
+    // back at 2 m² or less, and `fits` then skips its containment check too, so
+    // offering both sides puts furniture OUTSIDE the building. Measured on a
+    // 1.2 x 1.2 room (flooded area 1.44): pre-S33 placed 0 of 2 pieces outside,
+    // the first cut of this change placed 1 of 2.
+    const sides = ctx.walkable
+      ? [towardCentroid, v.scale(towardCentroid, -1)]
+      : [towardCentroid];
     for (const inward of sides) {
       const off = depth / 2 + 0.06;
       // Skip a side with no floor behind it before generating 11 slots for it.
@@ -740,6 +749,17 @@ export function suggestInventory(scene: Scene): { items: ArrangeItem[]; reasons:
     counts.set(id, (counts.get(id) ?? 0) + n);
     reasons.push(why);
   };
+  /**
+   * The same programme/fill taxonomy the generator uses, applied here so the
+   * dialog does not report its own decoration budget as a failure.
+   *
+   * S33's `SEAT_CLEARANCE` keeps open-floor pieces off the listening seat, and
+   * on the bundled demo that costs two of the three plants a home — which the
+   * dialog then announced as "No spot survives the rules for a plant" three
+   * times. A bed or a sofa with nowhere to go is worth saying; a third plant is
+   * not. (The armchair, by contrast, is now PLACED where it used to be skipped.)
+   */
+  const DECORATIVE = new Set(['plant', 'round-table', 'bookshelf', 'armchair']);
 
   if (!have.has('bed')) {
     want('bed', Math.min(roomCount, 2), roomCount > 1 ? 'A bed per sleeping room.' : 'Every home starts with the bed.');
@@ -766,7 +786,14 @@ export function suggestInventory(scene: Scene): { items: ArrangeItem[]; reasons:
   reasons.unshift(
     `Read the layout: ≈${area.toFixed(0)} m² across ${roomCount} room${roomCount === 1 ? '' : 's'}${hasTv ? ', TV present' : ''}${hasCounter ? ', kitchen wall found' : ''}.`,
   );
-  return { items: [...counts.entries()].map(([presetId, count]) => ({ presetId, count })), reasons };
+  return {
+    items: [...counts.entries()].map(([presetId, count]) => ({
+      presetId,
+      count,
+      optional: DECORATIVE.has(presetId),
+    })),
+    reasons,
+  };
 }
 
 /** Order matters: anchor pieces first, fillers last. */

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { RectObj, Scene, SceneObject, WallObj } from '../types';
-import { arrangeFurniture, faceToward } from '../arrange';
-import { blankScene, createId, rectRoomWalls, ROOM_HEIGHT } from '../scene';
+import { arrangeFurniture, faceToward, suggestInventory } from '../arrange';
+import { apartmentScene, blankScene, createId, rectRoomWalls, ROOM_HEIGHT } from '../scene';
 
 /** Arrange only ever returns rects/circles — narrow away walls for .center. */
 const placedOf = (objects: SceneObject[]) =>
@@ -261,6 +261,34 @@ describe('S33: both faces of a wall are offered', () => {
     expect(onTheFarFace.length).toBeGreaterThanOrEqual(1);
   });
 
+  it('falls back to ONE face when there is no walkable region to consult', () => {
+    // `ctx.walkable` is null whenever regionOf comes back at <= 2 m², and `fits`
+    // then skips its containment check as well — so offering both sides puts
+    // furniture OUTSIDE the building. A 1.2 x 1.2 room floods to 1.44 m².
+    // Measured: pre-S33 0 of 2 pieces outside, the first cut of the two-faced
+    // change 1 of 2. Found by self-review, not by any of the 8 negative
+    // controls, because none of them made the region degenerate.
+    const s = blankScene();
+    const pts = [
+      { x: 0, y: 0 }, { x: 1.2, y: 0 }, { x: 1.2, y: 1.2 }, { x: 0, y: 1.2 },
+    ];
+    const scene: Scene = {
+      ...s,
+      listener: { ...s.listener, pos: { x: 0.6, y: 0.6 } },
+      objects: pts.map((a, i): WallObj => ({
+        id: createId('wall'), kind: 'wall', a, b: pts[(i + 1) % 4],
+        absorption: 0.12, label: 'Wall', height: ROOM_HEIGHT,
+      })),
+    };
+    const res = arrangeFurniture(scene, [{ presetId: 'bookshelf', count: 4 }, { presetId: 'plant', count: 2 }]);
+    for (const p of placedOf(res.objects)) {
+      expect(p.center.x, p.label).toBeGreaterThanOrEqual(0);
+      expect(p.center.x, p.label).toBeLessThanOrEqual(1.2);
+      expect(p.center.y, p.label).toBeGreaterThanOrEqual(0);
+      expect(p.center.y, p.label).toBeLessThanOrEqual(1.2);
+    }
+  });
+
   it('still refuses the OUTSIDE face of the exterior shell', () => {
     const res = arrangeFurniture(room(6, 5), [{ presetId: 'bookshelf', count: 6 }]);
     for (const p of placedOf(res.objects)) {
@@ -299,6 +327,26 @@ describe('S33: optional fill vs a promised piece', () => {
     expect(Array.isArray(res.skipped)).toBe(true);
     expect(res.skipped).toEqual([]);
     expect(placedOf(res.objects).some((o) => o.label === 'Bed')).toBe(true);
+  });
+});
+
+describe('S33: suggestInventory marks its DECORATION optional', () => {
+  it('calls a bed and a sofa required, and a plant decoration', () => {
+    const { items } = suggestInventory(room(9, 8));
+    const by = Object.fromEntries(items.map((i) => [i.presetId, i]));
+    expect(by.bed?.optional).toBe(false);
+    expect(by.sofa?.optional).toBe(false);
+    expect(by.plant?.optional).toBe(true);
+  });
+
+  it('stops the dialog reporting its own decoration budget as a failure', () => {
+    // S33's SEAT_CLEARANCE costs open-floor pieces their spots near the seat.
+    // On the bundled demo that took two of three plants, and the dialog
+    // announced "No spot survives the rules for a plant" three times. A sofa
+    // with nowhere to go is worth saying; a third plant is not.
+    const scene = apartmentScene();
+    const res = arrangeFurniture(scene, suggestInventory(scene).items);
+    for (const note of res.skipped) expect(note).not.toMatch(/plant/i);
   });
 });
 
