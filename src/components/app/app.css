@@ -59,6 +59,20 @@
   align-items: center;
   gap: 6px;
   max-width: 15rem;
+  /* THE §17b DEFECT, and it is one level up from where it looks. As a flex item
+     this button defaults to `min-width: auto`, so its automatic minimum size is
+     its MIN-CONTENT size — and `.room-trigger-name` below is `white-space:
+     nowrap`, so that min-content is the entire layout name. The button therefore
+     never shrank: it measured exactly 174.8px at 560, 640, 760, 860 AND 1440,
+     `.topbar-left`'s grid track collapsed to 41px at 390, and 206px of content
+     overflowed under `.segment-switch` — which is `position: relative` +
+     `isolation: isolate`, so it paints on top. Measured by walking
+     `elementFromPoint` across the button at 1px steps, the widest unoccluded
+     strip was 0px at 320 and 22px at 390, on the ONLY control that opens the
+     gallery: SC 2.4.11 (it is the first Tab stop) and SC 2.5.8 respectively.
+     The ellipsis on the name could never engage, because the name was not the
+     constraint — setting `min-width: 0` on IT is a measured no-op. */
+  min-width: 0;
   padding: 6px 10px;
   background: transparent;
   border: none;
@@ -99,9 +113,104 @@
   gap: var(--space-2);
 }
 
+/* The narrow header sheds decoration before it sheds function. Both rules here
+   buy space for `.room-trigger`, which is the one control that cannot be given
+   up: it is the only door to the gallery.
+
+   The monogram swap used to live at 560px, and that upper edge was the single
+   worst width in the whole range — the wordmark costs 96.6px, so 561px measured
+   27px of exposed trigger against 430px's 46px. Reachability was not monotonic
+   in viewport width. Extending the range to 720 is not a new idea bolted on:
+   it is what the rule below already says it is for. */
 @media (max-width: 720px) {
   .btn-tour-text {
     display: none;
+  }
+
+  /* Collapse the wordmark to a "PL" monogram — see .wm-mono above. */
+  .wm-full {
+    display: none;
+  }
+  .wm-mono {
+    display: inline;
+  }
+}
+
+/* Below ~520px the space simply is not there: at 480px the header's fixed costs
+   (32 padding + 24 gaps + 137 actions + a 192px switch) leave 95px for a brand
+   and a 174.8px button. So the two remaining pieces of decoration go.
+
+   The mode switch keeps its icons, its roles, its `aria-checked`, its roving
+   tabindex and its 40px target — it loses only the words, exactly as
+   `.btn-tour-text` above already does. Both declarations are required: hiding
+   the labels alone frees ZERO px, because the switch's box is
+   `width: min(300px, 40vw)` and is not content-sized, while `width: auto` alone
+   is a regression at 390px (its max-content, 160.4px, exceeds the 156px box it
+   would replace).
+
+   Scoped under `.topbar` on purpose. `.segment-switch--mode`'s width lives in
+   panels.css, a media query adds no specificity, and which file wins would
+   otherwise depend on the module graph. Scoping to `--mode` matters just as
+   much: `.segment-label` is shared with the sidebar's Build/Furnish switch,
+   which has a whole column of room and must keep its words. */
+@media (max-width: 480px) {
+  /* Clipped, never `display: none` — this element holds the page's only <h1>,
+     and removing it from the accessibility tree would leave the narrow layout
+     with no level-1 heading. Nothing in the vitest suite could catch that:
+     shell.a11y.test.tsx counts DOM nodes, and jsdom ignores @media entirely.
+     Kept in step with global.css `.sr-only`, legacy `clip` included. */
+  .brand {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .topbar .segment-switch--mode {
+    width: auto;
+  }
+
+  .topbar .segment-switch--mode .segment-label {
+    display: none;
+  }
+
+  /* 13px of side padding around a 14px icon = a 40px segment: the same target
+     the switch has on coarse pointers, and the same one `.topbar-actions .btn`
+     uses beside it. */
+  .topbar .segment-switch--mode .segment {
+    padding: 5px 13px;
+  }
+}
+
+/* Under ~344px the name box is narrower than a single glyph, so it renders one
+   clipped stroke that reads as a rendering artefact rather than as text. Hide it
+   — but CLIP it, because `Icon` is `aria-hidden="true"`, so `display: none` here
+   would leave the button with no accessible name at all. Clipped, the name still
+   answers "which layout am I in?" for assistive tech, and SC 2.5.3 Label in Name
+   is satisfied vacuously because no visible text remains.
+   40px is the house target (`.topbar-actions .btn`, `.segment`); 41px of track is
+   available at the 320px reflow floor, so it fits with a pixel to spare. */
+@media (max-width: 360px) {
+  .room-trigger-name {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .room-trigger {
+    min-width: 40px;
+    justify-content: center;
   }
 }
 
@@ -361,16 +470,6 @@
   .topbar-actions .btn {
     min-width: 40px;
     min-height: 40px;
-  }
-}
-
-/* Collapse the wordmark to a "PL" monogram on the narrowest headers. */
-@media (max-width: 560px) {
-  .wm-full {
-    display: none;
-  }
-  .wm-mono {
-    display: inline;
   }
 }
 
