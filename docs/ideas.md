@@ -1344,3 +1344,53 @@ makes "`quarterTurn: false` is byte-unchanged" structural rather than incidental
 **And refuse the turn for a TV.** `bestspot.ts` scores `angle = |cos| >= 0.55 ? 1 : max(0.25, …)`,
 so a quarter-turned TV reads `|cos| = 0` and multiplies `tvViewQuality` by **0.25 across the whole
 room**. That is the exact collapse §1.2 cited as the reason the snap is nearest-π at all.
+
+---
+
+## 17. The gallery's two missing affordances — ✅ **DONE (S34)** — owner-reported
+
+> *"why is there no delete layout button and wheres the generate layout button. impossible to find"*
+> — owner, 2026-08-04
+
+Both existed. **Generate was a reachability bug, not a discoverability one**: both entry points were
+gated on a folder (`{folder && …}` at `LayoutGallery.tsx:762`, and a folder tile's kebab at `:530`),
+so the home grid — the screen every session opens on — offered no path to it, and a workspace with
+**no folders at all** could not reach it by any route. **Delete** was a `MenuItem` behind the card's
+`⋯`, whose fill measured **1.01–1.10:1** against every backdrop it sits on: no boundary, so nothing
+said a control was there. The glyph was already 9.09–9.30:1, so "too dim" was the wrong diagnosis and
+darkening the fill makes it worse. Fixed with a `--text-3` stroke (5.57–6.36:1). See the S34 handoff.
+
+## 17b. The layout switcher is COVERED at phone widths — **P1, pre-existing, NOT caused by S34**
+
+Found while verifying S34 at 390 px, and it is worse than either bug S34 fixed, because the gallery
+is the only home for both of them.
+
+`.room-trigger` — the header pill that opens the gallery, and **the only control that opens it** — is
+overlapped by the DESIGN/TUNE `SegmentSwitch`'s `.segment-label` spans. Measured by sweeping 21 points
+across the trigger's width and calling `document.elementFromPoint` at each, on a **pre-S34 baseline
+tree** and on the S34 branch, byte-identically:
+
+| viewport width | fraction of the trigger that is hit-testable |
+|---|---|
+| 390 px | **0.143** (3 of 21 points) |
+| 560 px | 0.714 |
+| 760 px | 0.667 |
+| 960 px | 1.000 |
+| 1440 px | 1.000 |
+
+So on a phone the gallery is very nearly unopenable, which makes *every* layout action — open,
+rename, duplicate, export, delete, generate — unreachable. This is the S21 lesson verbatim
+(*"two absolutely-positioned overlays at the same coordinates is a HIT-TESTING bug, not a cosmetic
+one"*), and the S21 fix note applies here too: anchor the smaller element to the opposite edge rather
+than nudging an offset, because the header can wrap.
+
+Harness: `/tmp` throwaway in S34; re-derivable in ten lines from `docs/sessions/S32/cdp.mjs` —
+launch at width W, `document.elementFromPoint` across `.room-trigger`'s rect, count `SELF` hits.
+
+## 17c. The page scrolls horizontally at 390 px — **P3, pre-existing**
+
+`documentElement.scrollWidth` is **430** against a `clientWidth` of 390 while the gallery is open.
+The offenders are the un-floated toolbar rail's `.strip-btn` children (right edges at 467, 557).
+Measured identically on the pre-S34 baseline tree and the S34 branch — same 430, same six offenders —
+so it is not the S34 tray. `docs/sessions/S34/mobile.mjs` asserts the number has not MOVED rather than
+asserting it is zero, so a future change that makes it worse still reds.
