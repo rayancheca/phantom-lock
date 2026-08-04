@@ -958,8 +958,16 @@ the cuts inside an aspect budget keeps both.
 **Evidence.** 8 negative controls, all caught (one exposed a weak test, which was rebuilt on an
 L-shaped fixture and re-verified red). Live in real headless Chrome on a fresh profile: 24 summaries
 across all 8 archetypes — **1** said "nowhere to go", **21** said "a stereo pair that locks"; the
-kept design reached IndexedDB with 7 furniture pieces and 4 distinct rotations. Tests 1560 → **1612**.
-Bundle 503.23 → **505.77 kB** (164.17 → 164.98 kB gz), CSS unchanged.
+kept design reached IndexedDB with 7 furniture pieces and 4 distinct rotations. Tests 1560 → **1615**.
+Bundle 503.23 → **505.86 kB** (164.17 → 165.02 kB gz), CSS unchanged. Re-run live after the review
+fixes: **0/24** "nowhere to go", **24/24** "a stereo pair that locks".
+
+**Self-review was done BY HAND** — all four review agents died on a weekly usage limit, and four of
+six agents in the earlier understanding workflow died on a session limit. It found one REAL defect
+introduced by this session that none of the 8 negative controls had covered: with `ctx.walkable`
+null (a flooded region ≤ 2 m²) the two-faced `wallSlots` placed furniture OUTSIDE the building, 1 of
+2 pieces on a 1.2 x 1.2 room. Fixed, pinned, and the lesson recorded. It also found a consequence on
+the shipped "Arrange furniture for me" dialog and fixed the messaging there.
 
 **Deferred with a reason:** per-room furniture quotas (`ideas.md` §15b) — `two-bed`'s `programme` is
 0.800 because `inventoryFor` reasons per room but returns a flat count and `arrangeFurniture` has no
