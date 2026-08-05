@@ -106,6 +106,18 @@ export interface ChainStep {
   /** This click closed the loop — the chain ends. */
   closing: boolean;
   /**
+   * Should the caller append an id group for this corner?
+   *
+   * FALSE for the first vertex and true after, because `popChainSegment` pairs
+   * `groups[i]` with the segment ENDING at `points[i+1]` — the opening vertex
+   * owns no segment, so a leading entry puts the two lists permanently out of
+   * step and every Backspace then deletes the PREVIOUS corner's wall. It lives
+   * here rather than in the component (`if (!first)`) so a test can red on it:
+   * a self-review negative control replaced the component's guard with an
+   * unconditional push and all 1886 tests passed.
+   */
+  pushGroup: boolean;
+  /**
    * The wall to hand to `integrateWall`, or null when the click landed within
    * `MIN_SEGMENT_M` of the previous corner. A null wall still appends a corner,
    * whose id group is then legitimately EMPTY — which is why Backspace tracks
@@ -126,7 +138,7 @@ export function chainStep(
   newId: (prefix: string) => string,
 ): ChainStep {
   const vtx = chainVertex(points, raw, ctx);
-  if (points.length === 0) return { ...vtx, wall: null };
+  if (points.length === 0) return { ...vtx, wall: null, pushGroup: false };
   const last = points[points.length - 1];
   // ⚠️ Written as `>=`, not as the more natural `if (dist < MIN) return null`.
   // The two differ on exactly one input and in the dangerous direction: `NaN >=
@@ -137,6 +149,7 @@ export function chainStep(
   if (v.dist(last, vtx.at) >= MIN_SEGMENT_M) {
     return {
       ...vtx,
+      pushGroup: true,
       wall: {
         id: newId('wall'),
         kind: 'wall',
@@ -148,7 +161,7 @@ export function chainStep(
       },
     };
   }
-  return { ...vtx, wall: null };
+  return { ...vtx, wall: null, pushGroup: true };
 }
 
 /**

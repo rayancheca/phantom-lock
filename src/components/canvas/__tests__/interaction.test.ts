@@ -16,9 +16,6 @@ import {
   wallHoverAt,
   watchDevicePixelRatio,
 } from '../interaction';
-// MOVED to chain.ts in S38 — see the note there; importing it from `interaction`
-// would need a re-export, and that re-export closed a runtime import cycle.
-import { popChainSegment } from '../chain';
 import { worldToScreen, type View } from '../render';
 import { addListener, blankScene, makeSpeaker } from '../../../engine/scene';
 import type { Scene, SceneObject, SpeakerObj, WallObj } from '../../../engine/types';
@@ -135,7 +132,10 @@ describe('wallHoverAt', () => {
   });
 });
 
-// --- Fix 2: popChainSegment ------------------------------------------------
+// --- Fix 2's `popChainSegment` MOVED to `chain.test.ts` in S38, with its
+// subject. Keeping it here would have needed a re-export from `interaction.ts`,
+// and that re-export closed a runtime import cycle
+// (interaction -> chain -> placement -> interaction).
 
 describe('chipStaysVisible — the chip must survive the trip to its own buttons', () => {
   // The chip renders CENTRED ABOVE the anchor, so its buttons are far outside a
@@ -197,53 +197,6 @@ describe('insideRect — what stops the chip relocating to a nearer wall', () =>
 
   it('is false with no chip mounted yet', () => {
     expect(insideRect({ x: 500, y: 375 }, null, 24)).toBe(false);
-  });
-});
-
-describe('popChainSegment', () => {
-  it('removes ALL ids of a multi-chunk crossing group in one pop', () => {
-    const points = [
-      { x: 0, y: 0 },
-      { x: 2, y: 0 },
-      { x: 2, y: 2 },
-    ];
-    const groups = [['a'], ['b', 'c']];
-    const res = popChainSegment(points, groups);
-    expect(res.ended).toBe(false);
-    expect(res.removeIds).toEqual(['b', 'c']);
-    expect(res.points).toHaveLength(2);
-    expect(res.groups).toEqual([['a']]);
-  });
-
-  it('drops a trailing empty group (a too-close corner) removing no walls', () => {
-    const res = popChainSegment(
-      [
-        { x: 0, y: 0 },
-        { x: 2, y: 0 },
-        { x: 2.05, y: 0.05 },
-      ],
-      [['a'], []],
-    );
-    expect(res.removeIds).toEqual([]);
-    expect(res.points).toHaveLength(2);
-    expect(res.groups).toEqual([['a']]);
-    expect(res.ended).toBe(false);
-  });
-
-  it('ends (objects untouched) when only the anchor corner remains', () => {
-    const res = popChainSegment([{ x: 0, y: 0 }], []);
-    expect(res).toEqual({ points: [], groups: [], removeIds: [], ended: true });
-  });
-
-  it('never mutates its input arrays', () => {
-    const points = [
-      { x: 0, y: 0 },
-      { x: 2, y: 0 },
-    ];
-    const groups = [['a']];
-    popChainSegment(points, groups);
-    expect(points).toHaveLength(2);
-    expect(groups).toEqual([['a']]);
   });
 });
 

@@ -590,6 +590,61 @@ describe('resolvePointerDown — hit-test ORDER', () => {
     expect(a.drag.kind === 'node' && a.drag.node).toBe('listener');
   });
 
+  it('the pick tolerance is SCREEN px, so zooming OUT widens the grab in metres', () => {
+    // `tol = 10 / view.scale` is the grab radius for the whole select ladder.
+    // A fixed metric tolerance — the plausible "simplify away the view
+    // dependency" edit — passed the whole suite, because only SMALLER
+    // tolerances were caught anywhere. A two-scale straddle fixes that, the
+    // same trick the opening tool's radius already uses.
+    //
+    // The wall ENDPOINT band is tol * 1.4: 0.233 m at scale 60, 1.167 m at 12.
+    const w = {
+      id: 'w1',
+      kind: 'wall' as const,
+      a: { x: 1.13, y: 1.07 },
+      b: { x: 7.13, y: 1.07 },
+      absorption: 0.12,
+      label: 'Wall',
+      height: 2.5,
+    };
+    const s = scene([w]);
+    const sel: Selection = { type: 'object', id: 'w1' };
+    const p = { x: 1.13 + 0.6, y: 1.07 }; // outside the band at 60, inside at 12
+    expect(resolvePointerDown(at(p, VIEW, { scene: s, selection: sel })).kind === 'drag').toBe(true);
+    const near = resolvePointerDown(at(p, VIEW, { scene: s, selection: sel }));
+    expect(near.kind === 'drag' && near.drag.kind).toBe('move-wall');
+    const far = resolvePointerDown(at(p, { ...VIEW, scale: 12 }, { scene: s, selection: sel }));
+    expect(far.kind === 'drag' && far.drag.kind).toBe('wall-end');
+  });
+
+  it('an inactive SEAT is tested BELOW the active puck — the pod wins', () => {
+    // Unpinned: moving the whole seat block above `hitTestNodes` passed. That
+    // silently switches the app from "drag the pod" to "activate and drag the
+    // seat" wherever the two overlap — the same class as the grip-vs-pod
+    // ordering this file goes to real trouble over.
+    const shared = { x: 6.37, y: 4.13 };
+    let s = scene([], [spk('s1', shared)]);
+    s = addListener(s, 'Bed', shared);
+    s = setActiveListener(s, s.listeners![0].id); // the seat ON the pod is inactive
+    const seatOnPod = s.listeners!.find((l) => l.name === 'Bed')!;
+
+    const a = resolvePointerDown(at(shared, VIEW, { scene: s }));
+    expect(a.kind).toBe('drag');
+    if (a.kind !== 'drag') throw new Error('unreachable');
+    expect(a.selection).toEqual({ type: 'speaker', id: 's1' });
+    expect(a.activateSeat).toBeUndefined();
+
+    // Non-vacuous: with the pod gone, the SAME point activates that seat.
+    const noPod = scene([], []);
+    let s2 = addListener(noPod, 'Bed', shared);
+    s2 = setActiveListener(s2, s2.listeners![0].id);
+    const b = resolvePointerDown(at(shared, VIEW, { scene: s2 }));
+    expect(b.kind === 'drag' && b.activateSeat).toBe(
+      s2.listeners!.find((l) => l.name === 'Bed')!.id,
+    );
+    expect(seatOnPod.id).toBeTruthy();
+  });
+
   it('empty space deselects', () => {
     const a = resolvePointerDown(at({ x: 40, y: 40 }, VIEW, { scene: scene([rect()]) }));
     expect(a).toEqual({ kind: 'select', selection: null });
@@ -668,14 +723,59 @@ describe('the emitted Drag records actually work', () => {
     expect((3.17 / SNAP_STEP) % 1).not.toBeCloseTo(0, 6);
   });
 
-  it('move-rc carries the object rotation as rot0, so a snapped move preserves it', () => {
+  it('move-rc keeps c0 and start DISTINCT — an off-centre grab does not teleport', () => {
+    // ⚠️ The grab point must NOT be the object's centre. It was, and `c0` and
+    // `start` then hold the same value, so `c0: p` and `start: o.center` both
+    // passed. `drag-apply` computes `v.add(drag.c0, p - drag.start)`, so `c0: p`
+    // teleports the centre under the pointer on the very first pointermove —
+    // in the app's most-used gesture.
     const s = scene([rect()]);
-    const a = resolvePointerDown(at({ x: 3.17, y: 2.23 }, VIEW, { scene: s }));
+    const grab = { x: 4.11, y: 2.93 }; // inside the sofa, 1.10 m off its centre
+    const a = resolvePointerDown(at(grab, VIEW, { scene: s }));
     if (a.kind !== 'drag' || a.drag.kind !== 'move-rc') throw new Error('unreachable');
     expect(a.drag.rot0).toBe(MAPLE);
-    const res = applyDragToScene(s, a.drag, { x: 5.17, y: 2.23 }, OPTS);
-    const moved = res!.scene.objects.find((o) => o.id === 'r1')!;
-    expect(moved.kind === 'rect' && moved.rotation).toBe(MAPLE);
+    expect(a.drag.c0).toEqual({ x: 3.17, y: 2.23 });
+    expect(a.drag.start).toEqual(grab);
+    expect(a.drag.c0).not.toEqual(a.drag.start);
+
+    // The object moves by the pointer DELTA, keeping the grab offset — it does
+    // not jump to the pointer.
+    const to = { x: grab.x + 1.35, y: grab.y - 0.85 };
+    const moved = applyDragToScene(s, a.drag, to, OPTS)!.scene.objects.find((o) => o.id === 'r1')!;
+    if (moved.kind !== 'rect') throw new Error('unreachable');
+    expect(moved.center.x).toBeCloseTo(3.17 + 1.35, 9);
+    expect(moved.center.y).toBeCloseTo(2.23 - 0.85, 9);
+    expect(moved.rotation).toBe(MAPLE);
+  });
+
+  it('move-wall carries a0/b0 the right way round — asserted through the engine', () => {
+    // The one drag kind this file's own discipline was never applied to: three
+    // tests reached the branch and all asserted only `drag.kind`. Swapping
+    // `a0`/`b0` flips the wall end-for-end on the first pointermove and passed.
+    const w = {
+      id: 'w1',
+      kind: 'wall' as const,
+      a: { x: 1.13, y: 1.07 },
+      b: { x: 7.13, y: 3.41 },
+      absorption: 0.12,
+      label: 'Wall',
+      height: 2.5,
+    };
+    const s = scene([w]);
+    const grab = { x: 4.13, y: 2.24 }; // on the wall, off both endpoints
+    const a = resolvePointerDown(at(grab, VIEW, { scene: s }));
+    if (a.kind !== 'drag' || a.drag.kind !== 'move-wall') throw new Error('unreachable');
+
+    const to = { x: grab.x + 1.35, y: grab.y - 0.85 };
+    const moved = applyDragToScene(s, a.drag, to, OPTS)!.scene.objects.find((o) => o.id === 'w1')!;
+    if (moved.kind !== 'wall') throw new Error('unreachable');
+    expect(moved.a.x).toBeCloseTo(1.13 + 1.35, 9);
+    expect(moved.a.y).toBeCloseTo(1.07 - 0.85, 9);
+    expect(moved.b.x).toBeCloseTo(7.13 + 1.35, 9);
+    expect(moved.b.y).toBeCloseTo(3.41 - 0.85, 9);
+    // Non-vacuous: the wall is ASYMMETRIC, so a swap is visible. An axis-aligned
+    // wall centred on its grab point could not express it.
+    expect(w.a).not.toEqual(w.b);
   });
 
   it('a CIRCLE gets rot0 = 0 — it has no rotation field to read', () => {

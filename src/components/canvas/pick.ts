@@ -168,6 +168,18 @@ export function applyPickAction(act: PickAction, fx: PickEffects): void {
     case 'notice':
       fx.notice(act.message);
       return;
+    default: {
+      // ⚠️ EXHAUSTIVENESS. Every case above `return`s, so
+      // `noFallthroughCasesInSwitch` cannot help and a new `PickAction` kind
+      // would be a SILENT no-op — strictly weaker than the twelve inline
+      // branches this replaced, where a missing branch was at least visible in
+      // the function you were reading. This makes it a compile error instead.
+      // The test named for it cannot: a hand-maintained `PickAction[]` literal
+      // is still a valid `PickAction[]` when a member is missing. Found by
+      // self-review; all four review lenses read this switch and none tested it.
+      const never: never = act;
+      void never;
+    }
   }
 }
 

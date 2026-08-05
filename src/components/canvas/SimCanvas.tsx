@@ -329,8 +329,7 @@ export default function SimCanvas({
   const addChainPoint = (raw: Vec2) => {
     const cur = sceneRef.current;
     const points = chainRef.current?.points ?? [];
-    const first = points.length === 0;
-    if (first) chainWallsRef.current = [];
+    if (points.length === 0) chainWallsRef.current = [];
     const step = chainStep(points, raw, chainCtx(), createId);
     let group: string[] = [];
     if (step.wall) {
@@ -345,10 +344,9 @@ export default function SimCanvas({
     } else {
       // One id-group per appended SEGMENT (empty when the click was too short to
       // create a wall), so Backspace pops exactly the walls that corner added.
-      // The FIRST vertex opens the chain and owns no segment, so it pushes
-      // nothing: `popChainSegment` pairs groups[i] with the segment ENDING at
-      // points[i+1], and a leading entry would put the two lists out of step.
-      if (!first) chainWallsRef.current.push(group);
+      // `pushGroup` is FALSE only for the opening vertex, which owns no segment
+      // — the rule lives in `chain.ts` so a test can red on it.
+      if (step.pushGroup) chainWallsRef.current.push(group);
       updateChain({ points: [...points, step.at], cursor: null });
     }
   };

@@ -915,7 +915,7 @@ speed. Confirm the next kickoff you write re-states this protocol.*
 ### Session 38 — 2026-08-05 — finished the SimCanvas decomposition, and fixed the instrument (§18a + §18d)
 
 **SimCanvas 1046 → 789**, under the project's own 800-line cap for the first time since S16. Test
-count **1790 → 1886**. All three gates green. A CDP behaviour differential over 40 real-browser steps
+count **1790 → 1893**. All three gates green. A CDP behaviour differential over 40 real-browser steps
 returned **0 divergences** base-vs-head, with a base-vs-base control that also returned 0 and the same
 three (symmetric) absolute-check failures.
 
@@ -950,22 +950,24 @@ defects were fixed on the way, three of them genuine forever-hangs that had simp
   The adjudicator REFUTED a lens's central claim ("~5 s per `mouseMoved`") by re-measuring: 23.7 ms and
   108.0 ms unfocused across two runs, ~8 ms focused. It also disclosed running a build while a harness
   was live (TRAP 29) and told me to void that run, which I did.
-* **Tests:** 1790 → **1887** (+97). pick.test.ts 53, chain.test.ts 32, interaction.test.ts +12.
-* **Negative controls:** **30/30** caught by the test written FOR them, in a copied tree at
-  `/tmp/pl-nc38`. Three PASSED first time and all three were holes in the TESTS (fixtures
-  arithmetically incapable of their own bug); the thirtieth was added during self-review for a guard
-  whose polarity I had flipped, which fails OPEN on NaN.
+* **Tests:** 1790 → **1893** (+103). pick.test.ts 56, chain.test.ts 39 (four moved in from
+  `interaction.test.ts` with their subject), interaction.test.ts +12−4.
+* **Negative controls:** **38/38** caught by the test written FOR them, in a copied tree at
+  `/tmp/pl-nc38`. Three of the first 29 PASSED and all three were holes in the TESTS (fixtures
+  arithmetically incapable of their own bug). Nine more were added AFTER self-review, one per
+  confirmed finding — self-review had verified each by its own control first, which is the only
+  reason they were found: my tests passed under nine plausible wrong implementations.
 * **Coverage:** `pick.ts` 99.02 % · `chain.ts` 100 % · `interaction.ts` 88.34 → **99.10 %** ·
   `SimCanvas.tsx` 39.13 % (component; jsdom cannot reach the pointer path — that is what the
   differential is for).
-* **Gates:** `npm test` 1887 passed (80 files) · `npm run lint` clean · `npm run build` green,
-  **518.21 kB / 169.02 kB gz** JS + **54.90 kB / 10.24 kB gz** CSS (hash `index-j_hTKTEs.css`,
+* **Gates:** `npm test` 1893 passed (80 files) · `npm run lint` clean · `npm run build` green,
+  **518.25 kB / 169.03 kB gz** JS + **54.90 kB / 10.24 kB gz** CSS (hash `index-j_hTKTEs.css`,
   byte-identical to S36/S37 — S38 touches no stylesheet) + 1.31 kB HTML.
 * **Live:** `docs/sessions/S38/` — `differential.txt` (base-vs-head, 0 divergences),
   `control.txt` (base-vs-base, 0 divergences), `swapped.txt`, `negative-controls.txt`, `run.log`.
 * **Acceptance:** SimCanvas < 800 ✅ (789) · every branch of the ladder tested ✅ · negative controls
-  each caught by their own test ✅ (29/29) · differential base-vs-head identical ✅ · ratchet respected
-  ✅ (1790 → 1887) · suppression count unchanged ✅ (6).
+  each caught by their own test ✅ (38/38) · differential base-vs-head identical ✅ · ratchet respected
+  ✅ (1790 → 1893) · suppression count unchanged ✅ (6).
 * **Honest limits:** ONE browser, headless Chrome only. No real screen reader has ever been driven on
   this project. Three absolute checks (`gripReturnedHome`, `marqueeSelected`, `multiDeleted`) fail
   SYMMETRICALLY in both legs including the base-vs-base control, so they cannot be a regression —

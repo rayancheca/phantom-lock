@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Scene, SceneObject, Vec2, WallObj } from '../../../engine/types';
-import { sanitizeScene } from '../../../engine/scene';
+import { ROOM_HEIGHT, sanitizeScene } from '../../../engine/scene';
 import { SNAP_STEP } from '../placement';
 import {
   ANGLE_SNAP_DEG,
@@ -117,6 +117,19 @@ describe('chainVertex', () => {
     expect(out.at.y).toBeCloseTo(2.4, 10);
   });
 
+  it('the FIRST vertex also sticks to an existing wall — the docstring promises both', () => {
+    // Only the GRID half was tested; deleting `snapToWalls` from the first-vertex
+    // branch passed the whole suite. Starting a chain on an existing corner is
+    // the primary way a floorplan gets extended.
+    const ex = walls([{ x: 5, y: 0 }, { x: 5, y: 4 }]);
+    const out = chainVertex([], { x: 4.96, y: 0.04 }, ctx({ walls: ex, snapOn: false }));
+    expect(out.at).toEqual({ x: 5, y: 0 });
+    // Non-vacuous: with the wall excluded the same point is NOT moved.
+    expect(
+      chainVertex([], { x: 4.96, y: 0.04 }, ctx({ walls: ex, exclude: new Set(['ex0']) })).at,
+    ).toEqual({ x: 4.96, y: 0.04 });
+  });
+
   it('with snap OFF the first vertex is the raw point', () => {
     const p = { x: 1.337, y: 2.417 };
     expect(chainVertex([], p, ctx({ snapOn: false })).at).toEqual(p);
@@ -174,6 +187,22 @@ describe('chainVertex', () => {
     expect(free.at).not.toEqual({ x: 5, y: 0 });
   });
 
+  it('the OUTER grid snap runs AFTER angleSnap — and only a DIAGONAL can show it', () => {
+    // `snapPoint(angleSnap(last, snapPoint(raw)))`. Three of those four calls
+    // were pinned and the outer one was not: every snapOn fixture moved along an
+    // AXIS, where angleSnap returns a point already on the grid, so dropping the
+    // outer snap passed the whole suite. A 45-degree snap does not: from (0,0)
+    // with raw (1.01, 0.94), angleSnap lands on (0.97532…, 0.97532…), which is
+    // half a step off-grid, and the outer snap pulls it to (1.00, 1.00).
+    const out = chainVertex([{ x: 0, y: 0 }], { x: 1.01, y: 0.94 }, ctx({ snapOn: true }));
+    expect(out.at.x).toBeCloseTo(1.0, 10);
+    expect(out.at.y).toBeCloseTo(1.0, 10);
+    // The fixture is only meaningful because angleSnap really did move it
+    // off-grid first — assert that, or this passes for the wrong reason.
+    const afterAngle = angleSnap({ x: 0, y: 0 }, { x: 1.0, y: 0.95 });
+    expect((afterAngle.x / SNAP_STEP) % 1).not.toBeCloseTo(0, 6);
+  });
+
   it('THE POINT OF THE MODULE: the click and the preview agree, bit for bit', () => {
     // Both call this. If a later edit re-splits them, this is the test that goes
     // red — but only because the fixture is off-grid AND off-axis, where the
@@ -192,11 +221,26 @@ describe('chainVertex', () => {
 // ---------------------------------------------------------------------------
 
 describe('chainStep', () => {
-  it('the first click appends a corner and creates NO wall', () => {
+  it('the first click appends a corner, creates NO wall, and pushes NO id group', () => {
     freshIds();
     const out = chainStep([], { x: 1.13, y: 2.07 }, ctx(), newId);
     expect(out.wall).toBeNull();
     expect(out.closing).toBe(false);
+    // THE decision the S38 refactor argued for. `popChainSegment` pairs
+    // groups[i] with the segment ENDING at points[i+1], so the opening vertex
+    // must own no group or every Backspace deletes the PREVIOUS corner's wall.
+    expect(out.pushGroup).toBe(false);
+  });
+
+  it('…and every later click DOES push one, wall or no wall', () => {
+    freshIds();
+    const pts = [{ x: 0.13, y: 0.07 }];
+    expect(chainStep(pts, { x: 4.13, y: 0.07 }, ctx(), newId).pushGroup).toBe(true);
+    // A sub-MIN_SEGMENT click makes no wall and STILL owns a (empty) group —
+    // which is precisely why Backspace tracks groups rather than counting walls.
+    const short = chainStep(pts, { x: 0.13 + MIN_SEGMENT_M - 0.01, y: 0.07 }, ctx(), newId);
+    expect(short.wall).toBeNull();
+    expect(short.pushGroup).toBe(true);
   });
 
   it('the second click creates a wall from the previous corner to the new one', () => {
@@ -286,11 +330,64 @@ describe('chainStep', () => {
     const out = chainStep([{ x: 0, y: 0 }], { x: 3, y: 0 }, ctx(), newId);
     expect(out.wall!.absorption).toBe(0.12);
     expect(out.wall!.label).toBe('Wall');
-    expect(out.wall!.height).toBeGreaterThan(0);
+    // Exactly ROOM_HEIGHT, not merely positive: `rooms.ts` ignores anything
+    // under MIN_BOUNDING_HEIGHT 1.2 for zoning and walkability, so a short wall
+    // would be drawn and invisible to both. `height: 0.01` passed the old form.
+    expect(out.wall!.height).toBe(ROOM_HEIGHT);
   });
 });
 
 // ---------------------------------------------------------------------------
+
+// The four below came VERBATIM from `interaction.test.ts` in S38, with their
+// subject — `popChainSegment` had lived in the wrong module since S4. Moved
+// rather than deleted, so the ratchet does not drop.
+describe('popChainSegment', () => {
+  it('removes ALL ids of a multi-chunk crossing group in one pop', () => {
+    const points = [
+      { x: 0, y: 0 },
+      { x: 2, y: 0 },
+      { x: 2, y: 2 },
+    ];
+    const groups = [['a'], ['b', 'c']];
+    const res = popChainSegment(points, groups);
+    expect(res.ended).toBe(false);
+    expect(res.removeIds).toEqual(['b', 'c']);
+    expect(res.points).toHaveLength(2);
+    expect(res.groups).toEqual([['a']]);
+  });
+
+  it('drops a trailing empty group (a too-close corner) removing no walls', () => {
+    const res = popChainSegment(
+      [
+        { x: 0, y: 0 },
+        { x: 2, y: 0 },
+        { x: 2.05, y: 0.05 },
+      ],
+      [['a'], []],
+    );
+    expect(res.removeIds).toEqual([]);
+    expect(res.points).toHaveLength(2);
+    expect(res.groups).toEqual([['a']]);
+    expect(res.ended).toBe(false);
+  });
+
+  it('ends (objects untouched) when only the anchor corner remains', () => {
+    const res = popChainSegment([{ x: 0, y: 0 }], []);
+    expect(res).toEqual({ points: [], groups: [], removeIds: [], ended: true });
+  });
+
+  it('never mutates its input arrays', () => {
+    const points = [
+      { x: 0, y: 0 },
+      { x: 2, y: 0 },
+    ];
+    const groups = [['a']];
+    popChainSegment(points, groups);
+    expect(points).toHaveLength(2);
+    expect(groups).toEqual([['a']]);
+  });
+});
 
 describe('popChainSegment + chainUndo', () => {
   it('the group list is one SHORTER than the point list, and pops from the end', () => {
