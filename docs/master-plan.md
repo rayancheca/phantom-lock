@@ -950,21 +950,22 @@ defects were fixed on the way, three of them genuine forever-hangs that had simp
   The adjudicator REFUTED a lens's central claim ("~5 s per `mouseMoved`") by re-measuring: 23.7 ms and
   108.0 ms unfocused across two runs, ~8 ms focused. It also disclosed running a build while a harness
   was live (TRAP 29) and told me to void that run, which I did.
-* **Tests:** 1790 → **1886** (+96). pick.test.ts 53, chain.test.ts 31, interaction.test.ts +12.
-* **Negative controls:** 29 run in a copied tree at `/tmp/pl-nc38`. Three PASSED first time and all
-  three were holes in the TESTS (fixtures arithmetically incapable of their own bug). After
-  strengthening, **29/29 caught by the test written FOR them**.
+* **Tests:** 1790 → **1887** (+97). pick.test.ts 53, chain.test.ts 32, interaction.test.ts +12.
+* **Negative controls:** **30/30** caught by the test written FOR them, in a copied tree at
+  `/tmp/pl-nc38`. Three PASSED first time and all three were holes in the TESTS (fixtures
+  arithmetically incapable of their own bug); the thirtieth was added during self-review for a guard
+  whose polarity I had flipped, which fails OPEN on NaN.
 * **Coverage:** `pick.ts` 99.02 % · `chain.ts` 100 % · `interaction.ts` 88.34 → **99.10 %** ·
   `SimCanvas.tsx` 39.13 % (component; jsdom cannot reach the pointer path — that is what the
   differential is for).
-* **Gates:** `npm test` 1886 passed (80 files) · `npm run lint` clean · `npm run build` green,
-  **518.21 kB / 168.78 kB gz** JS + **54.90 kB / 10.24 kB gz** CSS (hash `index-j_hTKTEs.css`,
+* **Gates:** `npm test` 1887 passed (80 files) · `npm run lint` clean · `npm run build` green,
+  **518.21 kB / 169.02 kB gz** JS + **54.90 kB / 10.24 kB gz** CSS (hash `index-j_hTKTEs.css`,
   byte-identical to S36/S37 — S38 touches no stylesheet) + 1.31 kB HTML.
 * **Live:** `docs/sessions/S38/` — `differential.txt` (base-vs-head, 0 divergences),
   `control.txt` (base-vs-base, 0 divergences), `swapped.txt`, `negative-controls.txt`, `run.log`.
 * **Acceptance:** SimCanvas < 800 ✅ (789) · every branch of the ladder tested ✅ · negative controls
   each caught by their own test ✅ (29/29) · differential base-vs-head identical ✅ · ratchet respected
-  ✅ (1790 → 1886) · suppression count unchanged ✅ (6).
+  ✅ (1790 → 1887) · suppression count unchanged ✅ (6).
 * **Honest limits:** ONE browser, headless Chrome only. No real screen reader has ever been driven on
   this project. Three absolute checks (`gripReturnedHome`, `marqueeSelected`, `multiDeleted`) fail
   SYMMETRICALLY in both legs including the base-vs-base control, so they cannot be a regression —
