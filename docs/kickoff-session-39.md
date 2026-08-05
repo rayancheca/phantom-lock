@@ -34,11 +34,11 @@ A design lens measured "~5 s per `mouseMoved`" and built the 17-minute arithmeti
 23.7 ms and 108.0 ms unfocused across two runs, ~8 ms focused. **Mechanism right, number wrong by two
 orders of magnitude** — re-measure a borrowed number before you act on it.
 
-**Baseline.** `main` is at `f7b245c`, pushed. `npm test` **1887**, JS **518.21 kB / 169.02 kB gz**,
+**Baseline.** `main` is at `50e20a9`, pushed. `npm test` **1893**, JS **518.25 kB / 169.03 kB gz**,
 CSS **54.90 kB / 10.24 kB gz** (hash `index-j_hTKTEs.css`, byte-identical since S36), HTML 1.31 kB.
 All gates green. No unlanded branch.
 
-**TEST COUNT IS A RATCHET** (…1706 → 1789 → **1887**). Never let it drop; no test may be newly
+**TEST COUNT IS A RATCHET** (…1706 → 1789 → **1893**). Never let it drop; no test may be newly
 skipped / `.only`'d / weakened.
 
 ## 0. GIT + THE TRAPS
@@ -97,14 +97,21 @@ Commit a baseline, then again after the gate. Land with
    `src/engine/arrange.ts` — it is heavy by definition.**
 4. **Adversarially verify — ALWAYS**, then adjudicate (TRAP 9).
 5. **Implement fully.** Every Acceptance bullet → "met (with evidence)" or "deferred to `<block>`".
-6. **Test with PROOF.** Failing-test-first for new pure behaviour; never below 1887. Paste the
+6. **Test with PROOF.** Failing-test-first for new pure behaviour; never below 1893. Paste the
    coverage line for every file you touch. Vite routes by FILENAME: `*.test.ts` → node,
    `*.test.tsx` → jsdom.
 7. **Migrations get an OLD-SHAPE test.**
 8. **Double-check.** Self-review agents over the ACTUAL diff, then run the wrong answer past your own
-   new tests — and **check each control fails the test written FOR it**. S38 ran 30; three passed
-   first time and all three were fixtures arithmetically incapable of their own bug. That is now four
-   sessions running.
+   new tests — and **check each control fails the test written FOR it**. S38 ran 38. Three of the
+   first 29 passed and all three were fixtures arithmetically incapable of their own bug (four
+   sessions running for that). **More importantly: the self-review then found NINE MORE**, each
+   verified by its own control, where the suite was green under a plausible wrong implementation —
+   a fixture that grabbed an object's exact centre so two drag fields were indistinguishable; a drag
+   kind never run through its real consumer at all; a screen-px tolerance that a fixed metric one
+   satisfied; an ordering never pinned; and a rule that lived in the component, where no test could
+   reach it. **Give the self-review a lens whose whole job is "what is the smallest wrong
+   implementation that still passes this test?" and have it BUILD each control.** It is the highest-
+   yield agent this project has run.
 9. **Data safety.** Fresh headless-Chrome profile (= fresh origin = its own IndexedDB) for live work;
    never touch the owner's layouts. Assert it.
 10. **Gate — proven, not paraphrased.** Literal tails of all three, plus `test:coverage`.
