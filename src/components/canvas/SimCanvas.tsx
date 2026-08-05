@@ -21,10 +21,8 @@ import { integrateWall, snapToWalls } from '../../engine/joints';
 import * as v from '../../engine/vec';
 import {
   fitView,
-  renderScene,
   rotVec,
   screenToWorld,
-  setRedrawHook,
   worldToScreen,
   type CanvasTheme,
   type View,
@@ -50,14 +48,14 @@ import {
   chipStaysVisible,
   insideRect,
   wallHoverAt,
-  watchDevicePixelRatio,
   type WallHover,
 } from './interaction';
-import { repaintOnFontLoad } from './font-ready';
 // SNAP_STEP and the placement primitives are shared with the KEYBOARD path, so
 // there is exactly one definition of each (S7). `surfaceHeightAt` used to be a
 // closure here even though it only ever read `scene.objects`.
 import { SNAP_STEP, placeSpeakerAt } from './placement';
+import { Compass, SelectionBand, WallActionsChip } from './CanvasOverlays';
+import { useCanvasPainter } from './useCanvasPainter';
 import { CANVAS_HELP } from './canvas-help';
 import './sim-canvas.css';
 const MIN_SCALE = 8;
@@ -221,23 +219,6 @@ export default function SimCanvas({
   const chainWallsRef = useRef<string[][]>([]);
   /** First click of a two-point scale calibration. */
   const calibRef = useRef<Vec2 | null>(null);
-  const [redrawTick, setRedrawTick] = useState(0);
-
-  // Async underlay image loads need a repaint once decoded.
-  useEffect(() => {
-    setRedrawHook(() => setRedrawTick((n) => n + 1));
-    return () => setRedrawHook(null);
-  }, []);
-
-  // Re-rasterize when the device pixel ratio changes (window dragged to a
-  // monitor with a different DPR — which changes neither CSS size nor any dep,
-  // so the draw effect below would otherwise keep the stale, blurry backing store).
-  useEffect(() => watchDevicePixelRatio(() => setRedrawTick((n) => n + 1)), []);
-
-  // Repaint once Geist Mono is ready so canvas pill widths (ctx.measureText)
-  // don't reflow off fallback metrics on the first paint (FOUT guard). No-ops
-  // in the vitest node env (no document.fonts); cleanup cancels a late repaint.
-  useEffect(() => repaintOnFontLoad(() => setRedrawTick((n) => n + 1)), []);
 
   // Drop the opening-tool ghost the moment the tool changes, so a stale ghost
   // can't linger or be picked up by the rect/circle draw-commit path.
@@ -314,39 +295,7 @@ export default function SimCanvas({
   }, [size.w > 0 && size.h > 0, resetViewToken]);
 
   // --- drawing ------------------------------------------------------------
-  const lastDimsRef = useRef({ w: 0, h: 0, dpr: 0 });
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || !view || size.w === 0) return;
-    const dpr = window.devicePixelRatio || 1;
-    const last = lastDimsRef.current;
-    if (last.w !== size.w || last.h !== size.h || last.dpr !== dpr) {
-      canvas.width = Math.round(size.w * dpr);
-      canvas.height = Math.round(size.h * dpr);
-      lastDimsRef.current = { w: size.w, h: size.h, dpr };
-    }
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    renderScene(ctx, {
-      scene,
-      settings,
-      selection,
-      trace,
-      audio,
-      preview,
-      chain,
-      proposal,
-      furnitureProposal,
-      bestSpot,
-      snapGuide,
-      handleTarget,
-      theme,
-      view,
-      width: size.w,
-      height: size.h,
-    });
-  }, [
+  useCanvasPainter(canvasRef, size, view ? {
     scene,
     settings,
     selection,
@@ -361,9 +310,7 @@ export default function SimCanvas({
     handleTarget,
     theme,
     view,
-    size,
-    redrawTick,
-  ]);
+  } : null);
 
   // --- zoom / pan / space -------------------------------------------------
   useEffect(() => {
@@ -1139,7 +1086,6 @@ export default function SimCanvas({
     handleTarget && view && gripCursorFor
       ? handleCursor(handleTarget, view, gripCursorFor)
       : hoverCursor(mode, { hoverGrab, dragging: grabbing });
-  const rotDeg = view ? Math.round((((view.rot * 180) / Math.PI + 180) % 360 + 360) % 360) - 180 : 0;
 
   return (
     <div ref={containerRef} className="sim-canvas-wrap">
@@ -1215,62 +1161,26 @@ export default function SimCanvas({
         {CANVAS_HELP}
       </p>
       {band && band.length >= 2 && (
-        <svg className="band-overlay" aria-hidden="true">
-          {mode === 'marquee' ? (
-            <rect
-              x={Math.min(band[0].x, band[band.length - 1].x)}
-              y={Math.min(band[0].y, band[band.length - 1].y)}
-              width={Math.abs(band[band.length - 1].x - band[0].x)}
-              height={Math.abs(band[band.length - 1].y - band[0].y)}
-            />
-          ) : (
-            <polygon points={band.map((q) => `${q.x},${q.y}`).join(' ')} />
-          )}
-        </svg>
+        <SelectionBand band={band} shape={mode === 'marquee' ? 'marquee' : 'lasso'} />
       )}
       {wallHover && view && mode === 'select' && theme === 'plan' && !overlayOpen && (
-        <div
-          ref={chipRef}
-          className="wall-actions"
-          // Leaving the chip for anything other than the canvas dismisses it —
-          // otherwise it would linger over a sidebar panel, since the canvas has
-          // already fired its own pointerleave. Going back to the canvas is
-          // handled by the pointermove safe-area test instead.
-          onPointerLeave={(e) => {
-            const to = e.relatedTarget;
-            if (to instanceof Node && canvasRef.current?.contains(to)) return;
-            setWallHover(null);
-          }}
-          style={{
-            left: worldToScreen(wallHover.at, view).x,
-            top: worldToScreen(wallHover.at, view).y,
-          }}
-        >
-          <button type="button" onClick={() => insertOpening('door')}>
-            + Door
-          </button>
-          <button type="button" onClick={() => insertOpening('window')}>
-            + Window
-          </button>
-        </div>
+        <WallActionsChip
+          at={wallHover.at}
+          view={view}
+          chipRef={chipRef}
+          canvasRef={canvasRef}
+          onInsert={insertOpening}
+          onDismiss={() => setWallHover(null)}
+        />
       )}
       {view && (
-        <button
-          type="button"
-          className={`compass ${rotDeg !== 0 ? 'compass-off' : ''}`}
-          title={`View rotated ${rotDeg}°. Click to straighten. Rotate: twist two fingers, ⌥-scroll, or R / ⇧R.`}
-          aria-label={`Compass, view rotated ${rotDeg} degrees, click to straighten`}
-          onClick={() => {
+        <Compass
+          view={view}
+          onStraighten={() => {
             if (dragRef.current?.kind === 'band') return; // don't move the view mid-band-drag
             rotateBy(-view.rot);
           }}
-        >
-          <svg viewBox="0 0 24 24" aria-hidden="true" style={{ transform: `rotate(${view.rot}rad)` }}>
-            <path d="M12 3 L15.4 12 L12 10.4 L8.6 12 Z" className="compass-n" />
-            <path d="M12 21 L8.6 12 L12 13.6 L15.4 12 Z" className="compass-s" />
-          </svg>
-          <span>{rotDeg === 0 ? 'N' : `${rotDeg}°`}</span>
-        </button>
+        />
       )}
     </div>
   );
