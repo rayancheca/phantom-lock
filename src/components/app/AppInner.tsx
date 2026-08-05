@@ -37,15 +37,10 @@ import { useProjectActions } from './hooks/useProjectActions';
 import type { ToastData } from '../ui/Toast';
 import { initialMode, modeTheme, subStepForTool, type AppMode, type DesignSubStep, type ModeEntry } from './mode';
 import type { Deleted, DialogState } from './app-types';
-import { flipDoor, nudgeSelection, rotateSelectedRect, type KeyCommand } from './keyboard';
-import { cycleOrder, describePosition, selectionForEntry, stepCycle } from '../canvas/selection-cycle';
-import {
-  keyboardPlacementPoint,
-  openingNearPoint,
-  openingOnWall,
-  placeSpeakerAt,
-  seatObjectAgainstWall,
-} from '../canvas/placement';
+import type { KeyCommand } from './keyboard';
+import { runCommand } from './run-command';
+import { cycleOrder, describePosition } from '../canvas/selection-cycle';
+import { openingNearPoint, seatObjectAgainstWall } from '../canvas/placement';
 import { announcementFor, spokenSelection, speakableUnits, type AnnounceInput } from './announce';
 import { useAnnouncer } from './hooks/useAnnouncer';
 import LiveAnnouncer from './LiveAnnouncer';
@@ -760,121 +755,43 @@ export default function AppInner({ initialStore, persistMode, showFirstRun, drop
     showIntro ||
     tutorial.menuOpen;
 
-  const runKeyCommand = (cmd: KeyCommand) => {
-    // Any new command supersedes a previous "that didn't work" explanation.
-    if (notice) setNotice(null);
-    switch (cmd.type) {
-      case 'escape':
-        if (cmd.target === 'dialog') setDialog(null);
-        else if (cmd.target === 'wallProposal') detection.discard();
-        else if (cmd.target === 'optimize') {
-          setOptimizeOpen(false);
-          setProposal(null);
-        } else if (cmd.target === 'arrange') {
-          setArrangeOpen(false);
-          setFurnitureProposal(null);
-        } else {
-          setMode('select');
-          // Announce the transition, not the state — otherwise deselecting is
-          // silent and indistinguishable from a key that did nothing.
-          if (selection) setNotice('Selection cleared.');
-          setSelection(null);
-        }
-        return;
-      case 'undo':
-        undoScene();
-        return;
-      case 'redo':
-        redoScene();
-        return;
-      case 'delete':
-        if (!selection) return;
-        if (selection.type === 'object') deleteObject(selection.id);
-        else if (selection.type === 'speaker') deleteSpeaker(selection.id);
-        else if (selection.type === 'multi') deleteMulti(selection.objectIds, selection.speakerIds);
-        return;
-      case 'tool':
-        applyTool(cmd.tool);
-        return;
-      case 'mode-toggle':
-        setModeTo(appMode === 'design' ? 'tune' : 'design');
-        return;
-      case 'rotate':
-        if (selection?.type !== 'object') return;
-        setScene((s) => rotateSelectedRect(s, selection.id, cmd.dir, cmd.coarse), { coalesce: cmd.coalesce });
-        return;
-      case 'nudge':
-        if (!selection) return;
-        setScene((s) => nudgeSelection(s, selection, { x: cmd.dx, y: cmd.dy }), { coalesce: cmd.coalesce });
-        return;
-      case 'cycle': {
-        // Walk the deterministic traversal so every wall, seat, speaker and
-        // piece of furniture is reachable without a pointer.
-        const entry = stepCycle(cycleOrder(scene), selection, cmd.dir, scene);
-        if (!entry) return;
-        // A seat entry must ALSO become the active seat — `{type:'listener'}`
-        // carries no id, so selecting it without switching would silently point
-        // at whichever seat was already active (and desync the readout).
-        if (entry.kind === 'listener') switchSeat(entry.id);
-        else setSelection(selectionForEntry(entry));
-        return;
-      }
-      case 'place-speaker': {
-        const { scene: next, speakerId } = placeSpeakerAt(
-          scene,
-          keyboardPlacementPoint(scene),
-          placeModel,
-          settings.snap,
-        );
-        setScene(() => next);
-        setSelection({ type: 'speaker', id: speakerId });
-        return;
-      }
-      case 'opening': {
-        if (selection?.type !== 'object') return;
-        const res = openingOnWall(scene, selection.id, cmd.role);
-        if (!res) {
-          // `{type:'object'}` spans wall/rect/circle, so the dispatcher cannot
-          // tell a wall from furniture. Saying so matters: for a user whose only
-          // channel is the live region, a silent no-op is indistinguishable
-          // from a broken app.
-          setNotice(`Select a wall first — ${cmd.role}s can only be added to a wall.`);
-          return;
-        }
-        setScene(() => res.scene);
-        setSelection({ type: 'object', id: res.objectId });
-        return;
-      }
-      case 'flip-door': {
-        if (selection?.type !== 'object') return;
-        const next = flipDoor(scene, selection.id, cmd.field);
-        // `flipDoor` returns the SAME ref for a non-door — the dispatcher is
-        // scene-independent so it can't tell a door from a wall/furniture. That
-        // same-ref result IS the router: fall through to the furniture seat.
-        if (next !== scene) {
-          setScene(() => next);
-          return;
-        }
-        // Plain F only. Shift+F stays a door-swing command: the quarter-turned
-        // class is not representable in the ambient drag magnet's output space, so
-        // the very next drag un-turns it — measured, 4 of 5 realistic pieces, one
-        // of them WITHOUT the piece even moving. See docs/ideas.md §4d.
-        if (cmd.field === 'hinge') {
-          const seated = seatObjectAgainstWall(scene, selection.id, { snapOn: settings.snap });
-          if (seated !== scene) {
-            setScene(() => seated);
-            return;
-          }
-        }
-        setNotice(
-          cmd.field === 'swing'
-            ? 'Shift F flips a door’s swing side. Select furniture and press F to seat it flush.'
-            : 'Select a door to flip its hinge, or furniture within 1.2 m of a wall to seat it flush.',
-        );
-        return;
-      }
-    }
-  };
+  /**
+   * The dispatcher lives in the pure `run-command.ts`; this is only the wiring.
+   *
+   * The context literal is built INSIDE the call, every call. That is not style:
+   * `useKeyboardShortcuts` is mount-once and reads a render-assigned ref, and
+   * `SelectionActions` dispatches from an onClick — so a context hoisted into a
+   * `useMemo`, or the function wrapped in `useCallback`, would hand a deferred
+   * invocation a stale `scene`/`selection`/`settings`. Left unmemoized for the
+   * same reason `runKeyCommand` always was.
+   */
+  const runKeyCommand = (cmd: KeyCommand) =>
+    runCommand(cmd, {
+      scene,
+      settings,
+      selection,
+      appMode,
+      placeModel,
+      notice,
+      setNotice,
+      setScene,
+      setSelection,
+      setMode,
+      setModeTo,
+      applyTool,
+      setDialog,
+      setOptimizeOpen,
+      setProposal,
+      setArrangeOpen,
+      setFurnitureProposal,
+      detection,
+      undoScene,
+      redoScene,
+      deleteObject,
+      deleteSpeaker,
+      deleteMulti,
+      switchSeat,
+    });
 
   // --- the off-screen spoken mirror (S7) -----------------------------------
   // Reuses deriveVerdict, so the spoken readout and the visible VerdictHero can
