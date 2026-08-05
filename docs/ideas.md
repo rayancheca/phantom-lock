@@ -42,10 +42,12 @@ effort — a small high-value item beats a large one.
 | 7 | Drag-release wall splitting | P3 | small |
 | 8 | Multi-select with a listener in it | P3 | small |
 | 9 | Window/door-leaf reflection materials | P3 | small |
-| 18a | Finish the SimCanvas decomposition — `pick.ts` (the pointerdown ladder, and the valuable one) + `chain.ts`; it is **1042** against the 800 cap | P2 | ½ session |
+| 18a | ✅ **Finish the SimCanvas decomposition** — **DONE S38** (1046 → **789**, under the cap; +96 tests, 29/29 negative controls) | ~~P2~~ done | — |
 | 18b | `render.ts` 1172 / `scene.ts` 1030 / `arrange.ts` 907 are over the cap too, but cohesive — do not split on cap-compliance alone | P3 | — |
-| 18d | The S37 behaviour differential stalls on its head leg — built and control-validated, but never gave a base-vs-head verdict. Blocks §18a's proof | P2 | small |
-| 18c | Two pre-existing inconsistencies found while mapping S37 (scene prop vs sceneRef in onPointerDown; `seatSelection`'s "ONE write seam" comment is false) | P3 | small |
+| 18d | ✅ **The differential stall** — **DONE S38.** Root cause: the page was UNFOCUSED, so Chrome throttled it and it went `hidden`, pausing rAF. Run 17 min → **~2 min**, `gripFound` false → **true** | ~~P2~~ done | — |
+| 18e | Three harness-script checks fail SYMMETRICALLY (`gripReturnedHome`, `marqueeSelected`, `multiDeleted`) — reachable for the first time now that the grip probe works | P3 | small |
+| 18c | ~~scene prop vs sceneRef in onPointerDown~~ **closed S38**; `seatSelection`'s "ONE write seam" comment is still false | P3 | small |
+| 18f | `move-multi` snaps its delta UNCONDITIONALLY — a group move quantises to 5 cm with the app's Snap setting OFF | P3 | small |
 
 ---
 
@@ -1517,51 +1519,126 @@ implicit. Everything landed is pure code motion, proven by a CDP differential th
 through the same 36-step script and compares canvas bitmaps, engine metrics, live-region text, DOM
 state and the persisted store.
 
-### 18a. Finish SimCanvas — **P2**, ~½ session
+### 18a. Finish SimCanvas — ✅ **DONE (S38)**
 
-SimCanvas is **1042** lines against the 800 cap. Two cuts remain, and together they are enough:
+**1046 → 789**, under the project's own 800-line cap for the first time since S16. Eleven files
+touched, +96 tests (1790 → 1886), 29/29 negative controls caught by the test written FOR them, and a
+CDP differential that came back **0 divergences over 40 steps and all five signals**.
 
-**`canvas/pick.ts` — the pointerdown ladder (~190 lines, the valuable one).** `onPointerDown` is a
-twelve-branch ladder mixing decision with side effects (`startDrag`, `onScene`, `onSelection`,
-`setBandBoth`, `calibRef`). Turning it into `resolvePointerDown(...) -> PickAction` makes the whole
-thing unit-testable for the first time — jsdom cannot deliver a usable PointerEvent (TRAP 21), so
-today it is reachable only through the CDP harness. It is also where the S36 grip-vs-pod ORDERING
-lives (grips are tested BELOW the node and seat hit tests, and `drawHandles` paints below `drawNodes`
-to match), which is currently an invariant with a comment and no test.
+§18a's own arithmetic was optimistic — it said the two named cuts "together are enough" and they land
+at **810**, not under 800. Five cuts were needed. All five are pure-function lifts into the module
+that already owns their helpers, which is the cheapest kind of motion to prove:
 
-⚠️ Deferred from S37 deliberately rather than for lack of lines: this is the most-used interaction
-path in the app, an action union is a redesign rather than a move, and it deserves its own
-differential rather than the tail end of a long session. Do it FIRST in its session, not last.
+| module | what moved | why there |
+|---|---|---|
+| `canvas/pick.ts` | the 12-branch pointerdown ladder + its interpreter | see below |
+| `canvas/chain.ts` | `CLOSE_RADIUS`/`ANGLE_SNAP_DEG`/`angleSnap`/`chainVertex`/`chainStep`/`chainUndo`, and `popChainSegment` moved here from `interaction.ts` | it is chain code, and had been in the wrong file since S4 |
+| `interaction.ts` | `nextWallHover`, `openingGhost`, the three `WALL_HOVER_*` radii | beside `wallHoverAt`/`chipStaysVisible`/`makeOpening`, which they compose |
+| `useFinePointer.ts` | the coarse-pointer matchMedia gate | self-contained, and the only jsdom-testable piece of the set |
 
-**`canvas/chain.ts` — the wall chain (~55 lines).** `CLOSE_RADIUS`, `ANGLE_SNAP_DEG`, `angleSnap`,
-`snapTargets`, `addChainPoint`, and the cursor-preview arm of `applyMove`. Pure except for the
-`chainWallsRef` bookkeeping, which stays put — one id-group per appended corner is what makes
-Backspace pop exactly the walls that corner added.
+**The reason `pick.ts` was the valuable one.** jsdom dispatches a plain `Event` for pointer events, so
+`button`, `pointerId` and `clientX` all arrive `undefined` and `onPointerDown` bails at its first
+guard (TRAP 21). The app's most-used interaction path had NO committed test — it was reachable only
+by driving real Chrome. It is also where the S36 grip-vs-pod hit-test ORDERING lives, which was an
+invariant with a comment and no test. Both are now pinned, including the ordering, by fixtures in
+which the two candidates genuinely OVERLAP (a pod placed exactly on a grip's screen position — a
+fixture where they do not overlap passes under either order and proves nothing).
 
-### 18d. The behaviour differential stalls on its second leg — **P2**, and it blocks §18a's proof
+**Moving the INTERPRETER out too was not for lines.** `applyPickAction(act, effects)` exists because
+the `activateSeat` → `selection` → `startDrag` order is load-bearing for UNDO GRANULARITY and its
+cost is invisible in the final scene: `onActivateSeat` writes the scene while the drag's coalescing
+group is still closed, so the seat switch is its own undo entry. Start the drag first and one ⌘Z
+undoes both. That needs a test with spies, not twelve hand-written sequences to read.
 
-`docs/sessions/S37/diff-harness.mjs` is built, and its base-vs-base CONTROL works — it caught three
-harness defects on a byte-identical tree (a font-load repaint racing the capture, IndexedDB `getAll`
-returning records in random key order, and a sweep that selected a WALL when only rects and circles
-carry grips). But across four attempts it never produced a trustworthy base-vs-head verdict: the base
-leg completes in ~3.5 min and the head leg stalls past 10 with the node process at 0 % CPU.
-Unexplained, reproducible, and it is the instrument §18a needs in order to prove itself. **Fix it
-first.**
+**Two deliberate, argued differences from a byte-for-byte move.** (1) `resolvePointerDown` is handed
+the `scene` PROP, closing §18c-1: byte-identical today (`sceneRef.current = scene` is a render-body
+assignment and `src` contains no `startTransition`/`useDeferredValue`/`Suspense`/`lazy`), and the
+prop is the right side because `useCanvasPainter` and `handleTarget` are both given the prop — a hit
+test must agree with the pixels aimed at. Scene WRITES still read the ref. (2) The first chain vertex
+pushes NO id group; my first cut let it push an empty one, and `popChainSegment` pairs `groups[i]`
+with the segment ENDING at `points[i+1]`, so a leading entry puts the two lists out of step.
 
-Two things to check before anything else. (1) The harness redirects stdout, and Node buffers that —
-a run that had already recorded three failures showed only its opening banner for minutes, so
-"quiet" is not "healthy". Write per step, or flush. (2) Instrument every step boundary with a
-timestamp so a silently-pending CDP call is visible; the 60 s per-command timeout should surface a
-true hang, which suggests the stall is many small waits rather than one.
+**What is left.** SimCanvas is 789 with **11 lines of margin**, which is thin. The next natural cut is
+`resolvePointerUp` — the band-commit and draw-commit decision, ~38 lines, a clean sibling of
+`pick.ts` and the only remaining block in the file that is decision rather than effect. Filed rather
+than taken because the session's differential budget was already spent.
 
-⚠️ Also worth knowing: **the sandbox only permits certain localhost ports.** 4181/4182 work; 4190
-does not — a server binds happily and every `fetch` to it fails, which cost this session two runs of
-the screenshot script before the pattern was spotted. And a foreground Bash shell blocks the fetch
-that a backgrounded one allows.
+### 18d. The behaviour differential stalled — ✅ **DONE (S38)**, and the filed diagnosis was wrong twice
 
-**Acceptance:** SimCanvas < 800 · every branch of the pointerdown ladder has a test · negative
-controls run and each caught by the test written for it · the S37 differential re-run base-vs-head
-comes back identical · ratchet respected.
+**Root cause: the page was never FOCUSED.** A freshly launched headless page reports
+`document.hasFocus() === false`, and Chrome then throttles it — measured, `document.visibilityState`
+flips to `'hidden'` part way through a run, rAF stops, and every rAF-throttled affordance in the app
+(hover chips, the grab cursor, the whole §16 grip cursor, every drag frame) silently stops updating
+**while `Runtime.evaluate` keeps answering in 0.2 ms**. The fix is one line in `launch()`:
+
+```js
+await send('Emulation.setFocusEmulationEnabled', { enabled: true });
+```
+
+Measured effect, base-vs-head over the same two directories:
+
+| | S37 | S38 |
+|---|---|---|
+| whole run | ~17 min, or killed | **~2 min** |
+| grip probe sweep | 184 probes, minutes, `gripFound: false` | **61 probes in 2.0 s**, `gripFound: true` |
+| `gripFound` | false in BOTH legs of every run ever recorded | **true in both** |
+
+**§18d's filed framing was wrong on two counts** and both are worth recording, because each would
+have sent the next session somewhere useless. (a) *"the base leg completes and the HEAD leg stalls"* —
+it reproduces on the FIRST leg of a base-vs-BASE control, so no property of the head build can be
+involved. (b) A design lens then measured *"`Input.dispatchMouseEvent{mouseMoved}` costs ~5 s per
+call"* and built a 17-minute arithmetic on it; re-measured directly, an unfocused hover costs 23.7 ms
+in one run and 108.0 ms in another (variable, occasionally catastrophic) and a focused one costs
+~8 ms, deterministic. The mechanism was right and the number was wrong by two orders of magnitude.
+
+**Four more instrument defects were fixed on the way**, three of which are genuine forever-hangs that
+had simply never fired:
+
+1. The WebSocket-open await had **no timeout** — only `open` and `error` were wired, so a socket that
+   neither opens nor errors parks the harness at 0 % CPU with no output, which is exactly the reported
+   symptom.
+2. `send()`'s 60 s timers were **never cleared on settle**, so a leg left ~1000 live timers behind and
+   the process stayed alive for a further minute after its last command.
+3. `launch()` threw **without killing the child** — two failed launches orphaned 15 Chrome processes.
+4. `console.log` to a redirect is buffered by Node, so "quiet" read as "healthy". Replaced by an
+   `appendFileSync` progress trail with elapsed stamps. **This is what made the rest diagnosable**:
+   without per-step timestamps there is no way to see that step 20 → 21 costs 35.5 s while 00 → 20
+   costs 20.9 s.
+
+**And three signal defects that were quietly weakening the diff:**
+
+* `chrome://settings/help` opened itself mid-run (Chrome's update check). `find(t => t.type ===
+  'page')` could then hand a whole leg that settings screen. Now filtered, and the update check is
+  disabled by flag. ⚠️ Rejecting *every* `chrome://` is too strict — the only page at launch IS
+  `chrome://newtab/`, and the first cut died at "devtools endpoint never appeared".
+* The idb canonicaliser mapped ids appearing as object PROPERTIES but not as bare ARRAY ELEMENTS, and
+  `scene.pairs` is `[[speakerIdA, speakerIdB]]` — so every run diffed on nothing but random
+  `createId` output, in the one signal that is supposed to prove the store.
+* `capture()` slept 120 ms while `announce.ts` settles the readout over **SETTLE_MS = 700**, so the
+  scene-inventory clause was caught on some runs and not others. The `live` divergence it produced
+  FLIPPED DIRECTION between two runs of the same pair, which is the signature of a race. Now 800 ms.
+* `visibilityState` is recorded on EVERY capture and a step that goes hidden FAILS loudly, rather
+  than silently returning blind measurements.
+
+`Page.bringToFront` was tried and is deliberately NOT used: under `--headless=old` it left the very
+next `Runtime.evaluate` hanging until the 60 s timeout, twice. Asserting visibility is enough.
+
+### 18e. Three harness-script checks fail SYMMETRICALLY — **P3**
+
+`gripReturnedHome`, `marqueeSelected` and `multiDeleted` are `false` in BOTH legs, including in a
+base-vs-BASE control on byte-identical directories, so they cannot be a regression. They are almost
+certainly stale coordinates: the grip resize/return steps only became REACHABLE in S38 (the probe had
+never once succeeded before), and they now move the scene before the marquee step, which then drags a
+band at fixed canvas coordinates over a plan that has changed underneath it. `multiDeleted` follows
+from `marqueeSelected`. Worth fixing so the run reports a clean sheet rather than a standing asterisk.
+
+### 18f. `move-multi` snaps its delta unconditionally — **P3, pre-existing**
+
+`drag-apply.ts:137-143` rounds the group delta to `SNAP_STEP` without consulting `snapOn`, so a
+multi-selection drag quantises to 5 cm even with the app's Snap setting OFF, while every other drag
+kind honours it. Found by a test written against the assumption that it did honour it. Pinned as-is
+in `pick.test.ts` rather than changed, because it is a behaviour change and out of scope for a
+motion-only session.
 
 ### 18b. The three engine files still over the cap — **P3**
 

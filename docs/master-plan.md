@@ -912,6 +912,64 @@ speed. Confirm the next kickoff you write re-states this protocol.*
 
 ## Progress log
 
+### Session 38 — 2026-08-05 — finished the SimCanvas decomposition, and fixed the instrument (§18a + §18d)
+
+**SimCanvas 1046 → 789**, under the project's own 800-line cap for the first time since S16. Test
+count **1790 → 1886**. All three gates green. A CDP behaviour differential over 40 real-browser steps
+returned **0 divergences** base-vs-head, with a base-vs-base control that also returned 0 and the same
+three (symmetric) absolute-check failures.
+
+**§18a — five cuts, not the two the spec named.** §18a's own arithmetic said its two cuts were
+"enough"; measured, they land at 810. The extra three are pure-function lifts into the module that
+already owns their helpers, chosen for cohesion rather than grabbed at the gate:
+
+| module | lines | what |
+|---|---|---|
+| `canvas/pick.ts` | 384 | the 12-branch pointerdown ladder as `resolvePointerDown(input) -> PickAction`, plus `applyPickAction(act, effects)` |
+| `canvas/chain.ts` | 195 | `chainVertex`/`chainStep`/`chainUndo`/`angleSnap`/`chainContext`, and `popChainSegment` moved from `interaction.ts` |
+| `interaction.ts` | +92 | `nextWallHover`, `openingGhost`, the three `WALL_HOVER_*` radii |
+| `canvas/useFinePointer.ts` | 39 | the coarse-pointer gate |
+
+The point of `pick.ts` is not lines: jsdom dispatches a plain `Event` for pointer events, so the app's
+most-used interaction path had NO committed test, and it is where the S36 grip-vs-pod hit-test
+ORDERING lives — an invariant with a comment and no test until now. Moving the INTERPRETER out too was
+also not for lines: `activateSeat` → `selection` → `startDrag` is load-bearing for undo GRANULARITY and
+its cost is invisible in the final scene.
+
+**§18d — the differential stall was never about the head build.** Root cause: the headless page is
+never FOCUSED, Chrome throttles it, `visibilityState` flips to `hidden`, and rAF pauses — so every
+rAF-throttled affordance silently stops updating while CDP keeps answering in 0.2 ms. `gripFound` had
+been `false` in both legs of every run the harness ever completed, against builds whose grips were
+perfect. One line (`Emulation.setFocusEmulationEnabled`) took the run from ~17 min (or a hang) to
+**~2 min** and the grip sweep from 184 silent probes to **61 in 2.0 s**. Seven further instrument
+defects were fixed on the way, three of them genuine forever-hangs that had simply never fired.
+
+**Evidence block**
+
+* **Agents:** 4 design lenses + 1 adjudicator (pre-work), 4 review lenses + 1 adjudicator (self-review).
+  The adjudicator REFUTED a lens's central claim ("~5 s per `mouseMoved`") by re-measuring: 23.7 ms and
+  108.0 ms unfocused across two runs, ~8 ms focused. It also disclosed running a build while a harness
+  was live (TRAP 29) and told me to void that run, which I did.
+* **Tests:** 1790 → **1886** (+96). pick.test.ts 53, chain.test.ts 31, interaction.test.ts +12.
+* **Negative controls:** 29 run in a copied tree at `/tmp/pl-nc38`. Three PASSED first time and all
+  three were holes in the TESTS (fixtures arithmetically incapable of their own bug). After
+  strengthening, **29/29 caught by the test written FOR them**.
+* **Coverage:** `pick.ts` 99.02 % · `chain.ts` 100 % · `interaction.ts` 88.34 → **99.10 %** ·
+  `SimCanvas.tsx` 39.13 % (component; jsdom cannot reach the pointer path — that is what the
+  differential is for).
+* **Gates:** `npm test` 1886 passed (80 files) · `npm run lint` clean · `npm run build` green,
+  **518.21 kB / 168.78 kB gz** JS + **54.90 kB / 10.24 kB gz** CSS (hash `index-j_hTKTEs.css`,
+  byte-identical to S36/S37 — S38 touches no stylesheet) + 1.31 kB HTML.
+* **Live:** `docs/sessions/S38/` — `differential.txt` (base-vs-head, 0 divergences),
+  `control.txt` (base-vs-base, 0 divergences), `swapped.txt`, `negative-controls.txt`, `run.log`.
+* **Acceptance:** SimCanvas < 800 ✅ (789) · every branch of the ladder tested ✅ · negative controls
+  each caught by their own test ✅ (29/29) · differential base-vs-head identical ✅ · ratchet respected
+  ✅ (1790 → 1886) · suppression count unchanged ✅ (6).
+* **Honest limits:** ONE browser, headless Chrome only. No real screen reader has ever been driven on
+  this project. Three absolute checks (`gripReturnedHome`, `marqueeSelected`, `multiDeleted`) fail
+  SYMMETRICALLY in both legs including the base-vs-base control, so they cannot be a regression —
+  filed as §18e. SimCanvas's 11-line margin is thin and is recorded as a warning.
+
 ### Session 37 — 2026-08-05 — component decomposition against the 800-line cap (`docs/ideas.md` §18)
 
 No P1 was outstanding, so this session chose on merit. The project's own coding-style rule is
