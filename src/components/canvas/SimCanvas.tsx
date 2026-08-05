@@ -16,18 +16,10 @@ import type { AudioMetrics } from '../../engine/stereo';
 import type { Proposal } from '../../engine/optimize';
 import type { ListeningField } from '../../engine/bestspot';
 import { hitInactiveSeat, hitTestNodes, hitTestObjects } from '../../engine/hit';
-import { createId, ROOM_HEIGHT, sceneBounds } from '../../engine/scene';
+import { createId, ROOM_HEIGHT } from '../../engine/scene';
 import { integrateWall, snapToWalls } from '../../engine/joints';
 import * as v from '../../engine/vec';
-import {
-  fitView,
-  rotVec,
-  screenToWorld,
-  worldToScreen,
-  type CanvasTheme,
-  type View,
-  type WallChain,
-} from './render';
+import { worldToScreen, type CanvasTheme, type WallChain } from './render';
 import { handleAt, handleCursor, handleTargetFor, type HandleId } from './handles';
 import {
   MOVE_KINDS,
@@ -55,11 +47,10 @@ import {
 // closure here even though it only ever read `scene.objects`.
 import { SNAP_STEP, placeSpeakerAt } from './placement';
 import { Compass, SelectionBand, WallActionsChip } from './CanvasOverlays';
+import { useCanvasCamera } from './useCanvasCamera';
 import { useCanvasPainter } from './useCanvasPainter';
 import { CANVAS_HELP } from './canvas-help';
 import './sim-canvas.css';
-const MIN_SCALE = 8;
-const MAX_SCALE = 500;
 /** Clicking this close to the chain's first vertex closes the room. */
 const CLOSE_RADIUS = 0.25;
 /** Wall segments snap to 45° multiples when within this many degrees. */
@@ -103,14 +94,6 @@ interface Props {
   onNotice: (msg: string) => void;
 }
 
-interface Pinch {
-  d0: number;
-  angle0: number;
-  center0: Vec2;
-  world0: Vec2;
-  view0: View;
-}
-
 export default function SimCanvas({
   scene,
   settings,
@@ -138,8 +121,22 @@ export default function SimCanvas({
   /** The +Door/+Window chip, measured so it can keep itself alive under the cursor. */
   const chipRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [size, setSize] = useState({ w: 0, h: 0 });
-  const [view, setView] = useState<View | null>(null);
+  // Declared here, ahead of the camera, because the camera reads both at EVENT
+  // time from inside mount-once listeners.
+  const sceneRef = useRef(scene);
+  sceneRef.current = scene;
+  const dragRef = useRef<Drag | null>(null);
+  const { view, setView, size, rotateBy, s2w, pointersRef, pinchRef, armPinch, applyPinch } =
+    useCanvasCamera({
+      containerRef,
+      canvasRef,
+      sceneRef,
+      resetViewToken,
+      // A function, not a boolean: the camera reads it at EVENT time from inside
+      // mount-once listeners, where a captured boolean would be the mount value
+      // forever. `dragRef` is the drag machine's, so the camera never sees it.
+      isBandDragging: () => dragRef.current?.kind === 'band',
+    });
   const [wallHover, setWallHover] = useState<WallHover | null>(null);
   /** Hovering something draggable in select mode (→ 'grab' cursor). */
   const [hoverGrab, setHoverGrab] = useState(false);
@@ -199,19 +196,12 @@ export default function SimCanvas({
     chainRef.current = c;
     setChain(c);
   }, []);
-  const dragRef = useRef<Drag | null>(null);
   /** The rotation the move-rc branch last WROTE, so an external `q`/`e` mid-drag
    *  can be told apart from the branch's own output and re-base `rot0`. */
   const lastRotRef = useRef<number | null>(null);
-  const pointersRef = useRef<Map<number, Vec2>>(new Map());
-  const pinchRef = useRef<Pinch | null>(null);
   const spaceRef = useRef(false);
-  const sceneRef = useRef(scene);
-  sceneRef.current = scene;
   const onSceneRef = useRef(onScene);
   onSceneRef.current = onScene;
-  const viewRef = useRef<View | null>(null);
-  viewRef.current = view;
   const overlayOpenRef = useRef(overlayOpen);
   overlayOpenRef.current = overlayOpen;
   /** Wall ids committed by the active chain, grouped per corner, for
@@ -226,19 +216,6 @@ export default function SimCanvas({
     if (mode !== 'opening') setPreview(null);
   }, [mode, setPreview]);
 
-  /** Rotate the whole view by dr radians around the canvas centre. */
-  const rotateBy = useCallback((dr: number) => {
-    const el = containerRef.current;
-    setView((prev) => {
-      if (!prev || !el) return prev;
-      const cx = el.clientWidth / 2;
-      const cy = el.clientHeight / 2;
-      const w = screenToWorld({ x: cx, y: cy }, prev);
-      const rot = prev.rot + dr;
-      const r = rotVec(w, rot);
-      return { scale: prev.scale, rot, ox: cx - r.x * prev.scale, oy: cy - r.y * prev.scale };
-    });
-  }, []);
 
   const snap = useCallback(
     (p: Vec2): Vec2 =>
@@ -274,28 +251,9 @@ export default function SimCanvas({
     ? handleTargetFor(scene, selection, { mode, overlayOpen })
     : null;
 
-  // --- sizing -------------------------------------------------------------
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => {
-      setSize({ w: el.clientWidth, h: el.clientHeight });
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-
-  useEffect(() => {
-    // Don't refit/reset the view mid-band-drag — the band is stored in screen
-    // space, so moving the view under it would desync the marquee selection.
-    if (size.w > 0 && size.h > 0 && dragRef.current?.kind !== 'band') {
-      setView(fitView(size.w, size.h, sceneBounds(sceneRef.current)));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [size.w > 0 && size.h > 0, resetViewToken]);
 
   // --- drawing ------------------------------------------------------------
-  useCanvasPainter(canvasRef, size, view ? {
+  useCanvasPainter(canvasRef, size, {
     scene,
     settings,
     selection,
@@ -310,48 +268,12 @@ export default function SimCanvas({
     handleTarget,
     theme,
     view,
-  } : null);
+  });
 
   // --- zoom / pan / space -------------------------------------------------
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const onWheel = (e: WheelEvent) => {
-      e.preventDefault();
-      // Freeze the view while dragging a marquee/lasso band — the band is stored
-      // in screen space, so a mid-drag pan/zoom would desync the selection.
-      if (dragRef.current?.kind === 'band') return;
-      if (e.ctrlKey || e.metaKey) {
-        // Trackpad pinch arrives as ctrlKey+wheel on macOS; ⌘/Ctrl+scroll for mice.
-        const sensitivity = e.ctrlKey && !e.metaKey ? 0.012 : 0.002;
-        const factor = Math.min(1.3, Math.max(0.75, Math.exp(-e.deltaY * sensitivity)));
-        setView((prev) => {
-          if (!prev) return prev;
-          const scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, prev.scale * factor));
-          const k = scale / prev.scale;
-          return {
-            ...prev,
-            scale,
-            ox: e.offsetX - (e.offsetX - prev.ox) * k,
-            oy: e.offsetY - (e.offsetY - prev.oy) * k,
-          };
-        });
-      } else if (e.altKey) {
-        // ⌥ + two-finger scroll rotates the view around the cursor.
-        setView((prev) => {
-          if (!prev) return prev;
-          const rot = prev.rot + e.deltaY * 0.003;
-          const w = screenToWorld({ x: e.offsetX, y: e.offsetY }, prev);
-          const r = rotVec(w, rot);
-          return { ...prev, rot, ox: e.offsetX - r.x * prev.scale, oy: e.offsetY - r.y * prev.scale };
-        });
-      } else {
-        // Plain two-finger scroll pans, like every floor-planner and Figma.
-        setView((prev) =>
-          prev ? { ...prev, ox: prev.ox - e.deltaX, oy: prev.oy - e.deltaY } : prev,
-        );
-      }
-    };
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
       const action = canvasKeyAction(
@@ -402,12 +324,10 @@ export default function SimCanvas({
     const onBlur = () => {
       spaceRef.current = false;
     };
-    canvas.addEventListener('wheel', onWheel, { passive: false });
     window.addEventListener('keydown', onKey);
     window.addEventListener('keyup', onKey);
     window.addEventListener('blur', onBlur);
     return () => {
-      canvas.removeEventListener('wheel', onWheel);
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('keyup', onKey);
       window.removeEventListener('blur', onBlur);
@@ -415,44 +335,6 @@ export default function SimCanvas({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Safari trackpads report real twist/pinch gestures — use them when present.
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || !('GestureEvent' in window)) return;
-    let base: { view0: View; center: Vec2; world0: Vec2 } | null = null;
-    const start = (ev: Event) => {
-      ev.preventDefault();
-      if (dragRef.current?.kind === 'band') return; // freeze view during a band drag
-      const e = ev as unknown as { clientX: number; clientY: number };
-      const v0 = viewRef.current;
-      if (!v0) return;
-      const rect = canvas.getBoundingClientRect();
-      const center = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-      base = { view0: v0, center, world0: screenToWorld(center, v0) };
-    };
-    const change = (ev: Event) => {
-      ev.preventDefault();
-      if (!base) return;
-      const e = ev as unknown as { scale: number; rotation: number };
-      const b = base;
-      const scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, b.view0.scale * e.scale));
-      const rot = b.view0.rot + (e.rotation * Math.PI) / 180;
-      const r = rotVec(b.world0, rot);
-      setView({ scale, rot, ox: b.center.x - r.x * scale, oy: b.center.y - r.y * scale });
-    };
-    const end = (ev: Event) => {
-      ev.preventDefault();
-      base = null;
-    };
-    canvas.addEventListener('gesturestart', start);
-    canvas.addEventListener('gesturechange', change);
-    canvas.addEventListener('gestureend', end);
-    return () => {
-      canvas.removeEventListener('gesturestart', start);
-      canvas.removeEventListener('gesturechange', change);
-      canvas.removeEventListener('gestureend', end);
-    };
-  }, []);
 
   const cancelDraw = useCallback(() => {
     // Cancel an in-flight rubber-band draw AND a marquee/lasso band — otherwise
@@ -481,13 +363,6 @@ export default function SimCanvas({
   }, [mode, cancelDraw]);
 
   // --- pointer interaction ------------------------------------------------
-  const s2w = useCallback(
-    (e: { offsetX: number; offsetY: number }): Vec2 => {
-      const vw = view ?? { scale: 60, ox: 0, oy: 0, rot: 0 };
-      return screenToWorld({ x: e.offsetX, y: e.offsetY }, vw);
-    },
-    [view],
-  );
 
   const startDrag = (drag: Drag) => {
     dragRef.current = drag;
@@ -498,9 +373,10 @@ export default function SimCanvas({
     setGrabbing(MOVE_KINDS.has(drag.kind));
   };
 
+  /** A 2nd finger promotes to a pinch. The view maths lives in the camera; the
+   *  teardown below belongs to the DRAG machine and stays here. */
   const beginPinchIfTwoPointers = () => {
-    const pts = [...pointersRef.current.values()];
-    if (pts.length !== 2 || !view) return false;
+    if (pointersRef.current.size !== 2 || !view) return false;
     if (dragRef.current) {
       dragRef.current = null;
       onDragging(false);
@@ -510,15 +386,7 @@ export default function SimCanvas({
     }
     // A 2nd finger promotes to a pinch — drop any half-drawn selection band.
     setBandBoth(null);
-    const center0 = v.scale(v.add(pts[0], pts[1]), 0.5);
-    pinchRef.current = {
-      d0: Math.max(12, v.dist(pts[0], pts[1])),
-      angle0: Math.atan2(pts[1].y - pts[0].y, pts[1].x - pts[0].x),
-      center0,
-      world0: screenToWorld(center0, view),
-      view0: view,
-    };
-    return true;
+    return armPinch();
   };
 
   /** Existing walls the cursor may stick to — never the chain's own pieces. */
@@ -789,19 +657,6 @@ export default function SimCanvas({
     onSelection(null);
   };
 
-  const applyPinch = () => {
-    const pinch = pinchRef.current;
-    const pts = [...pointersRef.current.values()];
-    if (!pinch || pts.length < 2) return;
-    const d = Math.max(12, v.dist(pts[0], pts[1]));
-    const center = v.scale(v.add(pts[0], pts[1]), 0.5);
-    const angle = Math.atan2(pts[1].y - pts[0].y, pts[1].x - pts[0].x);
-    const scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, (pinch.view0.scale * d) / pinch.d0));
-    // Twisting the two fingers rotates the whole plan around them.
-    const rot = pinch.view0.rot + (angle - pinch.angle0);
-    const r = rotVec(pinch.world0, rot);
-    setView({ scale, rot, ox: center.x - r.x * scale, oy: center.y - r.y * scale });
-  };
 
   const applyMove = (native: PointerEvent) => {
     if (pinchRef.current) {
