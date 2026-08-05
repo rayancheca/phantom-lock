@@ -29,6 +29,24 @@ export interface WallHover {
 }
 
 /**
+ * The chip's three screen-space radii (S38: moved down from `SimCanvas.tsx`).
+ *
+ * They live beside the functions that consume them — `wallHoverAt` takes the
+ * appear radius and `chipStaysVisible` takes the other two — rather than in the
+ * component, which is fighting the 800-line cap. `WALL_HOVER_APPEAR_PX` in
+ * particular now has TWO consumers (`pick.ts`'s opening branch and the
+ * component's own two hover paths), so leaving it in the component would have
+ * made the component a dependency of the pure module that reads it.
+ */
+/** Hover this near a wall before the door/window chip appears. */
+export const WALL_HOVER_APPEAR_PX = 18;
+/** Once shown, the chip stays anchored within this radius so it stays reachable
+ *  — otherwise its anchor chases the cursor along the wall. */
+export const WALL_HOVER_HOLD_PX = 46;
+/** Slack around the chip's own box, covering the gap between wall and chip. */
+export const WALL_HOVER_CHIP_MARGIN_PX = 24;
+
+/**
  * Nearest wall to `p` within `maxDist`, plus the closest point on it — the
  * anchor for the door/window insertion chips. Ignores every non-wall object.
  * Pure port of SimCanvas's inline hover scan.
@@ -139,35 +157,89 @@ export function makeOpening(
   };
 }
 
+/** What the chip reducer needs to know about the frame it is deciding for. */
+export interface WallHoverContext {
+  objects: readonly SceneObject[];
+  /** Cursor in the CANVAS's own coordinate frame, px — the same frame `chipBox`
+   *  is expressed in, which is why the caller subtracts the host's origin. */
+  cursorS: Vec2;
+  /** Cursor in world metres. */
+  worldPt: Vec2;
+  /** The chip's own box, or null when it is not mounted. */
+  chipBox: ScreenRect | null;
+  /** `WALL_HOVER_APPEAR_PX` in world metres — the caller owns the view scale. */
+  appearDist: number;
+  /** Project the latched anchor to screen. A callback for the same reason
+   *  `selectionFromBand` takes one: this module never imports the camera. */
+  project: (w: Vec2) => Vec2;
+}
+
+/**
+ * Where the +Door/+Window chip should be on the next hover frame (S38: lifted
+ * out of `SimCanvas.applyMove`, where it was an inline `setWallHover(prev => …)`
+ * and therefore unreachable from any committed test).
+ *
+ * Three rules in a deliberate order, each of which was a shipped bug:
+ *
+ * 1. If the cursor is on (or heading for) the chip, KEEP it — even when another
+ *    wall is nearer. Without this the chip relocates to whichever wall is closest
+ *    as the cursor crosses the plan, so on a dense floorplan it jumps out from
+ *    under the pointer and its buttons can never be clicked at all. That is the
+ *    "it runs away from the mouse" report.
+ * 2. On a wall: keep the SAME wall's latched anchor so the chip does not chase
+ *    the cursor along it (a screen-vertical wall's chip would retreat forever),
+ *    but switch to a DIFFERENT wall so a neighbour's is reachable.
+ * 3. Off every wall: hold while the cursor is still near the chip's BOX, not
+ *    merely near the anchor — the chip renders centred ABOVE the anchor and is
+ *    wider than `WALL_HOVER_HOLD_PX`, so an anchor-only test dismissed it the
+ *    instant the cursor reached for a button.
+ *
+ * `alive` self-heals a latch whose wall was deleted underneath it.
+ */
+export function nextWallHover(prev: WallHover | null, ctx: WallHoverContext): WallHover | null {
+  const alive = prev !== null && ctx.objects.some((o) => o.id === prev.id);
+  if (prev && alive && insideRect(ctx.cursorS, ctx.chipBox, WALL_HOVER_CHIP_MARGIN_PX)) return prev;
+  const found = wallHoverAt(ctx.objects, ctx.worldPt, ctx.appearDist);
+  if (found) return prev && prev.id === found.id ? prev : found;
+  if (!prev || !alive) return null;
+  return chipStaysVisible(
+    ctx.cursorS,
+    ctx.project(prev.at),
+    ctx.chipBox,
+    WALL_HOVER_HOLD_PX,
+    WALL_HOVER_CHIP_MARGIN_PX,
+  )
+    ? prev
+    : null;
+}
+
+/**
+ * The opening tool's ghost: the door/window that a click right here would cut,
+ * or null when the cursor is off every wall. Shares `wallHoverAt` + `makeOpening`
+ * with `pick.ts`'s click path, so the ghost cannot promise an opening the click
+ * would not create.
+ */
+export function openingGhost(
+  objects: readonly SceneObject[],
+  worldPt: Vec2,
+  appearDist: number,
+  role: 'door' | 'window',
+): SceneObject | null {
+  const hover = wallHoverAt(objects, worldPt, appearDist);
+  const wall = hover ? objects.find((o) => o.id === hover.id) : null;
+  if (!hover || !wall || wall.kind !== 'wall') return null;
+  return { ...makeOpening(wall, hover.at, role, 'preview'), id: 'preview' };
+}
+
 // ---------------------------------------------------------------------------
 // Fix 2 — Backspace chain-undo (per-segment wall-id groups)
 // ---------------------------------------------------------------------------
 
-/**
- * Pop the last chain corner and report exactly which wall ids its incoming
- * segment created. `groups[i]` are the ids added for the (i+1)-th point — a
- * segment that crossed an existing wall owns MULTIPLE ids (`integrateWall`
- * splits the new wall into chunks), and a corner too close to add a wall owns
- * an empty group. Pure — never mutates its inputs (slice/copy only).
- *
- * Note: only the chain's OWN chunk ids are removed; an existing wall that the
- * segment crossed stays split into its own fresh-id chunks (they never enter a
- * group). That is acoustically inert and a pre-existing backlog limitation.
- */
-export function popChainSegment(
-  points: readonly Vec2[],
-  groups: readonly string[][],
-): { points: Vec2[]; groups: string[][]; removeIds: string[]; ended: boolean } {
-  if (points.length <= 1) {
-    return { points: [], groups: [], removeIds: [], ended: true };
-  }
-  return {
-    points: points.slice(0, -1),
-    groups: groups.slice(0, -1),
-    removeIds: [...(groups[groups.length - 1] ?? [])],
-    ended: false,
-  };
-}
+// `popChainSegment` MOVED to `chain.ts` in S38 — it is chain code, and it
+// predates the module by four sessions. Re-exported here so every existing
+// importer and its tests are byte-unchanged (the same move `render.ts` makes for
+// `view.ts` and `scene.ts` for `ids.ts`).
+export { popChainSegment } from './chain';
 
 // ---------------------------------------------------------------------------
 // Fix 3 — marquee / lasso selection algebra + band geometry

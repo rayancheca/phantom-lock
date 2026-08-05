@@ -10,14 +10,13 @@ import type {
   ToolMode,
   TraceResult,
   Vec2,
-  WallObj,
 } from '../../engine/types';
 import type { AudioMetrics } from '../../engine/stereo';
 import type { Proposal } from '../../engine/optimize';
 import type { ListeningField } from '../../engine/bestspot';
-import { hitInactiveSeat, hitTestNodes, hitTestObjects } from '../../engine/hit';
-import { createId, ROOM_HEIGHT } from '../../engine/scene';
-import { integrateWall, snapToWalls } from '../../engine/joints';
+import { hitTestObjects } from '../../engine/hit';
+import { createId } from '../../engine/scene';
+import { integrateWall } from '../../engine/joints';
 import * as v from '../../engine/vec';
 import { worldToScreen, type CanvasTheme, type WallChain } from './render';
 import { handleAt, handleCursor, handleTargetFor, type HandleId } from './handles';
@@ -29,39 +28,28 @@ import {
   type Drag,
 } from './drag-apply';
 import {
+  WALL_HOVER_APPEAR_PX,
   canvasKeyAction,
   hoverCursor,
   isDraggableAt,
   makeOpening,
-  popChainSegment,
-  resolveSelection,
+  nextWallHover,
+  openingGhost,
   selectionFromBand,
-  selectionSets,
-  chipStaysVisible,
-  insideRect,
-  wallHoverAt,
   type WallHover,
 } from './interaction';
-// SNAP_STEP and the placement primitives are shared with the KEYBOARD path, so
-// there is exactly one definition of each (S7). `surfaceHeightAt` used to be a
-// closure here even though it only ever read `scene.objects`.
-import { SNAP_STEP, placeSpeakerAt } from './placement';
+// The placement primitives are shared with the KEYBOARD path, so there is
+// exactly one definition of each (S7). `surfaceHeightAt` used to be a closure
+// here even though it only ever read `scene.objects`.
+import { placeSpeakerAt } from './placement';
+import { chainContext, chainStep, chainUndo, chainVertex } from './chain';
+import { applyPickAction, resolvePointerDown, type PickEffects } from './pick';
 import { Compass, SelectionBand, WallActionsChip } from './CanvasOverlays';
 import { useCanvasCamera } from './useCanvasCamera';
 import { useCanvasPainter } from './useCanvasPainter';
+import { useFinePointer } from './useFinePointer';
 import { CANVAS_HELP } from './canvas-help';
 import './sim-canvas.css';
-/** Clicking this close to the chain's first vertex closes the room. */
-const CLOSE_RADIUS = 0.25;
-/** Wall segments snap to 45° multiples when within this many degrees. */
-const ANGLE_SNAP_DEG = 7;
-/** Hover this near a wall (screen px) before the door/window chip appears. */
-const WALL_HOVER_APPEAR_PX = 18;
-/** Once shown, the chip stays anchored within this screen radius so it stays
- *  reachable — otherwise its anchor chases the cursor along the wall. */
-const WALL_HOVER_HOLD_PX = 46;
-/** Slack around the chip's own box, covering the gap between wall and chip. */
-const WALL_HOVER_CHIP_MARGIN_PX = 24;
 
 interface Props {
   scene: Scene;
@@ -145,35 +133,7 @@ export default function SimCanvas({
   /** The wall the seat magnet has captured this drag. Identity-preserving setter,
    *  so React bails out — it changes at most twice per gesture. */
   const [snapGuide, setSnapGuide] = useState<{ wallId: string; seated: boolean } | null>(null);
-  /**
-   * Is this a precise pointer? The §16 grips are an 11 px target and are hidden
-   * on a coarse pointer, where they would be worse than useless: a finger aimed
-   * at a sofa's corner to DRAG it would resize it instead. This is the exact
-   * inverse of `SelectionActions`'s own query, so no pointer type is left without
-   * an affordance — but note the HUD covers rotate/nudge/delete and NOT resize,
-   * so on touch the Inspector is what resizes. Both queries key on the PRIMARY
-   * pointer, so a hybrid touch laptop is treated as fine-pointer: the grips are
-   * live for its trackpad, and a finger gets them too. Defaults to true where
-   * `matchMedia` is absent (node, older jsdom).
-   */
-  const [finePointer, setFinePointer] = useState(true);
-  useEffect(() => {
-    if (typeof window.matchMedia !== 'function') return;
-    const mq = window.matchMedia('(hover: none) and (pointer: coarse)');
-    const sync = () => setFinePointer(!mq.matches);
-    sync();
-    // Safari <= 13 exposes `matchMedia` but its MediaQueryList has only the
-    // deprecated addListener/removeListener, so an unguarded `addEventListener`
-    // THROWS inside the effect — and with no ErrorBoundary in the tree that takes
-    // the whole app down. `interaction.ts` `watchDevicePixelRatio` already guards
-    // exactly this; matching it here rather than inventing a second answer.
-    if (typeof mq.addEventListener === 'function') {
-      mq.addEventListener('change', sync);
-      return () => mq.removeEventListener('change', sync);
-    }
-    mq.addListener(sync);
-    return () => mq.removeListener(sync);
-  }, []);
+  const finePointer = useFinePointer();
   /** Which grip the pointer is hovering, for the directional resize cursor. */
   const [hoverHandle, setHoverHandle] = useState<HandleId | null>(null);
   /** Screen-space rubber band: 2 pts = marquee corners, 3+ = lasso path. */
@@ -216,28 +176,6 @@ export default function SimCanvas({
     if (mode !== 'opening') setPreview(null);
   }, [mode, setPreview]);
 
-
-  const snap = useCallback(
-    (p: Vec2): Vec2 =>
-      settings.snap
-        ? { x: Math.round(p.x / SNAP_STEP) * SNAP_STEP, y: Math.round(p.y / SNAP_STEP) * SNAP_STEP }
-        : p,
-    [settings.snap],
-  );
-
-  /** Snap a wall endpoint to 45° multiples around the previous vertex. */
-  const angleSnap = useCallback((from: Vec2, to: Vec2): Vec2 => {
-    const d = v.sub(to, from);
-    const len = v.len(d);
-    if (len < 1e-6) return to;
-    const ang = Math.atan2(d.y, d.x);
-    const step = Math.PI / 4;
-    const snapped = Math.round(ang / step) * step;
-    if (Math.abs(ang - snapped) < (ANGLE_SNAP_DEG * Math.PI) / 180) {
-      return v.add(from, v.scale(v.fromAngle(snapped), len));
-    }
-    return to;
-  }, []);
 
   /**
    * The object whose §16 grips are live, or null (S36).
@@ -307,22 +245,12 @@ export default function SimCanvas({
         // Undo the last corner and every wall id its segment added (a crossing
         // splits the new wall into several chunks — remove the whole group).
         e.preventDefault();
-        const chain = chainRef.current!;
-        const res = popChainSegment(chain.points, chainWallsRef.current);
-        if (res.ended) {
-          chainWallsRef.current = [];
-          updateChain(null);
-        } else {
-          chainWallsRef.current = res.groups;
-          if (res.removeIds.length) {
-            const rm = new Set(res.removeIds);
-            onSceneRef.current({
-              ...sceneRef.current,
-              objects: sceneRef.current.objects.filter((o) => !rm.has(o.id)),
-            });
-          }
-          updateChain({ points: res.points, cursor: chain.cursor });
-        }
+        const undo = chainUndo(sceneRef.current, chainRef.current!, chainWallsRef.current);
+        chainWallsRef.current = undo.groups;
+        // Same ref when the popped corner created no wall — writing it anyway
+        // would push an undo entry that undoes nothing.
+        if (undo.scene !== sceneRef.current) onSceneRef.current(undo.scene);
+        updateChain(undo.chain);
       }
     };
     const onBlur = () => {
@@ -393,55 +321,73 @@ export default function SimCanvas({
     return armPinch();
   };
 
-  /** Existing walls the cursor may stick to — never the chain's own pieces. */
-  const snapTargets = () => {
-    const exclude = new Set(chainWallsRef.current.flat());
-    return {
-      walls: sceneRef.current.objects.filter((o): o is WallObj => o.kind === 'wall'),
-      exclude,
-    };
-  };
+  /** The chain's snap targets for the CURRENT scene and id groups. The vertex
+   *  maths itself is pure, in `chain.ts`; this supplies only the live state. */
+  const chainCtx = () =>
+    chainContext(sceneRef.current.objects, chainWallsRef.current, settings.snap);
 
   const addChainPoint = (raw: Vec2) => {
     const cur = sceneRef.current;
-    const chainNow = chainRef.current;
-    if (!chainNow || chainNow.points.length === 0) {
-      chainWallsRef.current = [];
-      const t = snapTargets();
-      updateChain({ points: [snapToWalls(snap(raw), t.walls, t.exclude)], cursor: null });
-      return;
-    }
-    const last = chainNow.points[chainNow.points.length - 1];
-    const closing = chainNow.points.length >= 2 && v.dist(raw, chainNow.points[0]) < CLOSE_RADIUS;
-    const t = snapTargets();
-    const p = closing
-      ? chainNow.points[0]
-      : snapToWalls(snap(angleSnap(last, snap(raw))), t.walls, t.exclude);
+    const points = chainRef.current?.points ?? [];
+    const first = points.length === 0;
+    if (first) chainWallsRef.current = [];
+    const step = chainStep(points, raw, chainCtx(), createId);
     let group: string[] = [];
-    if (v.dist(last, p) >= 0.15) {
-      const wall: WallObj = {
-        id: createId('wall'),
-        kind: 'wall',
-        a: last,
-        b: p,
-        absorption: 0.12,
-        label: 'Wall',
-        height: ROOM_HEIGHT,
-      };
+    if (step.wall) {
       // Joint math: crossings and T-touches split both walls into chunks.
-      const joined = integrateWall(cur.objects, wall);
+      const joined = integrateWall(cur.objects, step.wall);
       onScene({ ...cur, objects: joined.objects });
       group = joined.newIds;
     }
-    if (closing) {
+    if (step.closing) {
       chainWallsRef.current = [];
       updateChain(null);
     } else {
-      // One id-group per appended corner (empty when no wall was created), so
-      // Backspace pops exactly the walls that corner added.
-      chainWallsRef.current.push(group);
-      updateChain({ points: [...chainNow.points, p], cursor: null });
+      // One id-group per appended SEGMENT (empty when the click was too short to
+      // create a wall), so Backspace pops exactly the walls that corner added.
+      // The FIRST vertex opens the chain and owns no segment, so it pushes
+      // nothing: `popChainSegment` pairs groups[i] with the segment ENDING at
+      // points[i+1], and a leading entry would put the two lists out of step.
+      if (!first) chainWallsRef.current.push(group);
+      updateChain({ points: [...points, step.at], cursor: null });
     }
+  };
+
+  /**
+   * The effects `applyPickAction` is allowed to cause. Every one is a closure
+   * over this component's state; the ORDER they run in belongs to `pick.ts`,
+   * which is what makes it assertable by a test rather than by reading twelve
+   * hand-written sequences.
+   */
+  const pickEffects: PickEffects = {
+    setBand: setBandBoth,
+    activateSeat: onActivateSeat,
+    select: onSelection,
+    startDrag,
+    placeSpeaker: (at) => {
+      // The SAME primitive the keyboard `p` path calls, so the furniture z-snap
+      // can never be dropped from one of the two.
+      const { scene: next, speakerId } = placeSpeakerAt(
+        sceneRef.current,
+        at,
+        placeModel,
+        settings.snap,
+      );
+      onScene(next);
+      onSelection({ type: 'speaker', id: speakerId });
+    },
+    chainPoint: (at) => addChainPoint(at),
+    setCalibFirst: (at) => {
+      calibRef.current = at;
+    },
+    calibrate: onCalibrate,
+    insertOpening: (wall, at, role) => {
+      const obj = makeOpening(wall, at, role, createId('rect'));
+      onScene({ ...sceneRef.current, objects: [...sceneRef.current.objects, obj] });
+      onSelection({ type: 'object', id: obj.id });
+      setPreview(null);
+    },
+    notice: onNotice,
   };
 
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -457,208 +403,32 @@ export default function SimCanvas({
     if (beginPinchIfTwoPointers()) return;
     if (pinchRef.current) return;
 
-    if (e.button === 1 || e.button === 2 || spaceRef.current) {
-      startDrag({
-        kind: 'pan',
-        pointerId: e.pointerId,
-        sx: native.offsetX,
-        sy: native.offsetY,
-        ox: view.ox,
-        oy: view.oy,
-      });
-      return;
-    }
-    if (e.button !== 0 || dragRef.current) return;
-
-    const p = s2w(native);
-    const tol = 10 / view.scale;
-
-    if (mode === 'calibrate') {
-      if (!calibRef.current) {
-        calibRef.current = p;
-      } else {
-        const a = calibRef.current;
-        calibRef.current = null;
-        onCalibrate(a, p);
-      }
-      return;
-    }
-
-    if (mode === 'wall') {
-      addChainPoint(p);
-      return;
-    }
-
-    if (mode === 'speaker') {
-      // The SAME primitive the keyboard `p` path calls, so the furniture z-snap
-      // can never be dropped from one of the two.
-      const { scene: next, speakerId } = placeSpeakerAt(
-        sceneRef.current,
-        p,
-        placeModel,
-        settings.snap,
-      );
-      onScene(next);
-      onSelection({ type: 'speaker', id: speakerId });
-      return;
-    }
-
-    if (mode === 'marquee' || mode === 'lasso') {
-      const additive = e.metaKey || e.ctrlKey || e.shiftKey;
-      setBandBoth([{ x: native.offsetX, y: native.offsetY }]);
-      startDrag({
-        kind: 'band',
-        pointerId: e.pointerId,
-        shape: mode === 'marquee' ? 'marquee' : 'lasso',
-        additive,
-      });
-      return;
-    }
-
-    if (mode === 'opening') {
-      // Place on the click, NOT via startDrag('draw'): a door is h:0.1, below the
-      // onPointerUp draw-commit floor (w,h >= 0.15), so the draw path would
-      // silently reject it. ⇧ cuts a window instead of a door.
-      const hover = wallHoverAt(sceneRef.current.objects, p, WALL_HOVER_APPEAR_PX / view.scale);
-      const wall = hover ? sceneRef.current.objects.find((o) => o.id === hover.id) : null;
-      if (wall && wall.kind === 'wall') {
-        const obj = makeOpening(wall, hover!.at, e.shiftKey ? 'window' : 'door', createId('rect'));
-        onScene({ ...sceneRef.current, objects: [...sceneRef.current.objects, obj] });
-        onSelection({ type: 'object', id: obj.id });
-        setPreview(null);
-      } else {
-        // Clicked off every wall — say so, mirroring the keyboard d/w path. A
-        // silent no-op on the advertised primary route reads as a broken app.
-        onNotice(`Click a wall to cut a ${e.shiftKey ? 'window' : 'door'}.`);
-      }
-      return;
-    }
-
-    if (mode !== 'select') {
-      startDrag({ kind: 'draw', pointerId: e.pointerId, tool: mode, anchor: snap(p) });
-      return;
-    }
-
-    // ⌘/Ctrl-click: toggle the clicked thing in and out of a multi-selection.
-    if (e.metaKey || e.ctrlKey) {
-      const nh = hitTestNodes(scene, p, tol);
-      const oh = nh ? null : hitTestObjects(scene, p, tol);
-      const { objectIds, speakerIds } = selectionSets(selection);
-      if (nh?.type === 'speaker') {
-        if (speakerIds.has(nh.id)) speakerIds.delete(nh.id);
-        else speakerIds.add(nh.id);
-      } else if (oh?.type === 'object') {
-        if (objectIds.has(oh.id)) objectIds.delete(oh.id);
-        else objectIds.add(oh.id);
-      } else {
-        return; // clicked empty space — keep the selection as is
-      }
-      onSelection(resolveSelection(objectIds, speakerIds));
-      return;
-    }
-
-    // Dragging any member of a multi-selection moves the whole group.
-    if (selection?.type === 'multi') {
-      const nh = hitTestNodes(scene, p, tol);
-      const oh = nh ? null : hitTestObjects(scene, p, tol);
-      const memberHit =
-        (nh?.type === 'speaker' && selection.speakerIds.includes(nh.id)) ||
-        (oh?.type === 'object' && selection.objectIds.includes(oh.id));
-      if (memberHit) {
-        startDrag({
-          kind: 'move-multi',
-          pointerId: e.pointerId,
-          start: p,
-          objects: scene.objects
-            .filter((o) => selection.objectIds.includes(o.id))
-            .map((o) =>
-              o.kind === 'wall' ? { id: o.id, a: o.a, b: o.b } : { id: o.id, center: o.center },
-            ),
-          speakers: scene.speakers
-            .filter((s) => selection.speakerIds.includes(s.id))
-            .map((s) => ({ id: s.id, pos: s.pos })),
-        });
-        return;
-      }
-    }
-
-    const nodeHit = hitTestNodes(scene, p, tol);
-    if (nodeHit?.type === 'listener') {
-      onSelection(nodeHit);
-      startDrag({ kind: 'node', pointerId: e.pointerId, node: 'listener' });
-      return;
-    }
-    if (nodeHit?.type === 'speaker') {
-      onSelection(nodeHit);
-      startDrag({ kind: 'node', pointerId: e.pointerId, node: { speakerId: nodeHit.id } });
-      return;
-    }
-    // An inactive seat: activate it (becomes the "YOU" puck) and start dragging
-    // so you can reposition it in the same gesture.
-    const seatHit = hitInactiveSeat(scene, p, tol);
-    if (seatHit) {
-      onActivateSeat(seatHit);
-      onSelection({ type: 'listener' });
-      startDrag({ kind: 'node', pointerId: e.pointerId, node: 'listener' });
-      return;
-    }
-
-    // §16 grips (S36). Deliberately BELOW the node and seat tests, and
-    // `drawHandles` paints below `drawNodes` to match: a speaker puck or a seat
-    // wins over a grip in BOTH the paint order and the hit test, so the two can
-    // never disagree. Putting the grips first was measured against the shipped
-    // demo and rejected — a pod parked at the head of the Bed sits within 11 px
-    // of a grip, and dragging that pod would have resized the bed instead. Pods
-    // are the primary thing a user drags; a grip lost under one is recoverable by
-    // deselecting, moving the pod, or the Inspector, which resize has and
-    // dragging a pod does not.
-    if (handleTarget && view) {
-      const grip = handleAt(handleTarget, view, { x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY });
-      if (grip) {
-        startDrag({
-          kind: 'handle',
-          pointerId: e.pointerId,
-          id: handleTarget.id,
-          handle: grip,
-          obj0: handleTarget,
-          grabAngle: Math.atan2(p.y - handleTarget.center.y, p.x - handleTarget.center.x),
-        });
-        return;
-      }
-    }
-
-    if (selection?.type === 'object') {
-      const sel = scene.objects.find((o) => o.id === selection.id);
-      if (sel?.kind === 'wall') {
-        for (const end of ['a', 'b'] as const) {
-          if (v.dist(p, sel[end]) <= tol * 1.4) {
-            startDrag({ kind: 'wall-end', pointerId: e.pointerId, id: sel.id, end });
-            return;
-          }
-        }
-      }
-    }
-
-    const objHit = hitTestObjects(scene, p, tol);
-    if (objHit?.type === 'object') {
-      onSelection(objHit);
-      const o = scene.objects.find((x) => x.id === objHit.id);
-      if (o?.kind === 'wall') {
-        startDrag({ kind: 'move-wall', pointerId: e.pointerId, id: o.id, start: p, a0: o.a, b0: o.b });
-      } else if (o) {
-        startDrag({
-          kind: 'move-rc',
-          pointerId: e.pointerId,
-          id: o.id,
-          start: p,
-          c0: o.center,
-          rot0: o.kind === 'rect' ? o.rotation : 0,
-        });
-      }
-      return;
-    }
-
-    onSelection(null);
+    const act = resolvePointerDown({
+      // The PROP, not `sceneRef.current` — the two are the same object at event
+      // time (`sceneRef.current = scene` is a render-body assignment and this app
+      // uses no concurrent feature: no startTransition, useDeferredValue, Suspense
+      // or lazy anywhere in `src`), so this is byte-identical today. It is the
+      // prop because `useCanvasPainter` and `handleTarget` are BOTH given the
+      // prop: a hit test must agree with the pixels the user aimed at. Scene
+      // WRITES still read the ref, which is the freshest value at write time.
+      scene,
+      selection,
+      mode,
+      view,
+      screenPt: { x: native.offsetX, y: native.offsetY },
+      worldPt: s2w(native),
+      button: e.button,
+      pointerId: e.pointerId,
+      metaKey: e.metaKey,
+      ctrlKey: e.ctrlKey,
+      shiftKey: e.shiftKey,
+      spaceHeld: spaceRef.current,
+      dragActive: Boolean(dragRef.current),
+      calibFirst: calibRef.current,
+      handleTarget,
+      snapOn: settings.snap,
+    });
+    applyPickAction(act, pickEffects);
   };
 
 
@@ -673,15 +443,14 @@ export default function SimCanvas({
     // sees exactly where a click will cut (⇧ previews a window). Reuses the
     // canvas `preview` path — zero new DOM, so no transform-clobber / motion work.
     if (!drag && mode === 'opening' && view) {
-      const hp = s2w(native);
-      const hover = wallHoverAt(sceneRef.current.objects, hp, WALL_HOVER_APPEAR_PX / view.scale);
-      const w = hover ? sceneRef.current.objects.find((o) => o.id === hover.id) : null;
-      if (w && w.kind === 'wall') {
-        const role = native.shiftKey ? 'window' : 'door';
-        setPreview({ ...makeOpening(w, hover!.at, role, 'preview'), id: 'preview' });
-      } else {
-        setPreview(null);
-      }
+      setPreview(
+        openingGhost(
+          sceneRef.current.objects,
+          s2w(native),
+          WALL_HOVER_APPEAR_PX / view.scale,
+          native.shiftKey ? 'window' : 'door',
+        ),
+      );
       return;
     }
 
@@ -694,52 +463,30 @@ export default function SimCanvas({
     if (!drag && mode === 'select' && theme === 'plan' && !overlayOpenRef.current && view) {
       const cursorS = { x: native.offsetX, y: native.offsetY };
       const hp = s2w(native);
-      setWallHover((prev) => {
-        // The chip's own box, in the canvas's coordinate frame.
-        // `getBoundingClientRect` is viewport-relative; the anchor and cursor are
-        // canvas-relative, so subtract the host's origin.
-        const box = chipRef.current?.getBoundingClientRect();
-        const host = containerRef.current?.getBoundingClientRect();
-        const chipBox =
-          box && host
-            ? {
-                left: box.left - host.left,
-                top: box.top - host.top,
-                right: box.right - host.left,
-                bottom: box.bottom - host.top,
-              }
-            : null;
-        const alive = prev !== null && sceneRef.current.objects.some((o) => o.id === prev.id);
-
-        // FIRST: if the cursor is on (or heading for) the chip, keep it — even if
-        // another wall is nearer. Without this the chip relocates to whichever
-        // wall is closest as the cursor crosses the plan, so on a dense floorplan
-        // it jumps out from under the pointer and the buttons can never be
-        // clicked. That is the "it runs away from the mouse" report.
-        if (prev && alive && insideRect(cursorS, chipBox, WALL_HOVER_CHIP_MARGIN_PX)) return prev;
-
-        const found = wallHoverAt(sceneRef.current.objects, hp, WALL_HOVER_APPEAR_PX / view.scale);
-        // On a wall: keep the SAME wall's latched anchor so the chip doesn't chase
-        // the cursor along it (a screen-vertical wall's chip would retreat
-        // forever), but switch to a DIFFERENT wall so a neighbour's is reachable.
-        if (found) return prev && prev.id === found.id ? prev : found;
-
-        // Off every wall: hold the chip while the cursor is still near it. Tested
-        // against the chip's BOX, not just a radius around the anchor — the chip
-        // renders centred ABOVE the anchor and is wider than WALL_HOVER_HOLD_PX,
-        // so an anchor-only test dismissed it the instant the cursor reached for
-        // a button. Self-heals if the wall was deleted underneath it.
-        if (!prev || !alive) return null;
-        return chipStaysVisible(
-          cursorS,
-          worldToScreen(prev.at, view),
-          chipBox,
-          WALL_HOVER_HOLD_PX,
-          WALL_HOVER_CHIP_MARGIN_PX,
-        )
-          ? prev
+      // `getBoundingClientRect` is viewport-relative while the anchor and cursor
+      // are canvas-relative, so the host's origin comes off before the reducer
+      // (which is pure, and compares the two in one frame) ever sees the box.
+      const box = chipRef.current?.getBoundingClientRect();
+      const host = containerRef.current?.getBoundingClientRect();
+      const chipBox =
+        box && host
+          ? {
+              left: box.left - host.left,
+              top: box.top - host.top,
+              right: box.right - host.left,
+              bottom: box.bottom - host.top,
+            }
           : null;
-      });
+      setWallHover((prev) =>
+        nextWallHover(prev, {
+          objects: sceneRef.current.objects,
+          cursorS,
+          worldPt: hp,
+          chipBox,
+          appearDist: WALL_HOVER_APPEAR_PX / view.scale,
+          project: (w) => worldToScreen(w, view),
+        }),
+      );
       const grab = isDraggableAt(sceneRef.current, hp, 10 / view.scale);
       setHoverGrab((prev) => (prev === grab ? prev : grab));
     } else {
@@ -761,18 +508,14 @@ export default function SimCanvas({
       setHoverHandle(null);
     }
 
-    // Wall chain preview follows the cursor without a drag.
+    // Wall chain preview follows the cursor without a drag. `chainVertex` is the
+    // SAME function the click path runs, so the ghost cannot promise a vertex the
+    // click would not land on.
     if (!drag && mode === 'wall') {
       const chainNow = chainRef.current;
       if (chainNow && chainNow.points.length > 0) {
-        const raw = s2w(native);
-        const last = chainNow.points[chainNow.points.length - 1];
-        const closing = chainNow.points.length >= 2 && v.dist(raw, chainNow.points[0]) < CLOSE_RADIUS;
-        const t = snapTargets();
-        const cursor = closing
-          ? chainNow.points[0]
-          : snapToWalls(snap(angleSnap(last, snap(raw))), t.walls, t.exclude);
-        updateChain({ points: chainNow.points, cursor });
+        const { at } = chainVertex(chainNow.points, s2w(native), chainCtx());
+        updateChain({ points: chainNow.points, cursor: at });
       }
       return;
     }
