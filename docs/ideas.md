@@ -44,6 +44,7 @@ effort — a small high-value item beats a large one.
 | 9 | Window/door-leaf reflection materials | P3 | small |
 | 18a | Finish the SimCanvas decomposition — `pick.ts` (the pointerdown ladder, and the valuable one) + `chain.ts`; it is **1042** against the 800 cap | P2 | ½ session |
 | 18b | `render.ts` 1172 / `scene.ts` 1030 / `arrange.ts` 907 are over the cap too, but cohesive — do not split on cap-compliance alone | P3 | — |
+| 18d | The S37 behaviour differential stalls on its head leg — built and control-validated, but never gave a base-vs-head verdict. Blocks §18a's proof | P2 | small |
 | 18c | Two pre-existing inconsistencies found while mapping S37 (scene prop vs sceneRef in onPointerDown; `seatSelection`'s "ONE write seam" comment is false) | P3 | small |
 
 ---
@@ -1536,6 +1537,27 @@ differential rather than the tail end of a long session. Do it FIRST in its sess
 `snapTargets`, `addChainPoint`, and the cursor-preview arm of `applyMove`. Pure except for the
 `chainWallsRef` bookkeeping, which stays put — one id-group per appended corner is what makes
 Backspace pop exactly the walls that corner added.
+
+### 18d. The behaviour differential stalls on its second leg — **P2**, and it blocks §18a's proof
+
+`docs/sessions/S37/diff-harness.mjs` is built, and its base-vs-base CONTROL works — it caught three
+harness defects on a byte-identical tree (a font-load repaint racing the capture, IndexedDB `getAll`
+returning records in random key order, and a sweep that selected a WALL when only rects and circles
+carry grips). But across four attempts it never produced a trustworthy base-vs-head verdict: the base
+leg completes in ~3.5 min and the head leg stalls past 10 with the node process at 0 % CPU.
+Unexplained, reproducible, and it is the instrument §18a needs in order to prove itself. **Fix it
+first.**
+
+Two things to check before anything else. (1) The harness redirects stdout, and Node buffers that —
+a run that had already recorded three failures showed only its opening banner for minutes, so
+"quiet" is not "healthy". Write per step, or flush. (2) Instrument every step boundary with a
+timestamp so a silently-pending CDP call is visible; the 60 s per-command timeout should surface a
+true hang, which suggests the stall is many small waits rather than one.
+
+⚠️ Also worth knowing: **the sandbox only permits certain localhost ports.** 4181/4182 work; 4190
+does not — a server binds happily and every `fetch` to it fails, which cost this session two runs of
+the screenshot script before the pattern was spotted. And a foreground Bash shell blocks the fetch
+that a backgrounded one allows.
 
 **Acceptance:** SimCanvas < 800 · every branch of the pointerdown ladder has a test · negative
 controls run and each caught by the test written for it · the S37 differential re-run base-vs-head

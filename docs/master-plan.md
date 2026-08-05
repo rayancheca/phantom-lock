@@ -988,10 +988,52 @@ all 17 template messages from the pre-split `App.tsx` are present somewhere in t
 **149** top-level declarations and all 16 user-facing strings from the pre-split `SimCanvas.tsx` have
 exactly one home.
 
+*Coverage of the touched files.* The two PURE extractions hit the bar and then some —
+`run-command.ts` **100 %** stmts / 98.27 % branch / 100 % funcs, `drag-apply.ts` **98.08 %** / 94.02 %
+/ 100 % — which is the point of the whole exercise, because both cover logic that was UNREACHABLE
+from `npm test` before. The six extracted HOOKS did not: `useProposals` 41.75 %, `useCompare`
+21.62 %, `useSceneEdits` 21.02 %, with `AppInner.tsx` at 87.35 % statements but **8.16 % functions**
+and `SimCanvas.tsx` at 29.21 %. **No behaviour lost coverage** — those function bodies were
+previously inside App.tsx and were reached only by the same `shell.a11y` smoke render that reaches
+them now; the per-file statement percentage merely stopped being flattered by sitting in a file
+whose render path executes. Closing it is exactly `docs/ideas.md` §6 (component/hook tests, P2), and
+it is named here rather than waved at.
+
 *Suppressions.* Unchanged at **6**. Two would have been added and both were removed instead: the
 painter's draw effect was restructured to destructure its render state in the PARAMETER LIST so the
 dep array is a list eslint can verify, and the `discardDetectionRef` registration lists the ref by
 name (a `useRef` object is identity-fixed, so it is a literal no-op).
+
+*The behaviour differential — BUILT, VALIDATED, and INCONCLUSIVE. Say so plainly.*
+`docs/sessions/S37/diff-harness.mjs` serves two `dist` directories on two ports, drives both through
+one fixed 36-step script in real headless Chrome, and diffs a signature after every step: an FNV hash
+of the canvas bitmap (which, because `renderScene` is a pure function of `RenderState`, pins scene +
+selection + trace + audio + bestSpot + preview + chain + proposal + snapGuide + handleTarget + theme
++ view in one id-independent number), the spec-sheet metrics, both aria-live regions, the DOM state,
+and a canonicalised dump of the persisted IndexedDB store.
+
+Its base-vs-base CONTROL did its job and is the most useful thing it produced: on a byte-identical
+tree it returned **three divergences and two symmetric failures**, and all five were the instrument —
+a `repaintOnFontLoad` FOUT repaint racing the capture (divergent at steps 0–1, agreeing from step 2,
+which is the signature), IDB `getAll` returning the six seeded layouts in random key order, and a
+sweep that selected a WALL when only rects and circles carry grips. A symmetric failure DIFFS EQUAL,
+so without the absolute `checks` array the run would have looked clean.
+
+**It never delivered a trustworthy base-vs-head verdict.** Four attempts: two were contaminated by
+running `npm test`/`build`/coverage concurrently (the fixed sleeps raced and three steps that a
+byte-identical tree had just passed began failing — now TRAP 29), and in the two clean attempts the
+base leg completed in ~3.5 min while the head leg stalled past 10 with the node process at 0 % CPU.
+That asymmetry is unexplained and is a defect in the harness, not evidence about the code. Rather
+than report a number I do not trust, it is filed for S38 with the instrument committed and its
+control documented.
+
+*What stands in its place, and it is stronger for `drag-apply` than the differential would have been.*
+The completeness lens ran a **20 000-tuple equivalence fuzz of `applyDragToScene`/`previewForDraw`
+against the pre-S37 SimCanvas branches copied verbatim out of `e379395`**, and the two agree on the
+scene, the guide, the `rot0` re-base and the `lastRot` write-back on every sample. Screenshots
+(`docs/sessions/S37/shots/`, five: both canvas themes, ≤960 px, 390 px, the gallery) confirm the app
+renders and behaves correctly end to end with **zero page errors** — the TUNE hero reads "Phantom
+center locked", the plan theme draws its dimension pills, the mode switch flips the theme.
 
 *Honest limits.* One browser (headless Chrome), no real screen reader. The differential exercises 36
 scripted steps — it does not prove anything off that script, and it cannot see RENDER COUNT (a step
