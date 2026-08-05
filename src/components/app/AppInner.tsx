@@ -15,7 +15,6 @@ import { arrangeFurniture, suggestInventory, type ArrangeItem } from '../../engi
 import { useWallDetection } from './hooks/useWallDetection';
 import { useGenerateDesign } from './hooks/useGenerateDesign';
 import {
-  activeListener,
   addListener,
   createId,
   FURNITURE_PRESETS,
@@ -30,19 +29,14 @@ import {
 } from '../../engine/scene';
 import type { PersistMode } from '../../engine/db';
 import { buildUnderlay } from '../panels/underlay-import';
-import { deriveVerdict } from '../panels/verdict';
-import { renderPlanToBlob, planImageFilename } from '../canvas/export-image';
-import type { Scenario } from '../compare/ScenarioCompare';
 import { useProjectActions } from './hooks/useProjectActions';
 import type { ToastData } from '../ui/Toast';
 import { initialMode, modeTheme, subStepForTool, type AppMode, type DesignSubStep, type ModeEntry } from './mode';
 import type { Deleted, DialogState } from './app-types';
 import type { KeyCommand } from './keyboard';
 import { runCommand } from './run-command';
-import { cycleOrder, describePosition } from '../canvas/selection-cycle';
 import { openingNearPoint, seatObjectAgainstWall } from '../canvas/placement';
-import { announcementFor, spokenSelection, speakableUnits, type AnnounceInput } from './announce';
-import { useAnnouncer } from './hooks/useAnnouncer';
+import { spokenSelection } from './announce';
 import LiveAnnouncer from './LiveAnnouncer';
 import { useLayoutStore } from './hooks/useLayoutStore';
 import { useLayoutActions } from './hooks/useLayoutActions';
@@ -50,6 +44,9 @@ import { useSceneHistory } from './hooks/useSceneHistory';
 import { usePersistence } from './hooks/usePersistence';
 import { useSimulation } from './hooks/useSimulation';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
+import { useShareActions } from './hooks/useShareActions';
+import { useCompare } from './hooks/useCompare';
+import { useSpokenMirror } from './hooks/useSpokenMirror';
 import AppHeader from './AppHeader';
 import CanvasStage from './CanvasStage';
 import Sidebar from './Sidebar';
@@ -108,7 +105,6 @@ export default function AppInner({ initialStore, persistMode, showFirstRun, drop
   const [dialog, setDialog] = useState<DialogState>(null);
   const [toast, setToast] = useState<ToastData | null>(null);
   const [galleryOpen, setGalleryOpen] = useState(false);
-  const [compare, setCompare] = useState<Scenario[] | null>(null);
   /** The folder a pending "New room…" dialog should file its result into. */
   const [pendingProjectId, setPendingProjectId] = useState<string | null>(null);
   /** A one-shot spoken explanation for a keyboard command that could not act
@@ -344,48 +340,14 @@ export default function AppInner({ initialStore, persistMode, showFirstRun, drop
     setScene((s) => removeListener(s, id));
   };
 
-  /** Open the N-up compare, seeded with the two most useful scenarios: two seats
-   *  of this layout if it has them, else this layout vs a sibling design (one from
-   *  the same project first — those are the variants you actually want side by
-   *  side). The user adds further columns from inside. */
-  const openCompare = () => {
-    const seats = sceneListeners(scene);
-    const here = active.id;
-    let initial: Scenario[];
-    if (seats.length >= 2) {
-      initial = [
-        { layoutId: here, seatId: seats[0].id },
-        { layoutId: here, seatId: seats[1].id },
-      ];
-    } else if (store.layouts.length >= 2) {
-      const sibling =
-        store.layouts.find((l) => l.id !== here && l.projectId === active.projectId) ??
-        store.layouts.find((l) => l.id !== here) ??
-        active;
-      initial = [
-        { layoutId: here, seatId: activeListener(scene).id },
-        { layoutId: sibling.id, seatId: sceneListeners(sibling.scene)[0].id },
-      ];
-    } else {
-      const seat = activeListener(scene).id;
-      initial = [
-        { layoutId: here, seatId: seat },
-        { layoutId: here, seatId: seat },
-      ];
-    }
-    // A toast's Undo button renders ABOVE the compare layer (z-80 vs z-60) and
-    // mutates the store — which would recompute columns and could fire THE LOCK
-    // ignition for a lock the user did not just achieve. Compare is read-only, so
-    // the toast goes away when it opens.
-    dismissToast();
-    closeFloatingPanels();
-    setGalleryOpen(false);
-    setCompare(initial);
-  };
-  /** Compare needs two comparable things. Two projects do not add comparability on
-   *  their own — a project with no layouts has nothing to show — but two layouts
-   *  in different projects are already covered by the layout count. */
-  const canCompare = sceneListeners(scene).length >= 2 || store.layouts.length >= 2;
+  const { compare, setCompare, openCompare, canCompare } = useCompare({
+    scene,
+    store,
+    active,
+    dismissToast,
+    closeFloatingPanels,
+    setGalleryOpen,
+  });
 
   const {
     newProject,
@@ -650,45 +612,9 @@ export default function AppInner({ initialStore, persistMode, showFirstRun, drop
   };
 
   // --- shareable output (item H) -------------------------------------------------
-
-  /** Render the current plan to a PNG and hand it to the browser download flow.
-   *  Nothing leaves the app except via this explicit user click. */
-  const exportPlanImage = () => {
-    renderPlanToBlob({ scene, settings, trace, audio, bestSpot, theme })
-      .then((blob) => {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = planImageFilename(active.name);
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
-        showToast('Saved the plan image', { tone: 'ok' });
-      })
-      .catch(() => showToast('Could not export the plan image.', { tone: 'bad' }));
-  };
-
-  /** Copy the verdict headline + cause + seat to the clipboard (single source:
-   *  `deriveVerdict`, same as the hero). Guards for an absent clipboard API. */
-  const copyVerdict = () => {
-    if (audio.pairs.length === 0) {
-      showToast('No verdict yet — place a stereo pair first.', { tone: 'bad' });
-      return;
-    }
-    const view = deriveVerdict(audio, trace, settings.tvAnchor);
-    const seat = activeListener(scene).name;
-    const text = `Phantom Lock — ${view.headline} at ${seat}.${view.cause ? ` ${view.cause}` : ''}`;
-    const clip = navigator.clipboard;
-    if (!clip?.writeText) {
-      showToast('Copying isn’t available in this browser.', { tone: 'bad' });
-      return;
-    }
-    clip
-      .writeText(text)
-      .then(() => showToast('Verdict copied to clipboard', { tone: 'ok' }))
-      .catch(() => showToast('Could not copy the verdict.', { tone: 'bad' }));
-  };
+  const { exportPlanImage, copyVerdict } = useShareActions({
+    scene, settings, active, trace, audio, bestSpot, theme, showToast,
+  });
 
   const applyProposal = () => {
     if (!proposal || proposal.speakers.length === 0) return;
@@ -794,59 +720,17 @@ export default function AppInner({ initialStore, persistMode, showFirstRun, drop
     });
 
   // --- the off-screen spoken mirror (S7) -----------------------------------
-  // Reuses deriveVerdict, so the spoken readout and the visible VerdictHero can
-  // never drift. Cheap: useSimulation already runs unconditionally in both
-  // modes, so this is a reduce + one sentence, no engine work.
-  const announceInput: AnnounceInput = {
+  const { readout, selectionText } = useSpokenMirror({
+    scene,
+    settings,
+    selection,
     appMode,
-    seatName: activeListener(scene).name,
-    seatCount: sceneListeners(scene).length,
-    speakerCount: scene.speakers.length,
-    wallCount: scene.objects.filter((o) => o.kind === 'wall').length,
-    objectCount: scene.objects.filter((o) => o.kind !== 'wall').length,
-    areaCount: scene.rooms?.length ?? 0,
-    showBestSpot: settings.showBestSpot,
-    // `best` is nullable even when the field object exists — treating a present
-    // field as "found" would announce a spot that isn't there.
-    bestSpotFound: bestSpot?.best != null,
-    verdict: appMode === 'tune' ? deriveVerdict(audio, trace, settings.tvAnchor) : null,
-  };
-  const prevAnnounceRef = useRef<AnnounceInput | null>(null);
-  const announceText = announcementFor(announceInput, prevAnnounceRef.current);
-  // The baseline advances in an EFFECT, never during render. Writing it inline
-  // is a render-purity violation that StrictMode makes visible: React
-  // double-invokes the render body, the ref persists between the two
-  // invocations, so the second (committing) one sees prev === current,
-  // `countsChanged` is permanently false, and the scene-inventory clause is
-  // never announced again after mount — silently, and ONLY in dev, which is
-  // exactly where this project does its live verification. Same reason
-  // `useLockIgnition` (VerdictHero.tsx) does its ref work in an effect.
-  useEffect(() => {
-    prevAnnounceRef.current = announceInput;
+    trace,
+    audio,
+    bestSpot,
+    overlayOpen,
+    notice,
   });
-  const readout = useAnnouncer(announceText, overlayOpen);
-
-  // Selection is discrete and user-initiated, so it is announced immediately
-  // rather than through the settle window. A transient `notice` (set by a
-  // command that could not do anything) pre-empts it — silence is the one thing
-  // a live-region-only user cannot interpret.
-  const selectionText = (() => {
-    if (notice) return notice;
-    // NOT "selection cleared" here: a null selection is also the boot state, and
-    // announcing it on first paint is the very thing this design avoids. The
-    // deselect TRANSITION is announced from the Escape command instead.
-    if (!selection) return '';
-    if (selection.type === 'multi') {
-      const n = selection.objectIds.length + selection.speakerIds.length;
-      return `${n} item${n === 1 ? '' : 's'} selected.`;
-    }
-    const order = cycleOrder(scene);
-    const id = selection.type === 'listener' ? (scene.activeListenerId ?? '') : selection.id;
-    const entry = order.find((e) => e.id === id);
-    // Same unit expansion the verdict path gets — otherwise "0.74 m" is spoken
-    // as "em" here while the readout says "metres" a second later.
-    return entry ? speakableUnits(describePosition(order, entry)) : '';
-  })();
 
   useKeyboardShortcuts({
     state: {
