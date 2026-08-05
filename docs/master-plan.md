@@ -937,28 +937,113 @@ the seat's room, never push one IN (without it 7 → **9**); and a pin is a pref
 
 | metric | before | after |
 |---|---|---|
-| TOTAL | 0.8552 | **0.8594** (+0.0044 against a fixed denominator) |
-| placement | 0.9984 | **0.9988** |
+| TOTAL | 0.8552 | **0.8595** (+0.0044 against a fixed denominator) |
+| placement | 0.9984 | **0.9997** |
 | programme | 0.9583 | **0.9986** |
-| density | 0.4160 | 0.4140 (**0.4154** corrected) |
-| orientation | 0.7696 | 0.7653 (47 more pairs measured; 25 more oriented absolutely) |
+| density | 0.4160 | 0.4144 (**0.4152** corrected) |
+| orientation | 0.7696 | 0.7639 |
 | lock | 0.9854 | **0.9854** |
-| designs skipping a piece | 9 / 480 | **7 / 480** |
-| designs with no speakers | 7 / 480 | **7 / 480** |
+| designs skipping a piece | 9 / 480 | **2 / 480** |
+| designs with no speakers | 7 / 480 | **7 / 480** — one LOST, one GAINED |
+
+**Three of those numbers mean less than they look, and self-review is what established it.**
+`placement` and "designs skipping" improve mostly by RECLASSIFICATION: pieces actually placed went
+**7696 -> 7689 (seven fewer)** while reported skips went 10 -> 2, because per-room `optional`
+correctly makes a big living room's dining table an unmet ambition rather than a failed promise. A
+control that keeps every line of plumbing and disables only the pin is **byte-identical in geometry
+to `main` on all 480 designs** while already reporting 4 fewer skips. `no speakers 7 -> 7` is a net
+figure over a swap: `two-bed`/12345 (which is `SEEDS[0]`) loses its pair and `railroad`/387289262
+gains one — and the mechanism is second-order, since rule 1 stops fill being PINNED into the seat's
+room but not being PUSHED there when the bedrooms fill up. `orientation` falls for real: total misses
+462 -> 473, **8 designs worse and 0 better**, all on the living room's sofa-to-TV axis.
 
 **Two instrument facts established here that will bite the next measurement.** `density` is
 CONFOUNDED — `regionOf` grids off `sceneBounds`, which includes furniture, so moving a piece
-re-phases the walkable denominator; one candidate's reported +0.0041 TOTAL became −0.0026 once
-corrected, and 199 designs had a moving denominator with a byte-identical footprint.
-`orientation` has a moving denominator in the other direction. Use
-`docs/sessions/S39/bench/density-counterfactual.mts`.
+re-phases the walkable denominator; one candidate's reported +0.0041 TOTAL became -0.0026 once
+corrected, and 199 designs had a moving denominator with a byte-identical footprint. And an "it is
+only a denominator artefact" reading of `orientation` was TRUE of an intermediate variant (which
+pinned the TV, making 47 more pairs measurable) and FALSE of what shipped — re-run every attribution
+against the final build. Use `docs/sessions/S39/bench/density-counterfactual.mts`.
 
 **Deferred with numbers, not dropped:** pinning the TV fixes 13 designs where it lands in the bedroom
-while the sofa and listener stay in the living room 4.5–6.3 m away (the sofa follows in **0 of 13**),
-and costs 2 designs their pair — filed as §15c with all thirteen seeds. A pre-existing dialog defect
-found on the way is §15d.
+while the sofa and listener stay in the living room 4.5-6.3 m away (the sofa follows in **0 of 13**),
+and costs 2 designs their pair — filed as §15c with all thirteen seeds and a measured refutation of
+the obvious way round it. A pre-existing dialog defect found on the way is §15d.
 
-**Evidence block** at the end of this entry.
+---
+
+### Evidence block — Session 39
+
+**Agents spawned (11 across two workflows, plus a synthesis and a verify pass).**
+
+| role | verdict |
+|---|---|
+| `miss-census` (diagnose) | all 60 programme misses are WRONG-ROOM; table matched my own census exactly |
+| `bed-tracker` (diagnose) | filed cause CONFIRMED as to *what*, REFUTED as to *why* — `zoneAffinity` cancels in 34 of 36 |
+| `soft-alternatives` (diagnose) | no soft variant reaches `two-bed` 1.000; 34/60 unchanged at rewards 3.0, 6.0 and -3.0 |
+| `seam-map` (diagnose) | `items.find` named as the single most dangerous line; measured two bed items -> ONE bed |
+| `dialog-caller` (diagnose) | `apartmentScene().rooms` is `undefined`; the room filter is a structural no-op for every shipped layout |
+| `synthesis` | reconciled five reports; caught that one candidate's density gain was a denominator artefact |
+| `correctness` (review) | no CRITICAL/HIGH; one MEDIUM — the global cap could drop a PROMISE, order-dependent |
+| `test-holes` (review) | two HIGH — the rule-2 fixture could not express its own bug; nothing pinned the fallback recursion |
+| `containment` (review) | no CRITICAL/HIGH; dialog identical over 900 randomised runs; determinism, round-trips and cost all clean |
+| `quality` (review) | two HIGH — the veto figure did not reproduce; the placement gain is reclassification |
+| `verify` (adversarial) | settled a disagreement between lenses AGAINST one of them; confirmed both HIGHs; refuted one LOW |
+
+**Everything the review found that was real was fixed, and two of the fixes improved the result:**
+the required-before-optional sort took designs skipping a piece from 7 to **2** of 480, and the
+rewritten fixture plus the fallback test took the negative-control suite from 15 to **21**.
+
+**Before/after test count: 1893 -> 1915** (+22). `arrange.test.ts` 21 -> 35, `generate.test.ts` 52 -> 60.
+
+**Negative controls: 21, and all 21 are caught by the test written FOR them**
+(`docs/sessions/S39/bench/negative-controls.txt`). Three escaped across two rounds and every one was
+a flaw in the CONTROL, not a hole in the tests — recorded in `CLAUDE.md`'s lessons.
+
+**Gate output, pasted literally:**
+
+```
+ Test Files  80 passed (80)
+      Tests  1915 passed (1915)
+
+> phantom-lock@0.1.0 lint
+> eslint .
+
+dist/index.html                   1.31 kB | gzip:   0.63 kB
+dist/assets/index-j_hTKTEs.css   54.90 kB | gzip:  10.24 kB
+dist/assets/index-CpNzxgSH.js   518.98 kB | gzip: 169.28 kB
+```
+
+Coverage for the two files touched: `arrange.ts` **92.64 %** stmts / 94.17 % branch,
+`generate/index.ts` **98.80 %** / 91.30 %. The CSS asset hash is byte-identical to S36/S37/S38's,
+which is the cheapest proof no stylesheet was touched.
+
+**Live verification** (`docs/sessions/S39/live-run.txt`, screenshots in `docs/sessions/S39/shots/`).
+Fresh headless-Chrome profile = fresh origin = its own IndexedDB, so the owner's real layouts were
+never read or written; the run asserts the six seeded demo layouts are what is present and writes
+`backup.json` before touching anything. Generated a `two-bed` design through the real UI
+("Open two bedroom"): **2 bedrooms checked, 0 without a bed** — Guest bedroom 26.6 m2 holds Bed,
+Wardrobe, Desk, Cabinet, Round table, 2 Plants; Bedroom 34.6 m2 holds Bed, Wardrobe, Desk, Cabinet,
+4 Plants; the Living room holds both Sofas, the TV, 3 Bookshelves and the Dining table, and the
+verdict reads "Phantom center locked". Both canvas themes render (`stage` -> `stage stage-plan`), the
+"Arrange furniture for me" dialog runs on the demo with no spurious skip notice, 390 px shows
+`scrollWidth === clientWidth === 390` (no overflow), and zero console errors.
+
+**Acceptance, bullet by bullet:**
+
+| bullet | status |
+|---|---|
+| `two-bed` `programme` measurably up from 0.800 | **met** — 0.800 -> **1.000** |
+| no regression in the corpus total (0.8552) | **met** — 0.8595, +0.0044 with the denominator held fixed |
+| no regression in no-speaker designs (7/480) | **met** — 7/480, stated honestly as one lost and one gained |
+| the dialog exercised on the bundled demo, notices read | **met** — byte-identical before/after, and read verbatim live |
+| tests for the new per-room filter | **met** — +22, 1893 -> 1915 |
+| negative controls, each caught by its own test | **met** — 21/21 |
+| ratchet respected | **met** — 1915 > 1893 |
+
+**Stated honestly:** live checks ran ONE browser (headless Chrome over CDP), not cross-browser. No
+real screen reader was driven. The generator's own visual quality was judged from the saved
+screenshots and the score vector, not from a user study.
 
 ### Session 38 — 2026-08-05 — finished the SimCanvas decomposition, and fixed the instrument (§18a + §18d)
 

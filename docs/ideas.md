@@ -1299,8 +1299,10 @@ reported +0.0041 TOTAL became −0.0026 once corrected. Always run
 is NOT a denominator artefact — though an intermediate variant of this very change made it look like
 one. That variant pinned the TV, which co-located 47 more (sofa, TV) pairs and made them measurable
 at all. What SHIPPED does not pin the TV, so `orientable` is unchanged at **1730** and `oriented`
-simply fell by **11**: 8 designs, every one on the living room's sofa-to-TV axis, and disabling only
-the pin restores exactly 0.7696. Three of the eight are `railroad` designs that are hugely better
+simply fell by **11**: total misses 462 -> 473, and the MISSES are one-directional — 8 designs worse,
+**0 better**, every one on the living room's sofa-to-TV axis. (The per-design SCORE does move both
+ways, 7 better and 13 worse, because each design's orientable denominator differs; the misses are the
+honest signal.) Disabling only the pin restores exactly 0.7696. Three of the eight are `railroad` designs that are hugely better
 overall (387289262 goes from a bed in the LIVING ROOM and no speakers, to a bed in the bedroom and a
 locked pair) — the metric worsening while the plan improves.
 

@@ -695,6 +695,11 @@ function scoreSlot(ctx: Ctx, preset: FurniturePreset, slot: Slot): Evaluated | n
  * speakers / 9 designs skipping a piece`; the goal is programme, and the two
  * numbers that must not move are the other two.
  *
+ * ⚠️ "7 no-speaker designs, unchanged" is a NET figure over a SWAP, not a proof
+ * that nothing moved: `two-bed`/12345 — which is `SEEDS[0]`, the first tile on
+ * any contact sheet — loses its pair, and `railroad`/387289262 gains one. The
+ * mechanism is second-order and is called out under rule 1.
+ *
  *   1. Only a REQUIRED piece is pinned. A room's `core` is a promise and its
  *      `fill` is an ambition (see `ArrangeItem.optional`), and the fill has
  *      somewhere better to be whenever its own room is full. Pinning fill too

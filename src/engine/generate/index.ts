@@ -275,8 +275,8 @@ export function inventoryFor(cells: Cell[], roomIds?: readonly string[]): Arrang
   // With room ids, the SAME tallies are returned per cell instead of summed, so
   // `arrangeFurniture` can keep each room's promise in that room. Without them
   // the aggregate below is byte-identical to the pre-S39 return, which is what
-  // makes this invisible to `suggestInventory`'s caller and to the 25 test call
-  // sites that pass no ids.
+  // makes this invisible to `suggestInventory`'s caller and to the 12 test call
+  // sites in `generate.test.ts` that pass no ids.
   //
   // ⚠️ ONE CONSEQUENCE WORTH STATING, because it moves a headline number for a
   // reason that is not "more furniture landed". The aggregate merges `optional`
