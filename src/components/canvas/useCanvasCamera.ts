@@ -69,9 +69,14 @@ export function useCanvasCamera(a: Args): CanvasCamera {
   bandRef.current = a.isBandDragging;
 
   /** Rotate the whole view by dr radians around the canvas centre. */
+  // Destructured: the callback is created once (its only dep is a stable ref),
+  // so closing over the whole `a` would pin the FIRST render’s args object.
+  // Today every member it could reach is a ref, but the next member added to
+  // Args would be silently frozen at mount.
+  const { containerRef } = a;
   const rotateBy = useCallback(
     (dr: number) => {
-      const el = a.containerRef.current;
+      const el = containerRef.current;
       setView((prev) => {
         if (!prev || !el) return prev;
         const cx = el.clientWidth / 2;
@@ -82,7 +87,7 @@ export function useCanvasCamera(a: Args): CanvasCamera {
         return { scale: prev.scale, rot, ox: cx - r.x * prev.scale, oy: cy - r.y * prev.scale };
       });
     },
-    [a.containerRef],
+    [containerRef],
   );
 
   const s2w = useCallback(

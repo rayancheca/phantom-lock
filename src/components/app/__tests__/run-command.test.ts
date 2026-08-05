@@ -281,16 +281,17 @@ describe('runCommand — cycle', () => {
   });
 
   it('a non-seat entry sets the selection and does NOT switch seats', () => {
-    // Start on the last seat so one forward step lands on an object.
+    // `cycleOrder` is seats, then speakers, then objects in reading order. This
+    // fixture has two seats and one object, so stepping BACK from the active
+    // seat wraps to the last entry — the object — which is the non-seat case.
     const { ctx, calls } = makeCtx({
       scene: sceneWith([rect('r1')]),
-      selection: { type: 'object', id: 'r1' },
+      selection: { type: 'listener' },
     });
-    runCommand({ type: 'cycle', dir: 1 }, ctx);
-    expect(calls).toEqual(['switchSeat']);
-    const back = makeCtx({ scene: sceneWith([rect('r1')]), selection: { type: 'listener' } });
-    runCommand({ type: 'cycle', dir: -1 }, back.ctx);
-    expect(back.calls.length).toBe(1);
+    runCommand({ type: 'cycle', dir: -1 }, ctx);
+    expect(calls).toEqual(['setSelection']);
+    expect(ctx.switchSeat).not.toHaveBeenCalled();
+    expect(ctx.setSelection).toHaveBeenCalledWith({ type: 'object', id: 'r1' });
   });
 });
 

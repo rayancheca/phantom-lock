@@ -224,7 +224,7 @@ export default function AppInner({ initialStore, persistMode, showFirstRun, drop
     updateListener, deleteMulti, switchSeat, addSeat, renameSeat, removeSeat,
     seatSelection, splitWall, addPreset, matchVolumes,
   } = useSceneEdits({
-    scene, settings, active, setScene, setSelection, setSettings,
+    scene, settings, active, setScene, setSelection,
     showToast, undoScene, lastDeletedRef, setNotice,
   });
 
@@ -256,19 +256,12 @@ export default function AppInner({ initialStore, persistMode, showFirstRun, drop
     lastDeletedRef,
   });
 
-
-
-
-
   /** First-run "Start from a floorplan photo" — the DESIGN photo-import entry,
    *  reusing the same underlay builder as UnderlayCard. */
 
   /** Two calibration clicks arrived — scale the underlay so they match reality. */
 
-
-
   /** A dragged room box arrived from the canvas — ask for its name. */
-
 
   // --- floorplan wall detection ---------------------------------------------
 
@@ -290,7 +283,6 @@ export default function AppInner({ initialStore, persistMode, showFirstRun, drop
   useEffect(() => {
     discardDetectionRef.current = detection.discard;
   }, [detection.discard, discardDetectionRef]);
-
 
   /** Add a named rectangular room to the CURRENT layout — flush against the
    *  existing bounds, so a house composes room by room. */
@@ -347,13 +339,10 @@ export default function AppInner({ initialStore, persistMode, showFirstRun, drop
 
   // --- optimizer -----------------------------------------------------------------
 
-
-
   // --- shareable output (item H) -------------------------------------------------
   const { exportPlanImage, copyVerdict } = useShareActions({
     scene, settings, active, trace, audio, bestSpot, theme, showToast,
   });
-
 
   // --- keyboard --------------------------------------------------------------------
 

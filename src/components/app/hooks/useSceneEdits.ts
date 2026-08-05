@@ -29,7 +29,6 @@ interface Args {
   active: Layout;
   setScene: (next: (s: Scene) => Scene) => void;
   setSelection: (sel: Selection) => void;
-  setSettings: (s: SimSettings) => void;
   showToast: (message: string, opts?: Partial<Omit<ToastData, 'id' | 'message'>>) => void;
   undoScene: () => void;
   /** The app's SINGLE undo slot, minted in AppInner and shared with
@@ -204,7 +203,7 @@ export function useSceneEdits(a: Args): SceneEdits {
     const center: Vec2 = { x: (b.min.x + b.max.x) / 2, y: (b.min.y + b.max.y) / 2 };
     // A door/window preset drops onto the nearest wall (correctly aligned) rather
     // than floating unrotated in mid-room. `makeOpening` gives byte-identical
-    // defaults to the preset, so there is no dimensional drift; if the a.scene has
+    // defaults to the preset, so there is no dimensional drift; if the scene has
     // no wall yet, fall through to the plain centre drop below.
     if (preset.role === 'door' || preset.role === 'window') {
       const res = openingNearPoint(a.scene, center, preset.role);
@@ -247,13 +246,8 @@ export function useSceneEdits(a: Args): SceneEdits {
     a.setSelection({ type: 'object', id: obj.id });
   };
 
-  /** First-run "Start from a floorplan photo" — the DESIGN photo-import entry,
-   *  reusing the same underlay builder as UnderlayCard. */
-
-  /** Two calibration clicks arrived — scale the underlay so they match reality. */
-
-  /** A dragged room box arrived from the canvas — ask for its name. */
-
+  /** Level-match every speaker at the active seat, so a pair is judged on
+   *  geometry rather than on whichever pod happens to be louder. */
   const matchVolumes = () => {
     const trims = matchTrims(a.scene.speakers, a.scene.listener);
     a.setScene((s) => ({

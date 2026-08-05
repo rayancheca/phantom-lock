@@ -271,9 +271,13 @@ export default function SimCanvas({
   });
 
   // --- zoom / pan / space -------------------------------------------------
+  // Space / view-rotate / chain-Backspace. Deliberately ONE window listener:
+  // splitting it per concern would call `canvasKeyAction` twice per keystroke
+  // and put the "a Space keyup ALWAYS disarms" invariant behind two paths.
+  // It no longer touches the canvas element (the wheel listener moved to
+  // useCanvasCamera in S37), so it no longer bails when the ref is empty —
+  // that guard would have silently dropped the whole key contract.
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
       const action = canvasKeyAction(

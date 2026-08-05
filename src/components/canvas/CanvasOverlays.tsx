@@ -75,8 +75,9 @@ export function WallActionsChip({ at, view, chipRef, canvasRef, onInsert, onDism
   );
 }
 
-/** Whole degrees of view rotation, normalised into (-180, 180]. */
-export function viewRotationDeg(view: View | null): number {
+/** Whole degrees of view rotation, normalised into (-180, 180]. Module-private:
+ *  the compass is its only consumer, and an export with none invites drift. */
+function viewRotationDeg(view: View | null): number {
   return view ? Math.round(((((view.rot * 180) / Math.PI + 180) % 360) + 360) % 360) - 180 : 0;
 }
 
