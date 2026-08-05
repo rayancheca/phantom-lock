@@ -10,13 +10,15 @@ import {
   nextWallHover,
   openingGhost,
   pointInMarquee,
-  popChainSegment,
   resolveSelection,
   selectionFromBand,
   selectionSets,
   wallHoverAt,
   watchDevicePixelRatio,
 } from '../interaction';
+// MOVED to chain.ts in S38 — see the note there; importing it from `interaction`
+// would need a re-export, and that re-export closed a runtime import cycle.
+import { popChainSegment } from '../chain';
 import { worldToScreen, type View } from '../render';
 import { addListener, blankScene, makeSpeaker } from '../../../engine/scene';
 import type { Scene, SceneObject, SpeakerObj, WallObj } from '../../../engine/types';

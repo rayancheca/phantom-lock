@@ -1625,6 +1625,17 @@ next `Runtime.evaluate` hanging until the 60 s timeout, twice. Asserting visibil
 
 ### 18e. Three harness-script checks fail SYMMETRICALLY — **P3**
 
+**The boot-canvas flake.** Steps `00-boot` and `01-intro-dismissed` diverge on roughly half of runs,
+and the characterisation is complete enough to close the question: it appears in a base-vs-BASE
+control on byte-identical directories (so it cannot be build-related), **three** distinct hash values
+were observed across the session (`fc4b47c2`, `b31beb94`, `7ecb08c7`), the roles swap between runs,
+and the value is STABLE within a leg — three reads 400 ms apart are identical, so it is a settled
+two-or-three-state boot rather than a repaint still in flight. It converges by step 2 and never
+recurs. `bootPaintStable` and `fontsLoaded` are both true in every leg. Two consecutive base-vs-head
+runs of the FINAL build returned 0 divergences, as did their base-vs-base control. Worth finding —
+the likely candidates are the fit-on-mount measuring a container at two different moments, or the
+one `repaintOnFontLoad` repaint interleaving with it — but it is instrument noise, not a regression.
+
 `gripReturnedHome`, `marqueeSelected` and `multiDeleted` are `false` in BOTH legs, including in a
 base-vs-BASE control on byte-identical directories, so they cannot be a regression. They are almost
 certainly stale coordinates: the grip resize/return steps only became REACHABLE in S38 (the probe had

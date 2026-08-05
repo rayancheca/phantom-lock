@@ -16,7 +16,7 @@ import { WALL_HOVER_APPEAR_PX, resolveSelection, selectionSets, wallHoverAt } fr
 import { snapPoint } from './placement';
 
 /**
- * What a pointerdown MEANS — the twelve-branch ladder, as a pure function (S38).
+ * What a pointerdown MEANS — the whole pointerdown ladder, as a pure function (S38).
  *
  * `SimCanvas.onPointerDown` used to interleave the decision with the effects it
  * causes (`startDrag`, `onScene`, `onSelection`, `setBandBoth`, `calibRef`), so
@@ -132,7 +132,9 @@ export interface PickEffects {
  * group is still closed, so the seat switch lands as its OWN undo entry and the
  * reposition that follows as another. Start the drag first and the two merge into
  * one step, so a single ⌘Z that should have undone the move also undoes the seat
- * change. Pinned by a test that counts history entries, not scenes.
+ * change. Pinned by `pick.test.ts`'s "THE ORDER THAT MATTERS", which asserts the
+ * SEQUENCE of effect calls with spies — the undo consequence itself is a property
+ * of `useSceneHistory`'s coalescing and is not re-derived here.
  */
 export function applyPickAction(act: PickAction, fx: PickEffects): void {
   switch (act.kind) {

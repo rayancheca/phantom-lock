@@ -13,8 +13,9 @@ import { snapPoint } from './placement';
  *
  *     closing ? points[0] : snapToWalls(snap(angleSnap(last, snap(raw))), …)
  *
- * written out twice, verbatim, forty lines apart. They were identical (checked
- * character by character before the move) — which is exactly the arrangement in
+ * written out twice, verbatim, **355 lines apart** (`main`'s SimCanvas.tsx:419 and
+ * :774 — measured, not estimated). They were identical, checked character by
+ * character before the move — which is exactly the arrangement in
  * which a later edit to one silently makes the preview lie about where the click
  * will land. `chainVertex` is now the ONE definition and both callers read it.
  *
@@ -127,19 +128,27 @@ export function chainStep(
   const vtx = chainVertex(points, raw, ctx);
   if (points.length === 0) return { ...vtx, wall: null };
   const last = points[points.length - 1];
-  if (v.dist(last, vtx.at) < MIN_SEGMENT_M) return { ...vtx, wall: null };
-  return {
-    ...vtx,
-    wall: {
-      id: newId('wall'),
-      kind: 'wall',
-      a: last,
-      b: vtx.at,
-      absorption: 0.12,
-      label: 'Wall',
-      height: ROOM_HEIGHT,
-    },
-  };
+  // ⚠️ Written as `>=`, not as the more natural `if (dist < MIN) return null`.
+  // The two differ on exactly one input and in the dangerous direction: `NaN >=
+  // 0.15` is false so the original creates NO wall, while `NaN < 0.15` is ALSO
+  // false, so the inverted form falls through and commits a wall with NaN
+  // endpoints — which `sanitizeScene` keeps and which poisons every downstream
+  // distance. I wrote the inverted form first; a review lens caught it.
+  if (v.dist(last, vtx.at) >= MIN_SEGMENT_M) {
+    return {
+      ...vtx,
+      wall: {
+        id: newId('wall'),
+        kind: 'wall',
+        a: last,
+        b: vtx.at,
+        absorption: 0.12,
+        label: 'Wall',
+        height: ROOM_HEIGHT,
+      },
+    };
+  }
+  return { ...vtx, wall: null };
 }
 
 /**

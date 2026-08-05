@@ -19,7 +19,8 @@ import {
  *
  * The property these exist to protect: the CLICK path and the cursor-PREVIEW
  * path used to carry the same four-call composition written out twice, verbatim,
- * forty lines apart. `chainVertex` is now the one definition, so the ghost cannot
+ * **355 lines apart** (`main`'s SimCanvas.tsx:419 and :774). `chainVertex` is now
+ * the one definition, so the ghost cannot
  * promise a vertex the click would not land on — and the tests below are what
  * stop a later edit re-splitting them.
  *
@@ -253,6 +254,21 @@ describe('chainStep', () => {
     expect(out.wall!.b).toEqual(pts[0]);
   });
 
+  it('a NaN pointer creates NO wall — the guard must be `>=`, not an inverted `<`', () => {
+    // The two forms differ on exactly one input and in the dangerous direction:
+    // `NaN >= 0.15` is false so no wall is made, while `NaN < 0.15` is ALSO false,
+    // so the inverted form falls THROUGH and commits a wall with NaN endpoints.
+    // `sanitizeScene` keeps those, and every downstream distance is then NaN.
+    // I wrote the inverted form first and a review lens caught it; this is the
+    // test that would have.
+    freshIds();
+    const out = chainStep([{ x: 0, y: 0 }], { x: NaN, y: NaN }, ctx(), newId);
+    expect(out.wall).toBeNull();
+    // The control that makes it non-vacuous: the same call with a real point DOES
+    // create one, so this cannot pass by the branch simply never firing.
+    expect(chainStep([{ x: 0, y: 0 }], { x: 3, y: 0 }, ctx(), newId).wall).not.toBeNull();
+  });
+
   it('the id factory is INJECTED — nothing here reaches for createId', () => {
     freshIds();
     const ids: string[] = [];
@@ -347,9 +363,13 @@ describe('popChainSegment + chainUndo', () => {
   });
 
   it('THE INVARIANT: click, click, click, Backspace, Backspace walks back exactly', () => {
-    // The whole reason groups are tracked per SEGMENT. Replayed end to end so a
-    // future edit that pushes a group for the FIRST vertex (which owns no
-    // segment) puts the two lists out of step and reds this.
+    // The whole reason groups are tracked per SEGMENT, replayed end to end.
+    // ⚠️ HONEST LIMIT: the `if (!first)` rule lives in `SimCanvas.addChainPoint`,
+    // not in `chain.ts`, so this test RE-STATES it rather than reading it — an
+    // edit to the component would not red this. It pins the CONTRACT the
+    // component must satisfy (and `chainStep`/`chainUndo`/`popChainSegment`
+    // composing correctly under it); the component's own compliance is covered
+    // only by the CDP differential.
     freshIds();
     let points: Vec2[] = [];
     let groups: string[][] = [];

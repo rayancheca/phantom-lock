@@ -2,8 +2,8 @@
  * Pure, DOM-free helpers for the canvas interaction layer (Session 4).
  *
  * These were extracted OUT of `SimCanvas.tsx` so the interaction logic is
- * unit-testable under the vitest `node` env and so the (already over-cap)
- * component stops growing. Nothing here touches `document`, `window`, `canvas`,
+ * unit-testable under the vitest `node` env and so the component stops growing.
+ * It was over the 800-line cap from S16 until S38, which finished the job. Nothing here touches `document`, `window`, `canvas`,
  * or `Image` — `watchDevicePixelRatio` takes an injectable `win`.
  */
 import type {
@@ -215,9 +215,9 @@ export function nextWallHover(prev: WallHover | null, ctx: WallHoverContext): Wa
 
 /**
  * The opening tool's ghost: the door/window that a click right here would cut,
- * or null when the cursor is off every wall. Shares `wallHoverAt` + `makeOpening`
- * with `pick.ts`'s click path, so the ghost cannot promise an opening the click
- * would not create.
+ * or null when the cursor is off every wall. Shares `wallHoverAt` with `pick.ts`'s
+ * click path and `makeOpening` with the interpreter that click path feeds, so the
+ * ghost cannot promise an opening the click would not create.
  */
 export function openingGhost(
   objects: readonly SceneObject[],
@@ -236,10 +236,12 @@ export function openingGhost(
 // ---------------------------------------------------------------------------
 
 // `popChainSegment` MOVED to `chain.ts` in S38 — it is chain code, and it
-// predates the module by four sessions. Re-exported here so every existing
-// importer and its tests are byte-unchanged (the same move `render.ts` makes for
-// `view.ts` and `scene.ts` for `ids.ts`).
-export { popChainSegment } from './chain';
+// predates that module by four sessions. Deliberately NOT re-exported from here,
+// unlike `render.ts`'s re-export of `view.ts`: `chain.ts` imports `snapPoint`
+// from `placement.ts`, which imports `makeOpening` from THIS file, so the
+// convenience re-export closed a genuine runtime cycle
+// (interaction -> chain -> placement -> interaction). Its only remaining caller
+// was a test, so the import moved instead. Import it from './chain'.
 
 // ---------------------------------------------------------------------------
 // Fix 3 — marquee / lasso selection algebra + band geometry
