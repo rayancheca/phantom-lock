@@ -1,41 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type {
-  LayoutStore,
-  Scene,
-  SceneObject,
-  Selection,
-  SpeakerModel,
-  SpeakerObj,
-  ToolMode,
-  Vec2,
-} from '../../engine/types';
-import { matchTrims } from '../../engine/speakers';
-import { suggestPlacement, type PlacementOptions } from '../../engine/optimize';
-import { arrangeFurniture, suggestInventory, type ArrangeItem } from '../../engine/arrange';
+import type { LayoutStore, Scene, Selection, SpeakerModel, ToolMode } from '../../engine/types';
+import { suggestInventory } from '../../engine/arrange';
 import { useWallDetection } from './hooks/useWallDetection';
 import { useGenerateDesign } from './hooks/useGenerateDesign';
-import {
-  addListener,
-  createId,
-  FURNITURE_PRESETS,
-  removeListener,
-  renameListener,
-  sceneBounds,
-  sceneListeners,
-  setActiveListener,
-  splitWallAt,
-  addRoomShell,
-  updateActiveListener,
-} from '../../engine/scene';
+import { sceneListeners } from '../../engine/scene';
 import type { PersistMode } from '../../engine/db';
-import { buildUnderlay } from '../panels/underlay-import';
 import { useProjectActions } from './hooks/useProjectActions';
 import type { ToastData } from '../ui/Toast';
 import { initialMode, modeTheme, subStepForTool, type AppMode, type DesignSubStep, type ModeEntry } from './mode';
 import type { Deleted, DialogState } from './app-types';
 import type { KeyCommand } from './keyboard';
 import { runCommand } from './run-command';
-import { openingNearPoint, seatObjectAgainstWall } from '../canvas/placement';
 import { spokenSelection } from './announce';
 import LiveAnnouncer from './LiveAnnouncer';
 import { useLayoutStore } from './hooks/useLayoutStore';
@@ -45,6 +20,9 @@ import { usePersistence } from './hooks/usePersistence';
 import { useSimulation } from './hooks/useSimulation';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useShareActions } from './hooks/useShareActions';
+import { useProposals } from './hooks/useProposals';
+import { useSceneEdits } from './hooks/useSceneEdits';
+import { useBuildActions } from './hooks/useBuildActions';
 import { useCompare } from './hooks/useCompare';
 import { useSpokenMirror } from './hooks/useSpokenMirror';
 import AppHeader from './AppHeader';
@@ -98,10 +76,6 @@ export default function AppInner({ initialStore, persistMode, showFirstRun, drop
   const [placeModel, setPlaceModel] = useState<SpeakerModel>('homepod');
   const [dragging, setDragging] = useState(false);
   const [resetViewToken, setResetViewToken] = useState(0);
-  const [optimizeOpen, setOptimizeOpen] = useState(false);
-  const [proposal, setProposal] = useState<ReturnType<typeof suggestPlacement> | null>(null);
-  const [arrangeOpen, setArrangeOpen] = useState(false);
-  const [furnitureProposal, setFurnitureProposal] = useState<ReturnType<typeof arrangeFurniture> | null>(null);
   const [dialog, setDialog] = useState<DialogState>(null);
   const [toast, setToast] = useState<ToastData | null>(null);
   const [galleryOpen, setGalleryOpen] = useState(false);
@@ -177,19 +151,19 @@ export default function AppInner({ initialStore, persistMode, showFirstRun, drop
 
   // --- workflow: steps own the tools and the canvas view --------------------
 
-  /** Floating cards (optimizer, arrange, detected walls) never outlive the
-   *  context they were opened in — any step/layout/mode change closes them. */
-  /** `useWallDetection` is created far below this callback (it needs `scene`
-   *  and `setScene`), and this callback is deliberately mount-once. A ref is how
-   *  the rest of this file bridges that same gap — see `overlayOpenRef`. */
-  const discardDetectionRef = useRef<() => void>(() => {});
-  const closeFloatingPanels = useCallback(() => {
-    setOptimizeOpen(false);
-    setProposal(null);
-    setArrangeOpen(false);
-    setFurnitureProposal(null);
-    discardDetectionRef.current();
-  }, []);
+  const {
+    optimizeOpen, setOptimizeOpen, proposal, setProposal,
+    arrangeOpen, setArrangeOpen, furnitureProposal, setFurnitureProposal,
+    discardDetectionRef, closeFloatingPanels,
+    runOptimizer, applyProposal, runArrange, applyArrange,
+  } = useProposals({ scene, settings, active, setScene, setSettings, showToast, undoScene, lastDeletedRef });
+
+  const {
+    setUnderlay, importStarterPhoto, handleCalibrate, applyCalibration,
+    commitRoomZone, deleteRoom, addRoom,
+  } = useBuildActions({
+    scene, dialog, hasWalls, setScene, setDialog, setMode, setResetViewToken, showToast, undoScene,
+  });
 
   /** Enter a mode + sub-step (the single theme controller: theme derives from
    *  the mode). Re-arms the wall tool on a fresh DESIGN/Build canvas, mirroring
@@ -245,100 +219,14 @@ export default function AppInner({ initialStore, persistMode, showFirstRun, drop
   };
 
   // --- scene edits ----------------------------------------------------------
-
-  const updateObject = (id: string, patch: Partial<SceneObject>) => {
-    setScene((s) => ({
-      ...s,
-      objects: s.objects.map((o) => {
-        if (o.id === id) return { ...o, ...patch } as SceneObject;
-        if ((patch as { role?: string }).role === 'tv' && o.kind === 'rect' && o.role === 'tv') {
-          return { ...o, role: 'furniture' };
-        }
-        return o;
-      }),
-    }));
-  };
-
-  const deleteObject = (id: string) => {
-    const obj = scene.objects.find((o) => o.id === id);
-    if (obj) {
-      lastDeletedRef.current = { type: 'object', layoutId: active.id, obj };
-      showToast(`Deleted ${obj.kind === 'wall' ? 'wall' : obj.label || 'object'}`, {
-        action: { label: 'Undo', run: undoScene },
-      });
-    }
-    setScene((s) => ({ ...s, objects: s.objects.filter((o) => o.id !== id) }));
-    setSelection(null);
-  };
-
-  const updateSpeaker = (id: string, patch: Partial<SpeakerObj>) => {
-    setScene((s) => ({
-      ...s,
-      speakers: s.speakers.map((sp) => (sp.id === id ? { ...sp, ...patch } : sp)),
-    }));
-  };
-
-  const deleteSpeaker = (id: string) => {
-    const speaker = scene.speakers.find((s) => s.id === id);
-    if (speaker) {
-      lastDeletedRef.current = {
-        type: 'speaker',
-        layoutId: active.id,
-        speaker,
-        pairs: scene.pairs.filter(([a, b]) => a === id || b === id),
-      };
-      showToast(`Deleted speaker ${speaker.label}`, { action: { label: 'Undo', run: undoScene } });
-    }
-    setScene((s) => ({
-      ...s,
-      speakers: s.speakers.filter((sp) => sp.id !== id),
-      pairs: s.pairs.filter(([a, b]) => a !== id && b !== id),
-    }));
-    setSelection(null);
-  };
-
-  const setPairForSpeaker = (id: string, partnerId: string | null) => {
-    setScene((s) => {
-      const pairs = s.pairs.filter(
-        ([a, b]) => a !== id && b !== id && a !== partnerId && b !== partnerId,
-      );
-      if (partnerId) pairs.push([id, partnerId]);
-      return { ...s, pairs };
-    });
-  };
-
-  const updateListener = (patch: Partial<Scene['listener']>) => {
-    setScene((s) => updateActiveListener(s, patch));
-  };
-
-  /** Delete every member of a multi-selection in one undoable step. */
-  const deleteMulti = (objectIds: string[], speakerIds: string[]) => {
-    setScene((s) => ({
-      ...s,
-      objects: s.objects.filter((o) => !objectIds.includes(o.id)),
-      speakers: s.speakers.filter((sp) => !speakerIds.includes(sp.id)),
-      pairs: s.pairs.filter(([a, b]) => !speakerIds.includes(a) && !speakerIds.includes(b)),
-    }));
-    setSelection(null);
-    const n = objectIds.length + speakerIds.length;
-    showToast(`Deleted ${n} item${n === 1 ? '' : 's'}`, { action: { label: 'Undo', run: undoScene } });
-  };
-
-  // --- listening positions (seats) -----------------------------------------
-  const switchSeat = (id: string) => {
-    setScene((s) => setActiveListener(s, id));
-    setSelection({ type: 'listener' });
-  };
-  const addSeat = () => {
-    setScene((s) => addListener(s));
-    setSelection({ type: 'listener' });
-  };
-  const renameSeat = (id: string, name: string) => {
-    setScene((s) => renameListener(s, id, name));
-  };
-  const removeSeat = (id: string) => {
-    setScene((s) => removeListener(s, id));
-  };
+  const {
+    updateObject, deleteObject, updateSpeaker, deleteSpeaker, setPairForSpeaker,
+    updateListener, deleteMulti, switchSeat, addSeat, renameSeat, removeSeat,
+    seatSelection, splitWall, addPreset, matchVolumes,
+  } = useSceneEdits({
+    scene, settings, active, setScene, setSelection, setSettings,
+    showToast, undoScene, lastDeletedRef, setNotice,
+  });
 
   const { compare, setCompare, openCompare, canCompare } = useCompare({
     scene,
@@ -368,142 +256,19 @@ export default function AppInner({ initialStore, persistMode, showFirstRun, drop
     lastDeletedRef,
   });
 
-  /** Break a wall in two at a point (or its midpoint) and select the first half.
-   *  The id is computed synchronously so selection happens in this same handler. */
-  /**
-   * The ONE write seam for the seat command. The `f` key, the Inspector button and
-   * the touch HUD all land here, so none of them can bypass the same-ref no-op
-   * contract and push a phantom undo entry.
-   */
-  const seatSelection = (id: string) => {
-    const seated = seatObjectAgainstWall(scene, id, { snapOn: settings.snap });
-    if (seated === scene) {
-      setNotice('No wall within 1.2 m — drag it closer, then seat it.');
-      return;
-    }
-    setScene(() => seated);
-  };
 
-  const splitWall = (id: string, at?: Vec2) => {
-    const wall = scene.objects.find((o) => o.id === id);
-    if (!wall || wall.kind !== 'wall') return;
-    const [first, second] = splitWallAt(wall, at);
-    setScene((s) => ({
-      ...s,
-      objects: s.objects.flatMap((o) => (o.id === id ? [first, second] : [o])),
-    }));
-    setSelection({ type: 'object', id: first.id });
-  };
 
-  const addPreset = (presetId: string) => {
-    const preset = FURNITURE_PRESETS.find((p) => p.id === presetId);
-    if (!preset) return;
-    const b = sceneBounds(scene);
-    const center: Vec2 = { x: (b.min.x + b.max.x) / 2, y: (b.min.y + b.max.y) / 2 };
-    // A door/window preset drops onto the nearest wall (correctly aligned) rather
-    // than floating unrotated in mid-room. `makeOpening` gives byte-identical
-    // defaults to the preset, so there is no dimensional drift; if the scene has
-    // no wall yet, fall through to the plain centre drop below.
-    if (preset.role === 'door' || preset.role === 'window') {
-      const res = openingNearPoint(scene, center, preset.role);
-      if (res) {
-        setScene(() => res.scene);
-        setSelection({ type: 'object', id: res.objectId });
-        return;
-      }
-    }
-    const obj: SceneObject =
-      preset.kind === 'circle'
-        ? {
-            id: createId('circle'),
-            kind: 'circle',
-            center,
-            r: preset.w / 2,
-            absorption: preset.absorption,
-            label: preset.label,
-            height: preset.height,
-          }
-        : {
-            id: createId('rect'),
-            kind: 'rect',
-            center,
-            w: preset.w,
-            h: preset.h,
-            rotation: 0,
-            absorption: preset.absorption,
-            label: preset.label,
-            role: preset.role ?? 'furniture',
-            height: preset.height,
-          };
-    setScene((s) => {
-      const objects =
-        preset.role === 'tv'
-          ? s.objects.map((o) => (o.kind === 'rect' && o.role === 'tv' ? { ...o, role: 'furniture' as const } : o))
-          : s.objects;
-      return { ...s, objects: [...objects, obj] };
-    });
-    setSelection({ type: 'object', id: obj.id });
-  };
 
-  const setUnderlay = (underlay: Scene['underlay']) => {
-    setScene((s) => ({ ...s, underlay }));
-    if (underlay) setResetViewToken((n) => n + 1);
-  };
 
   /** First-run "Start from a floorplan photo" — the DESIGN photo-import entry,
    *  reusing the same underlay builder as UnderlayCard. */
-  const importStarterPhoto = (file: File) => {
-    buildUnderlay(file)
-      .then(setUnderlay)
-      .catch(() => showToast('Could not read that image.', { tone: 'bad' }));
-  };
 
   /** Two calibration clicks arrived — scale the underlay so they match reality. */
-  const handleCalibrate = (a: Vec2, b: Vec2) => {
-    const measured = Math.hypot(a.x - b.x, a.y - b.y);
-    setMode('select');
-    if (measured < 0.05) {
-      showToast('Those points are too close together — click two points further apart.', { tone: 'bad' });
-      return;
-    }
-    setDialog({ kind: 'calibrate', measured });
-  };
 
-  const applyCalibration = (measured: number, real: number) => {
-    const factor = real / measured;
-    setScene((s) =>
-      s.underlay ? { ...s, underlay: { ...s.underlay, scale: s.underlay.scale * factor } } : s,
-    );
-    setDialog(null);
-    setResetViewToken((n) => n + 1);
-    showToast('Floorplan rescaled to match the real distance.', { tone: 'ok' });
-  };
 
-  const runArrange = (items: ArrangeItem[]) => {
-    setFurnitureProposal(arrangeFurniture(scene, items));
-  };
 
   /** A dragged room box arrived from the canvas — ask for its name. */
-  const commitRoomZone = (name: string) => {
-    if (dialog?.kind !== 'room-name') return;
-    const { zone } = dialog;
-    setScene((s) => ({
-      ...s,
-      rooms: [
-        ...(s.rooms ?? []),
-        { id: createId('room'), name, at: zone.center, w: zone.w, h: zone.h },
-      ],
-    }));
-    setDialog(null);
-    setMode('select');
-    showToast(`Marked “${name}” — the optimizer can now target it`, { tone: 'ok' });
-  };
 
-  const deleteRoom = (id: string) => {
-    const room = scene.rooms?.find((r) => r.id === id);
-    setScene((s) => ({ ...s, rooms: (s.rooms ?? []).filter((r) => r.id !== id) }));
-    if (room) showToast(`Removed “${room.name}”`, { action: { label: 'Undo', run: undoScene } });
-  };
 
   // --- floorplan wall detection ---------------------------------------------
 
@@ -515,37 +280,20 @@ export default function AppInner({ initialStore, persistMode, showFirstRun, drop
     setMode,
   });
   const wallProposal = detection.keptWalls;
+  // Close the forward reference: `closeFloatingPanels` is mount-once and created
+  // long before `useWallDetection` exists, so the ref is the bridge. It stays a
+  // REGISTRATION here rather than moving inside useProposals, because the hook
+  // has no way to reach `detection`. `discardDetectionRef` is now a hook return
+  // rather than a local, so eslint can no longer prove it stable and asks for it
+  // by name — it is a useRef object, identity-fixed for the component's life, so
+  // listing it is a literal no-op and cheaper than a suppression.
   useEffect(() => {
     discardDetectionRef.current = detection.discard;
-  }, [detection.discard]);
+  }, [detection.discard, discardDetectionRef]);
 
-  const applyArrange = () => {
-    if (!furnitureProposal || furnitureProposal.objects.length === 0) return;
-    const n = furnitureProposal.objects.length;
-    setScene((s) => ({ ...s, objects: [...s.objects, ...furnitureProposal.objects] }));
-    setFurnitureProposal(null);
-    setArrangeOpen(false);
-    // Every scene-mutating apply is reversible with the same undo toast deletes get.
-    showToast(`Added ${n} furniture piece${n === 1 ? '' : 's'}`, {
-      action: { label: 'Undo', run: undoScene },
-    });
-  };
 
   /** Add a named rectangular room to the CURRENT layout — flush against the
    *  existing bounds, so a house composes room by room. */
-  const addRoom = (w: number, d: number, name: string) => {
-    const hadWalls = hasWalls;
-    setScene((s) => addRoomShell(s, name, w, d));
-    setDialog(null);
-    setMode('select');
-    setResetViewToken((n) => n + 1);
-    if (hadWalls) {
-      showToast(
-        `Added ${name.trim() ? `“${name.trim()}”` : 'a room'} next door — punch a door through the shared wall so sound can get through`,
-        { tone: 'ok' },
-      );
-    }
-  };
 
   // --- layout management (create / switch / rename / delete / import) ---------
   const {
@@ -599,65 +347,13 @@ export default function AppInner({ initialStore, persistMode, showFirstRun, drop
 
   // --- optimizer -----------------------------------------------------------------
 
-  const runOptimizer = (opts: PlacementOptions) => {
-    setProposal(suggestPlacement(scene, opts));
-  };
 
-  const matchVolumes = () => {
-    const trims = matchTrims(scene.speakers, scene.listener);
-    setScene((s) => ({
-      ...s,
-      speakers: s.speakers.map((sp) => ({ ...sp, trimDb: trims.get(sp.id) ?? sp.trimDb })),
-    }));
-  };
 
   // --- shareable output (item H) -------------------------------------------------
   const { exportPlanImage, copyVerdict } = useShareActions({
     scene, settings, active, trace, audio, bestSpot, theme, showToast,
   });
 
-  const applyProposal = () => {
-    if (!proposal || proposal.speakers.length === 0) return;
-    const replacing = scene.speakers.length > 0;
-    if (replacing) {
-      lastDeletedRef.current = {
-        type: 'speakers',
-        layoutId: active.id,
-        speakers: scene.speakers,
-        pairs: scene.pairs,
-      };
-    }
-    const created = proposal.speakers.map((ps) => ({
-      id: createId('spk'),
-      pos: ps.pos,
-      z: ps.z,
-      label: ps.label,
-      model: ps.model,
-      trimDb: ps.trimDb,
-    }));
-    const pairs = proposal.pairs
-      .filter(([i, j]) => created[i] && created[j])
-      .map(([i, j]) => [created[i].id, created[j].id] as [string, string]);
-    const focus = proposal.focus;
-    setScene((s) => {
-      const withSpeakers = { ...s, speakers: created, pairs };
-      // Room-target proposals move YOU there — move the ACTIVE seat + mirror together.
-      return focus ? updateActiveListener(withSpeakers, { pos: focus }) : withSpeakers;
-    });
-    setSettings({ ...settings, tvAnchor: proposal.mode === 'cinema' });
-    setProposal(null);
-    setOptimizeOpen(false);
-    const n = created.length;
-    const moved = proposal.targetName ? ` — moved YOU to ${proposal.targetName}` : ' — drag to fine-tune';
-    // Both branches are reversible: the optimizer overwrite AND the fresh placement
-    // are one history step, so each gets the same one-tap undo toast (item E).
-    showToast(
-      replacing
-        ? `Replaced your speakers with ${n} suggested one${n === 1 ? '' : 's'}${proposal.targetName ? moved : ''}`
-        : `Placed ${n} speaker${n === 1 ? '' : 's'}${moved}`,
-      { action: { label: 'Undo', run: undoScene } },
-    );
-  };
 
   // --- keyboard --------------------------------------------------------------------
 
