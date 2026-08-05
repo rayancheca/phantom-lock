@@ -197,11 +197,23 @@ function footprintOf(presetId: string): number {
  * pieces, two of which were then dropped with "No spot survives the rules". The
  * generator knows its own cell areas, so it uses them.
  */
-export function inventoryFor(cells: Cell[]): ArrangeItem[] {
+export function inventoryFor(cells: Cell[], roomIds?: readonly string[]): ArrangeItem[] {
   const counts = new Map<string, { count: number; optional: boolean }>();
+  /**
+   * The same tallies, kept per CELL as well as summed.
+   *
+   * Written as a second accumulator inside the existing loop rather than by
+   * recursing per cell. Recursing looks equivalent and is not: the
+   * studio-sleeps rule below is guarded on `cells.length === 1`, which a lone
+   * "Living room" cell satisfies, so a per-cell recursion orders **a spurious
+   * bed in 300 of 480 designs** — 3.2 m2 of it, in the room the listener sits
+   * in. The first prototype of this change did exactly that and produced a lock
+   * regression I nearly attributed to the feature.
+   */
+  const perCell: Array<Map<string, { count: number; optional: boolean }>> = cells.map(() => new Map());
   let bedrooms = 0;
 
-  for (const c of cells) {
+  for (const [cellIndex, c] of cells.entries()) {
     const budget = c.w * c.h * COVERAGE_TARGET;
     const programme = programmeFor(c.name);
     if (/bed|sleep|guest|master/.test(c.name.toLowerCase())) bedrooms++;
@@ -212,6 +224,11 @@ export function inventoryFor(cells: Cell[]): ArrangeItem[] {
     let used = 0;
     const take = (id: string, optional: boolean) => {
       here.set(id, (here.get(id) ?? 0) + 1);
+      const mine = perCell[cellIndex].get(id);
+      perCell[cellIndex].set(id, {
+        count: (mine?.count ?? 0) + 1,
+        optional: (mine?.optional ?? true) && optional,
+      });
       const prev = counts.get(id);
       counts.set(id, {
         count: (prev?.count ?? 0) + 1,
@@ -251,6 +268,23 @@ export function inventoryFor(cells: Cell[]): ArrangeItem[] {
   if (bedrooms === 0 && cells.length === 1 && /living|lounge|studio|loft/i.test(cells[0].name)) {
     const prev = counts.get('bed');
     counts.set('bed', { count: (prev?.count ?? 0) + 1, optional: false });
+    const mine = perCell[0].get('bed');
+    perCell[0].set('bed', { count: (mine?.count ?? 0) + 1, optional: false });
+  }
+
+  // With room ids, the SAME tallies are returned per cell instead of summed, so
+  // `arrangeFurniture` can keep each room's promise in that room. Without them
+  // the aggregate below is byte-identical to the pre-S39 return, which is what
+  // makes this invisible to `suggestInventory`'s caller and to the 25 test call
+  // sites that pass no ids.
+  if (roomIds) {
+    const out: ArrangeItem[] = [];
+    perCell.forEach((m, i) => {
+      for (const [presetId, e] of m) {
+        out.push({ presetId, count: e.count, optional: e.optional, room: roomIds[i] });
+      }
+    });
+    return out;
   }
   return [...counts].map(([presetId, e]) => ({ presetId, count: e.count, optional: e.optional }));
 }
@@ -293,7 +327,10 @@ export function generateDesign(opts: GenerateOptions): GenerateResult {
   scene = { ...scene, objects: [...shell.objects], rooms: shell.rooms };
 
   // Furnish BEFORE placing speakers — see the module header.
-  const furniture = arrangeFurniture(scene, inventoryFor(cells));
+  // `shell.rooms` is built as `cells.map(...)` (`shell.ts`), so it is PARALLEL
+  // to the cells and the i-th id names the i-th cell's zone. That parity is
+  // what lets a piece be ordered for a room and then placed in it.
+  const furniture = arrangeFurniture(scene, inventoryFor(cells, shell.rooms.map((r) => r.id)));
   scene = { ...scene, objects: [...scene.objects, ...furniture.objects] };
   const skipped = furniture.skipped;
 

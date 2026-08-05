@@ -8,6 +8,29 @@ export interface ArrangeItem {
   presetId: string;
   count: number;
   /**
+   * The `RoomLabel.id` this piece was ordered FOR, when the caller knows.
+   *
+   * `inventoryFor` has always reasoned per ROOM — a per-cell budget and a
+   * per-cell tally — and then summed everything into one flat list, so by the
+   * time `arrangeFurniture` saw it the room was gone and every piece was placed
+   * by a single global argmax. Measured over the 8 x 60 corpus, **every one of
+   * the 60 programme misses is a piece that was ordered in the right quantity,
+   * placed successfully, and landed in the wrong room** — 26 "Guest bedroom
+   * wants a bed", 12 "Study wants a desk", 11 + 10 more beds, 1 counter.
+   *
+   * Strengthening `zoneAffinity` cannot fix it, and that is a structural fact
+   * rather than a matter of magnitude: `ZONE_AFFINITY.bed` is
+   * `/bed|sleep|master|guest/i`, which matches "Bedroom" and "Guest bedroom"
+   * IDENTICALLY, so both candidate slots receive the same +1.6 and the term
+   * cancels out of the argmax. Swept at rewards 3.0 and 6.0 and at a -3.0
+   * mismatch penalty, the number of designs putting both beds in one bedroom
+   * stayed at exactly 34/60 — the baseline count — in all three.
+   *
+   * Undefined means "score the whole plan", which is what every caller outside
+   * the generator passes and is why this change is invisible to them.
+   */
+  room?: string;
+  /**
    * Pieces ordered to FILL a room rather than to furnish it.
    *
    * A room's programme is a promise — a bedroom has a bed — and failing to place
@@ -77,8 +100,16 @@ interface Ctx {
   /** The floor you can actually stand on (doors passable) — nothing may be
    *  placed outside it. */
   walkable: Region | null;
-  /** Named zones marked on the plan (Kitchen, Bedroom…). */
-  zones: Array<{ name: string; rect: RectObj }>;
+  /**
+   * Named zones marked on the plan (Kitchen, Bedroom…).
+   *
+   * `id` is the `RoomLabel.id`, and it is what `ArrangeItem.room` joins
+   * against. The synthetic `rect` happens to carry the same value, because a
+   * `RectObj` needs *an* id — but that is incidental, and reading the join key
+   * off the rect would tie this contract to a field that exists for an
+   * unrelated reason.
+   */
+  zones: Array<{ id: string; name: string; rect: RectObj }>;
 }
 
 function makeRect(preset: FurniturePreset, center: Vec2, rotation: number): RectObj {
@@ -656,15 +687,65 @@ function scoreSlot(ctx: Ctx, preset: FurniturePreset, slot: Slot): Evaluated | n
   return { score, why };
 }
 
+/**
+ * The zone a piece must stand in, or undefined to score the whole plan.
+ *
+ * Two rules narrow the pin, and each is a MEASUREMENT over the 8 x 60 corpus,
+ * not a preference. Baseline is `programme 0.9583 / 7 designs shipping with no
+ * speakers / 9 designs skipping a piece`; the goal is programme, and the two
+ * numbers that must not move are the other two.
+ *
+ *   1. Only a REQUIRED piece is pinned. A room's `core` is a promise and its
+ *      `fill` is an ambition (see `ArrangeItem.optional`), and the fill has
+ *      somewhere better to be whenever its own room is full. Pinning fill too
+ *      was measured: **no-speaker designs 7 -> 14**, because a living room's
+ *      spare bookshelves and plants can no longer spill into the bedrooms and
+ *      instead crowd the very floor `generate/pair.ts` searches for a stereo
+ *      triangle. It buys nothing in exchange: every piece the `programme`
+ *      sub-score asks about — bed, counter, sofa, TV, desk — is `core`.
+ *
+ *   2. A pin may pull a piece OUT of the seat's room, never push one IN. This
+ *      is `SEAT_CLEARANCE`'s principle one level up: that room's floor is what
+ *      the stereo pair needs, and `pair.ts` `pointFree` rejects a speaker
+ *      within `max(w,h)/2 + 0.3` of a piece's CENTRE, so one more rect there is
+ *      a 2 m square taken out of a 0.65-1.8 m search annulus. Without this rule
+ *      **no-speaker designs go 7 -> 9**: the TV is ordered for the living room,
+ *      which is where the listener sits, and pinning it there costs two designs
+ *      their pair. It buys nothing either — the instrument's only TV rule is
+ *      for a room named exactly "TV room", i.e. the single-cell `cinema`
+ *      archetype, where a pin is a structural no-op.
+ *
+ * ⚠️ Rule 2 leaves a REAL defect standing, deliberately and with its number:
+ * in 13 of 480 designs (all `one-bed`) the TV lands in the bedroom while the
+ * sofa and the listener stay in the living room 4.5-6.3 m away, so cinema mode
+ * aims the pair through a wall. Pinning the TV fixes all 13 and costs 2 designs
+ * their speakers. That is a real trade with a real cost on both sides and it is
+ * not this change's to make — filed as `docs/ideas.md` §15c.
+ */
+function pinnedZone(ctx: Ctx, room: string | undefined, optional: boolean): Ctx['zones'][number] | undefined {
+  if (!room || optional) return undefined;
+  const want = ctx.zones.find((z) => z.id === room);
+  // An unresolvable id is not an error: a hand-built scene, an imported one, or
+  // a room whose w/h did not survive `sanitizeScene` all reach here. Scoring the
+  // whole plan is exactly the pre-S39 behaviour, which is the right thing to
+  // degrade to.
+  if (!want) return undefined;
+  const seatZone = ctx.zones.find((z) => pointInRect(ctx.scene.listener.pos, z.rect));
+  return seatZone && seatZone.id === want.id ? undefined : want;
+}
+
 function placeOne(
   ctx: Ctx,
   preset: FurniturePreset,
   notes: string[],
   skipped: string[],
   optional: boolean,
+  room?: string,
 ): boolean {
   const isOpen = preset.place === 'open';
-  const raw = isOpen ? openSlots(ctx) : wallSlots(ctx, preset.h);
+  const every = isOpen ? openSlots(ctx) : wallSlots(ctx, preset.h);
+  const zone = pinnedZone(ctx, room, optional);
+  const raw = zone ? every.filter((s) => pointInRect(s.center, zone.rect)) : every;
 
   const seat = ctx.scene.listener.pos;
 
@@ -697,6 +778,15 @@ function placeOne(
     if (!evaluated) continue;
     if (!best || evaluated.score > best.eval.score) best = { slot, eval: evaluated };
   }
+
+  // A pin is a PREFERENCE, not a veto. When the room a piece was ordered for
+  // has no surviving slot, the whole plan is scored instead — the pre-S39
+  // answer. Refusing outright was measured and rejected: designs skipping at
+  // least one piece went **9 -> 69 of 480** and pieces skipped 10 -> 90, which
+  // is the owner's original "broken as fuck" complaint made an order of
+  // magnitude worse in exchange for the same programme score this reaches
+  // anyway. The recursion is depth-1 by construction, since `room` is dropped.
+  if (!best && zone) return placeOne(ctx, preset, notes, skipped, optional, undefined);
 
   if (!best) {
     // An OPTIONAL piece that does not fit means the room filled up, which is the
@@ -796,7 +886,26 @@ export function suggestInventory(scene: Scene): { items: ArrangeItem[]; reasons:
   };
 }
 
-/** Order matters: anchor pieces first, fillers last. */
+/**
+ * Most copies of one preset a single run may queue, across every room.
+ *
+ * A guard against an absurd `items` array, and unchanged in value and in
+ * meaning by the per-room work — see the queue builder.
+ */
+const MAX_PER_PRESET = 6;
+
+/**
+ * Order matters: anchor pieces first, fillers last.
+ *
+ * The outer loop MUST stay preset-major even now that items carry a room.
+ * Going room-major would still respect this order within each room and would
+ * still be wrong, because `scoreSlot`'s cross-preset rules are global lookups:
+ * `findRole(ctx, 'tv')` and `findByLabel(ctx, 'Sofa')` scan
+ * `[...ctx.placed, ...ctx.scene.objects]` and return the FIRST hit anywhere in
+ * the plan. Preset-major keeps the invariant those rules were written against —
+ * every sofa exists before any TV is placed — where room-major would let the
+ * second room's TV be positioned against the first room's sofa.
+ */
 const PLACE_ORDER = [
   'bed',
   'wardrobe',
@@ -863,6 +972,7 @@ export function arrangeFurniture(scene: Scene, items: ArrangeItem[]): ArrangeRes
     zones: (scene.rooms ?? []).flatMap((r) =>
       r.w && r.h
         ? [{
+            id: r.id,
             name: r.name,
             rect: {
               id: r.id, kind: 'rect' as const, center: r.at, w: r.w, h: r.h,
@@ -873,13 +983,27 @@ export function arrangeFurniture(scene: Scene, items: ArrangeItem[]): ArrangeRes
     ),
   };
 
-  const queue: Array<{ preset: FurniturePreset; optional: boolean }> = [];
+  const queue: Array<{ preset: FurniturePreset; optional: boolean; room?: string }> = [];
   for (const id of PLACE_ORDER) {
-    const item = items.find((i) => i.presetId === id);
     const preset = FURNITURE_PRESETS.find((p) => p.id === id);
-    if (!item || !preset || item.count <= 0) continue;
-    for (let i = 0; i < Math.min(6, item.count); i++) {
-      queue.push({ preset, optional: item.optional === true });
+    if (!preset) continue;
+    // `filter`, NOT `find`. With per-room items several entries share a
+    // presetId, and `find` returns the first and silently discards the rest —
+    // measured on the real repo, two `{bed, count: 1}` items placed ONE bed,
+    // with `skipped` left empty because the second was never queued at all.
+    // That is strictly worse than the bug being fixed, and it is invisible.
+    let queued = 0;
+    for (const item of items.filter((i) => i.presetId === id)) {
+      if (item.count <= 0) continue;
+      // The cap stays GLOBAL per preset rather than becoming per room, so this
+      // change moves pieces without ever ordering more of them. Per-item it
+      // would have added 8 pieces across 7 designs (bookshelf 6, plant 2) and
+      // raised the worst-case queue from 12 x 6 to 6 per item — a bound that
+      // grows with the caller's array. Identical to the old expression whenever
+      // a preset appears once, which is every caller outside the generator.
+      for (let i = 0; i < item.count && queued < MAX_PER_PRESET; i++, queued++) {
+        queue.push({ preset, optional: item.optional === true, room: item.room });
+      }
     }
   }
   for (const item of items) {
@@ -894,8 +1018,8 @@ export function arrangeFurniture(scene: Scene, items: ArrangeItem[]): ArrangeRes
 
   const skipped: string[] = [];
   let placedCount = 0;
-  for (const { preset, optional } of queue) {
-    if (placeOne(ctx, preset, notes, skipped, optional)) placedCount += 1;
+  for (const { preset, optional, room } of queue) {
+    if (placeOne(ctx, preset, notes, skipped, optional, room)) placedCount += 1;
   }
   if (placedCount > 0) {
     notes.unshift(

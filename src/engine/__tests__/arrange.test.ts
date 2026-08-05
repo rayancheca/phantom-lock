@@ -372,3 +372,149 @@ describe('S33: a dining table belongs in the room it was ordered for', () => {
     expect(table!.center.x).toBeLessThan(5);
   });
 });
+
+/**
+ * S39 — a room keeps the furniture it was promised.
+ *
+ * The fixture is three zones across one 12 x 8 shell with the listener in the
+ * Living room. It is chosen because it REPRODUCES the defect: the first test
+ * asserts that without room ids both beds land in the same bedroom, and every
+ * later test in this block is worthless without that. A fixture whose beds
+ * would split on their own cannot express the bug at all.
+ */
+describe('S39: a room keeps the furniture it was promised', () => {
+  const ZONES = [
+    { id: 'living', name: 'Living room', at: { x: 2, y: 4 }, w: 4, h: 8 },
+    { id: 'bed1', name: 'Bedroom', at: { x: 6, y: 4 }, w: 4, h: 8 },
+    { id: 'bed2', name: 'Guest bedroom', at: { x: 10, y: 4 }, w: 4, h: 8 },
+  ];
+
+  function twoBed(): Scene {
+    const s = blankScene();
+    return {
+      ...s,
+      listener: { ...s.listener, pos: { x: 2, y: 4 } },
+      objects: rectRoomWalls(12, 8),
+      rooms: ZONES,
+    };
+  }
+
+  const zoneOf = (p: { x: number; y: number }) =>
+    ZONES.find((z) => Math.abs(p.x - z.at.x) <= z.w / 2 + 1e-9 && Math.abs(p.y - z.at.y) <= z.h / 2 + 1e-9)
+      ?.name ?? '(none)';
+
+  const bedZones = (res: ReturnType<typeof arrangeFurniture>) =>
+    placedOf(res.objects).filter((o) => o.label === 'Bed').map((o) => zoneOf(o.center));
+
+  it('THE PRECONDITION: without room ids both beds land in the SAME bedroom', () => {
+    // Not decoration. `zoneAffinity` gives +1.6 to BOTH bedrooms — the regex
+    // /bed|sleep|master|guest/i matches each name — so the term cancels out of
+    // the argmax and `slot.wallLen` decides. Measured over the real corpus,
+    // 34 of 60 `two-bed` designs do this, and no strengthening of the affinity
+    // reward (swept to 3.0 and 6.0) changes the count by even one design.
+    const res = arrangeFurniture(twoBed(), [{ presetId: 'bed', count: 2 }]);
+    const zones = bedZones(res);
+    expect(zones).toHaveLength(2);
+    expect(zones[0]).toBe(zones[1]);
+  });
+
+  it('pins each bed to the bedroom that ordered it', () => {
+    const res = arrangeFurniture(twoBed(), [
+      { presetId: 'bed', count: 1, room: 'bed1' },
+      { presetId: 'bed', count: 1, room: 'bed2' },
+    ]);
+    expect(bedZones(res).sort()).toEqual(['Bedroom', 'Guest bedroom']);
+  });
+
+  it('queues EVERY item sharing a presetId — `find` would silently drop the second', () => {
+    // The single most dangerous line in this change: the queue used
+    // `items.find`, which returns the first match. Left in place, the two items
+    // above place ONE bed and `skipped` stays empty, because the second was
+    // never queued at all.
+    const res = arrangeFurniture(twoBed(), [
+      { presetId: 'bed', count: 1, room: 'bed1' },
+      { presetId: 'bed', count: 1, room: 'bed2' },
+    ]);
+    expect(bedZones(res)).toHaveLength(2);
+  });
+
+  it('does NOT pin an OPTIONAL piece — fill is an ambition, not a promise', () => {
+    // Pinning fill too was measured at 14 designs shipping with no speakers
+    // against 7, because a living room's spare pieces then crowd the floor
+    // `generate/pair.ts` needs. The assertion is the SAME collapse the
+    // precondition test pins, which is what makes it forcing.
+    const res = arrangeFurniture(twoBed(), [
+      { presetId: 'bed', count: 1, optional: true, room: 'bed1' },
+      { presetId: 'bed', count: 1, optional: true, room: 'bed2' },
+    ]);
+    const zones = bedZones(res);
+    expect(zones).toHaveLength(2);
+    expect(zones[0]).toBe(zones[1]);
+  });
+
+  it('does NOT pin a piece INTO the room the listener sits in', () => {
+    // SEAT_CLEARANCE's principle one level up: that floor belongs to the
+    // stereo pair. Pinning into it costs 9 no-speaker designs against 7.
+    const res = arrangeFurniture(twoBed(), [{ presetId: 'bed', count: 1, room: 'living' }]);
+    const zones = bedZones(res);
+    expect(zones).toHaveLength(1);
+    expect(zones[0]).not.toBe('Living room');
+  });
+
+  it('falls back to the whole plan when the pinned room has no viable slot', () => {
+    // A zone floating in the middle of the shell contains no wall slot at all,
+    // so the filter empties. Refusing outright was measured at 69 of 480
+    // designs skipping a piece against 9 — the owner's original complaint,
+    // an order of magnitude worse.
+    const s = blankScene();
+    const scene: Scene = {
+      ...s,
+      listener: { ...s.listener, pos: { x: 2, y: 4 } },
+      objects: rectRoomWalls(12, 8),
+      rooms: [...ZONES, { id: 'void', name: 'Nook', at: { x: 6, y: 4 }, w: 2, h: 2 }],
+    };
+    const res = arrangeFurniture(scene, [{ presetId: 'bed', count: 1, room: 'void' }]);
+    expect(placedOf(res.objects).filter((o) => o.label === 'Bed')).toHaveLength(1);
+    expect(res.skipped).toEqual([]);
+  });
+
+  it('caps a preset GLOBALLY, not once per room', () => {
+    // The cap guards against an absurd items array. Per item it would grow with
+    // the caller's array length instead of staying at 6.
+    const res = arrangeFurniture(twoBed(), [
+      { presetId: 'bookshelf', count: 4, room: 'bed1' },
+      { presetId: 'bookshelf', count: 4, room: 'bed2' },
+    ]);
+    expect(placedOf(res.objects).filter((o) => o.label === 'Bookshelf')).toHaveLength(6);
+  });
+
+  it('scores the whole plan when the room id resolves to nothing', () => {
+    // Three ways this happens for real: a scene with no zones (every bundled
+    // and seeded layout), a stale id, and a RoomLabel without w/h — which is
+    // what `addRoomShell` produces, so "Add a room…" makes them routinely.
+    const noZones: Scene = { ...twoBed(), rooms: undefined };
+    const stale: Scene = twoBed();
+    const anchorOnly: Scene = { ...twoBed(), rooms: [{ id: 'bed1', name: 'Bedroom', at: { x: 6, y: 4 } }] };
+    for (const [label, scene, room] of [
+      ['no zones', noZones, 'bed1'],
+      ['stale id', stale, 'nope'],
+      ['anchor-only RoomLabel', anchorOnly, 'bed1'],
+    ] as const) {
+      const res = arrangeFurniture(scene, [{ presetId: 'bed', count: 1, room }]);
+      expect(placedOf(res.objects).filter((o) => o.label === 'Bed'), label).toHaveLength(1);
+      expect(res.skipped, label).toEqual([]);
+    }
+  });
+
+  it('leaves a room-less items array byte-identical to the pre-S39 answer', () => {
+    // The containment claim for the "Arrange furniture for me" dialog, which
+    // never sets a room. Asserted as determinism across the two shapes that
+    // differ only in whether `room` is present-and-undefined.
+    const withKey = arrangeFurniture(twoBed(), [{ presetId: 'bed', count: 2, room: undefined }]);
+    const without = arrangeFurniture(twoBed(), [{ presetId: 'bed', count: 2 }]);
+    const shape = (r: ReturnType<typeof arrangeFurniture>) =>
+      placedOf(r.objects).map((o) => `${o.label}@${o.center.x.toFixed(6)},${o.center.y.toFixed(6)}`).join('|');
+    expect(shape(withKey)).toBe(shape(without));
+    expect(withKey.notes).toEqual(without.notes);
+  });
+});

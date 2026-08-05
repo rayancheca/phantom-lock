@@ -862,3 +862,165 @@ describe('S33: the corpus-wide quality floors', () => {
     }
   });
 });
+
+/**
+ * S39 — `inventoryFor` keeps the room it was already reasoning about.
+ *
+ * It has always used a per-cell budget and a per-cell tally and then summed
+ * both away. These pin the second return shape and, more importantly, pin the
+ * two ways the restructure could silently order DIFFERENT furniture.
+ */
+describe('S39: inventoryFor tags each order with the room that made it', () => {
+  const CELLS = [
+    { name: 'Living room', x: 0, y: 0, w: 5, h: 5 },
+    { name: 'Bedroom', x: 5, y: 0, w: 4, h: 5 },
+    { name: 'Guest bedroom', x: 0, y: 5, w: 4, h: 4 },
+  ];
+
+  it('returns one item per (room, preset), each carrying its room id', () => {
+    const items = inventoryFor(CELLS, ['r0', 'r1', 'r2']);
+    expect(items.length).toBeGreaterThan(0);
+    for (const i of items) expect(['r0', 'r1', 'r2']).toContain(i.room);
+    // The two bedrooms each order their own bed, as SEPARATE items — which is
+    // the whole point, and is what the queue's `filter` then has to survive.
+    const beds = items.filter((i) => i.presetId === 'bed');
+    expect(beds).toHaveLength(2);
+    expect(beds.map((b) => b.room).sort()).toEqual(['r1', 'r2']);
+    for (const b of beds) expect(b.count).toBe(1);
+  });
+
+  it('orders EXACTLY what the aggregate form orders, preset for preset', () => {
+    // THE GUARD THAT MATTERS. The first prototype of this change built the
+    // per-room list by recursing — `inventoryFor([cell])` per cell — which
+    // re-triggers the studio-sleeps rule below, whose guard is
+    // `cells.length === 1`. A lone "Living room" cell satisfies it, so 300 of
+    // 480 designs were ordered a spurious extra bed, 3.2 m2 of it, in the room
+    // the listener sits in. Nothing else in the suite could see it.
+    for (const cells of [
+      CELLS,
+      [{ name: 'Living room', x: 0, y: 0, w: 6, h: 6 }],
+      [{ name: 'Office', x: 0, y: 0, w: 4, h: 4 }],
+      [{ name: 'Kitchen', x: 0, y: 0, w: 4, h: 4 }, { name: 'Living room', x: 4, y: 0, w: 8, h: 8 }],
+      [{ name: 'Bedroom', x: 0, y: 0, w: 7, h: 7 }, { name: 'Study', x: 7, y: 0, w: 5, h: 5 }],
+    ]) {
+      const flat = inventoryFor(cells);
+      const perRoom = inventoryFor(cells, cells.map((_, i) => `r${i}`));
+      const tally = (xs: typeof flat) => {
+        const m = new Map<string, number>();
+        for (const i of xs) m.set(i.presetId, (m.get(i.presetId) ?? 0) + i.count);
+        return [...m].sort();
+      };
+      expect(tally(perRoom), cells.map((c) => c.name).join('+')).toEqual(tally(flat));
+    }
+  });
+
+  it('never gives a MULTI-room plan a studio bed', () => {
+    // The same defect stated as the property a reader can check by eye: a
+    // living room in a home that also has a bedroom must not order its own bed.
+    const items = inventoryFor(CELLS, ['r0', 'r1', 'r2']);
+    const livingBeds = items.filter((i) => i.presetId === 'bed' && i.room === 'r0');
+    expect(livingBeds).toEqual([]);
+  });
+
+  it('still gives a genuine STUDIO somewhere to sleep, tagged to its one room', () => {
+    const items = inventoryFor([{ name: 'Living room', x: 0, y: 0, w: 5, h: 5 }], ['only']);
+    const bed = items.find((i) => i.presetId === 'bed');
+    expect(bed).toBeDefined();
+    expect(bed!.room).toBe('only');
+    expect(bed!.optional).toBe(false);
+  });
+
+  it('carries the same optional flag the aggregate form would, per room', () => {
+    // A bedroom's `desk` is fill and a study's is core. Summed they come out
+    // required; per room each keeps its own answer, which is what lets the
+    // study's desk be pinned while the bedroom's stays free to roam.
+    const items = inventoryFor(
+      [{ name: 'Bedroom', x: 0, y: 0, w: 7, h: 7 }, { name: 'Study', x: 7, y: 0, w: 5, h: 5 }],
+      ['bed', 'study'],
+    );
+    const desks = Object.fromEntries(items.filter((i) => i.presetId === 'desk').map((i) => [i.room, i.optional]));
+    expect(desks.study).toBe(false);
+    expect(desks.bed).toBe(true);
+  });
+});
+
+describe('S39: every bedroom gets its own bed, end to end', () => {
+  const inZone = (p: { x: number; y: number }, z: { at: { x: number; y: number }; w?: number; h?: number }) =>
+    !!z.w && !!z.h &&
+    Math.abs(p.x - z.at.x) <= z.w / 2 + 1e-9 &&
+    Math.abs(p.y - z.at.y) <= z.h / 2 + 1e-9;
+
+  it('leaves at most ONE named bedroom without a bed — this corpus had 20', () => {
+    // Measured on THIS 24-seed corpus: 120 named bedrooms, of which the pre-S39
+    // engine left **20** without a bed and this one leaves **1**. Over the full
+    // 60-seed corpus the same defect is 36 of 60 `two-bed` designs, and every
+    // one of that corpus's 60 programme misses is a piece ordered in the right
+    // quantity and placed successfully in the WRONG room.
+    //
+    // The bound is 1 rather than 0 because the pin is a PREFERENCE: the one
+    // survivor is `railroad`/2654435761, whose 4.4 x 3.5 m Bedroom has no slot
+    // a 2.0 x 1.6 m bed fits after its door corridor and wardrobe, so the piece
+    // legitimately falls back to the plan rather than being skipped. Refusing
+    // instead would take designs skipping a piece from 9 to 69 of 480.
+    let bedroomsChecked = 0;
+    let without = 0;
+    for (const id of ARCHETYPE_IDS) {
+      for (const seed of SEEDS) {
+        const { scene } = design(id, seed);
+        const beds = scene.objects.filter((o) => o.kind === 'rect' && o.label === 'Bed');
+        for (const z of scene.rooms ?? []) {
+          if (!/bed|sleep|master|guest/i.test(z.name) || !z.w || !z.h) continue;
+          bedroomsChecked++;
+          if (!beds.some((b) => inZone((b as RectObj).center, z))) without++;
+        }
+      }
+    }
+    expect(bedroomsChecked).toBe(120);
+    expect(without).toBeLessThanOrEqual(1);
+  });
+
+  it('fixes five bedrooms that were measurably empty before', () => {
+    // A bound of "at most 1 of 120" is satisfied by an engine that simply
+    // orders fewer bedrooms, so name the designs. Each of these five is a
+    // (archetype, seed, room) the pre-S39 engine left without a bed — verified
+    // against a pristine checkout, not asserted from memory.
+    const FIXED: Array<[ArchetypeId, number, string]> = [
+      ['two-bed', 0, 'Guest bedroom'],
+      ['two-bed', 2654435761, 'Bedroom'],
+      ['two-bed', 1013904226, 'Bedroom'],
+      ['two-bed', 3668339987, 'Guest bedroom'],
+      ['two-bed', 2027808452, 'Guest bedroom'],
+    ];
+    for (const [id, seed, roomName] of FIXED) {
+      const { scene } = design(id, seed);
+      const zone = (scene.rooms ?? []).find((z) => z.name === roomName);
+      expect(zone, `${id}/${seed} has no ${roomName}`).toBeDefined();
+      const has = scene.objects.some(
+        (o) => o.kind === 'rect' && o.label === 'Bed' && inZone(o.center, zone!),
+      );
+      expect(has, `${id}/${seed} ${roomName} still has no bed`).toBe(true);
+    }
+  });
+
+  it('leaves no named study without a desk, and no kitchen without a counter', () => {
+    let missed = 0;
+    for (const id of ARCHETYPE_IDS) {
+      for (const seed of SEEDS) {
+        const { scene } = design(id, seed);
+        for (const z of scene.rooms ?? []) {
+          if (!z.w || !z.h) continue;
+          const wants = /office|study|work/i.test(z.name) ? 'Desk'
+            : /kitchen/i.test(z.name) ? 'Kitchen counter' : null;
+          if (!wants) continue;
+          const has = scene.objects.some(
+            (o) => o.kind === 'rect' && o.label === wants && inZone(o.center, z),
+          );
+          if (!has) missed++;
+        }
+      }
+    }
+    // Not zero: 2 of 480 designs in the full 60-seed corpus have no slot for
+    // the piece inside its own room and legitimately fall back to the plan.
+    expect(missed).toBeLessThanOrEqual(1);
+  });
+});
