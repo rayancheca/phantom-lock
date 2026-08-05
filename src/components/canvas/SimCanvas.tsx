@@ -16,7 +16,7 @@ import type { AudioMetrics } from '../../engine/stereo';
 import type { Proposal } from '../../engine/optimize';
 import type { ListeningField } from '../../engine/bestspot';
 import { hitInactiveSeat, hitTestNodes, hitTestObjects } from '../../engine/hit';
-import { createId, ROOM_HEIGHT, sceneBounds, updateActiveListener } from '../../engine/scene';
+import { createId, ROOM_HEIGHT, sceneBounds } from '../../engine/scene';
 import { integrateWall, snapToWalls } from '../../engine/joints';
 import * as v from '../../engine/vec';
 import {
@@ -30,13 +30,14 @@ import {
   type View,
   type WallChain,
 } from './render';
+import { handleAt, handleCursor, handleTargetFor, type HandleId } from './handles';
 import {
-  applyHandleDrag,
-  handleAt,
-  handleCursor,
-  handleTargetFor,
-  type HandleId,
-} from './handles';
+  MOVE_KINDS,
+  applyDragToScene,
+  commitDraw,
+  previewForDraw,
+  type Drag,
+} from './drag-apply';
 import {
   canvasKeyAction,
   hoverCursor,
@@ -56,7 +57,7 @@ import { repaintOnFontLoad } from './font-ready';
 // SNAP_STEP and the placement primitives are shared with the KEYBOARD path, so
 // there is exactly one definition of each (S7). `surfaceHeightAt` used to be a
 // closure here even though it only ever read `scene.objects`.
-import { DRAG_SEAT, SNAP_STEP, moveObjectTo, placeSpeakerAt, surfaceHeightAt } from './placement';
+import { SNAP_STEP, placeSpeakerAt } from './placement';
 import { CANVAS_HELP } from './canvas-help';
 import './sim-canvas.css';
 const MIN_SCALE = 8;
@@ -65,11 +66,6 @@ const MAX_SCALE = 500;
 const CLOSE_RADIUS = 0.25;
 /** Wall segments snap to 45° multiples when within this many degrees. */
 const ANGLE_SNAP_DEG = 7;
-/** Drag kinds that reposition scene items (→ 'grabbing' cursor). `handle` is
- *  deliberately NOT here: a resize or rotate gesture keeps the directional
- *  cursor its grip earned, which `handleCursor` supplies from the grip's
- *  SCREEN direction. */
-const MOVE_KINDS = new Set<Drag['kind']>(['node', 'wall-end', 'move-wall', 'move-rc', 'move-multi']);
 /** Hover this near a wall (screen px) before the door/window chip appears. */
 const WALL_HOVER_APPEAR_PX = 18;
 /** Once shown, the chip stays anchored within this screen radius so it stays
@@ -108,43 +104,6 @@ interface Props {
    *  no-op there is indistinguishable from a broken app on the live region). */
   onNotice: (msg: string) => void;
 }
-
-type DrawTool = 'rect' | 'circle' | 'room';
-
-type Drag =
-  | { kind: 'pan'; pointerId: number; sx: number; sy: number; ox: number; oy: number }
-  | { kind: 'node'; pointerId: number; node: 'listener' | { speakerId: string } }
-  | { kind: 'wall-end'; pointerId: number; id: string; end: 'a' | 'b' }
-  | { kind: 'move-wall'; pointerId: number; id: string; start: Vec2; a0: Vec2; b0: Vec2 }
-  // `rot0` is REQUIRED so any future drag path that forgets it is a compile error.
-  // Every frame snaps from it rather than from the object's live rotation, which is
-  // what makes the transform a pure function of the gesture: leaving a wall's field
-  // restores the identical float, and one undo restores centre AND rotation.
-  | { kind: 'move-rc'; pointerId: number; id: string; start: Vec2; c0: Vec2; rot0: number }
-  // §16 (S36). Its OWN kind, deliberately, so the S23 wall-seat magnet never sees
-  // it: `moveObjectTo` rewrites `rotation` from `rot0` on every frame, and a
-  // resize or rotate sharing the move branch would fight it exactly as a mid-drag
-  // `q`/`e` did. `obj0` is the object as it was at pointerdown — every frame is
-  // recomputed from it rather than from the live value, which is what makes the
-  // gesture a pure function of the pointer and one undo restore all of it.
-  | {
-      kind: 'handle';
-      pointerId: number;
-      id: string;
-      handle: HandleId;
-      obj0: RectObj | CircleObj;
-      /** atan2 of (pointerdown - centre); only the 'rot' grip reads it. */
-      grabAngle: number;
-    }
-  | { kind: 'draw'; pointerId: number; tool: DrawTool; anchor: Vec2 }
-  | { kind: 'band'; pointerId: number; shape: 'marquee' | 'lasso'; additive: boolean }
-  | {
-      kind: 'move-multi';
-      pointerId: number;
-      start: Vec2;
-      objects: Array<{ id: string; a?: Vec2; b?: Vec2; center?: Vec2 }>;
-      speakers: Array<{ id: string; pos: Vec2 }>;
-    };
 
 interface Pinch {
   d0: number;
@@ -1036,163 +995,39 @@ export default function SimCanvas({
     const cur = sceneRef.current;
     const p = s2w(native);
 
-    if (drag.kind === 'move-multi') {
-      // Snap the DELTA, not each piece — the group keeps its internal layout.
-      const raw = v.sub(p, drag.start);
-      const d = {
-        x: Math.round(raw.x / SNAP_STEP) * SNAP_STEP,
-        y: Math.round(raw.y / SNAP_STEP) * SNAP_STEP,
-      };
-      const objById = new Map(drag.objects.map((o) => [o.id, o]));
-      const spById = new Map(drag.speakers.map((s) => [s.id, s]));
-      onScene({
-        ...cur,
-        objects: cur.objects.map((o) => {
-          const orig = objById.get(o.id);
-          if (!orig) return o;
-          if (o.kind === 'wall' && orig.a && orig.b) {
-            return { ...o, a: v.add(orig.a, d), b: v.add(orig.b, d) };
-          }
-          if (o.kind !== 'wall' && orig.center) return { ...o, center: v.add(orig.center, d) };
-          return o;
-        }),
-        speakers: cur.speakers.map((s) => {
-          const orig = spById.get(s.id);
-          return orig ? { ...s, pos: v.add(orig.pos, d) } : s;
-        }),
-      });
-      return;
-    }
-
-    if (drag.kind === 'node') {
-      const sp = snap(p);
-      if (drag.node === 'listener') {
-        onScene(updateActiveListener(cur, { pos: sp }));
-      } else {
-        const speakerId = drag.node.speakerId;
-        const surf = surfaceHeightAt(cur, sp);
-        onScene({
-          ...cur,
-          speakers: cur.speakers.map((s) =>
-            s.id === speakerId
-              ? { ...s, pos: sp, z: surf !== null ? Math.round((surf + 0.12) * 100) / 100 : s.z }
-              : s,
-          ),
-        });
+    // The six scene-writing branches live in the pure `drag-apply.ts`. This
+    // supplies only the gesture — and then writes back the two values the
+    // move-rc branch owns but cannot store itself: the re-based `rot0` (which
+    // MUST land on the mutable Drag record, or a mid-gesture q/e is reverted on
+    // the next frame — the S23 regression) and the rotation it just wrote, which
+    // is how the next frame tells its own output from an external edit.
+    const res = applyDragToScene(cur, drag, p, {
+      snapOn: settings.snap,
+      shiftKey: native.shiftKey,
+      altKey: native.altKey,
+      lastRot: lastRotRef.current,
+    });
+    if (res) {
+      if (drag.kind === 'move-rc') {
+        drag.rot0 = res.rot0;
+        lastRotRef.current = res.lastRot;
+        // Identity-preserving: React bails out unless the captured wall or the
+        // seated flag actually changed, so this is at most two renders per gesture.
+        setSnapGuide((prev) =>
+          prev?.wallId === res.guide?.wallId && prev?.seated === res.guide?.seated
+            ? prev
+            : res.guide,
+        );
       }
+      onScene(res.scene);
       return;
     }
 
-    if (drag.kind === 'wall-end') {
-      const others = cur.objects.filter((o): o is WallObj => o.kind === 'wall' && o.id !== drag.id);
-      const stuck = snapToWalls(snap(p), others);
-      onScene({
-        ...cur,
-        objects: cur.objects.map((o) =>
-          o.id === drag.id && o.kind === 'wall' ? { ...o, [drag.end]: stuck } : o,
-        ),
-      });
-      return;
-    }
-
-    if (drag.kind === 'move-wall') {
-      const d = v.sub(p, drag.start);
-      onScene({
-        ...cur,
-        objects: cur.objects.map((o) =>
-          o.id === drag.id && o.kind === 'wall'
-            ? { ...o, a: snap(v.add(drag.a0, d)), b: snap(v.add(drag.b0, d)) }
-            : o,
-        ),
-      });
-      return;
-    }
-
-    // §16 (S36). Everything is recomputed from `drag.obj0`, the object as it was
-    // at pointerdown — never from its live value — so the gesture is a pure
-    // function of the pointer: returning the pointer to where it started restores
-    // the identical floats, and the whole drag is one undo entry.
-    //
-    // It deliberately does NOT re-seat against a wall. An Inspector Width/Depth
-    // edit does not re-seat either, so a grip introduces no new behaviour class,
-    // and `seatObjectAgainstWall`'s COMMAND_SEAT reaches 1.2 m — enough to
-    // teleport a piece that was never near a wall (the S32 reach lesson). The
-    // existing explicit `F` command is the way to re-seat after resizing.
-    if (drag.kind === 'handle') {
-      onScene(
-        applyHandleDrag(cur, drag.obj0, drag.handle, p, {
-          // Shift is aspect-lock on a resize and 15° snapping on a rotate; Alt is
-          // resize-about-centre. The Word contract.
-          aspect: native.shiftKey,
-          fromCentre: native.altKey,
-          snapOn: settings.snap,
-          grabAngle: drag.grabAngle,
-        }),
-      );
-      return;
-    }
-
-    if (drag.kind === 'move-rc') {
-      const d = v.sub(p, drag.start);
-
-      // RE-BASE on an external rotation. `q`/`e` are not gated on drag state
-      // (`keyboard.ts` needs only an object selection, which pointerdown has just
-      // set), so a rotate can land mid-gesture. Every frame snaps from `rot0`, so
-      // without this the next pointermove would silently revert that rotate — a
-      // regression against the pre-S23 branch, which wrote only `center`. Comparing
-      // against what THIS branch last wrote keeps the drag a pure function of
-      // (rot0, pointer) — an external edit re-bases it, its own output never does.
-      const live = cur.objects.find((o) => o.id === drag.id);
-      if (live && live.kind === 'rect' && !Object.is(live.rotation, lastRotRef.current)) {
-        drag.rot0 = live.rotation;
-      }
-
-      // Furniture seats flush against the nearest wall at its own angle; openings
-      // keep their straddle magnet; circles are position-only. All of it lives in
-      // the pure, node-tested `moveObjectTo` — this branch only supplies the
-      // gesture. Shift suppresses the magnet for a free move.
-      const { scene: next, guide } = moveObjectTo(cur, drag.id, v.add(drag.c0, d), drag.rot0, {
-        snapOn: settings.snap,
-        seat: native.shiftKey ? null : DRAG_SEAT,
-      });
-      const wrote = next.objects.find((o) => o.id === drag.id);
-      lastRotRef.current = wrote && wrote.kind === 'rect' ? wrote.rotation : null;
-      // Identity-preserving: React bails out unless the captured wall or the
-      // seated flag actually changed, so this is at most two renders per gesture.
-      setSnapGuide((prev) =>
-        prev?.wallId === guide?.wallId && prev?.seated === guide?.seated ? prev : guide,
-      );
-      onScene(next);
-      return;
-    }
-
-    // drag.kind === 'draw' — rect / circle rubber band.
-    const a = drag.anchor;
-    const b = snap(p);
-    if (drag.tool === 'rect' || drag.tool === 'room') {
-      setPreview({
-        id: 'preview',
-        kind: 'rect',
-        center: v.lerp(a, b, 0.5),
-        w: Math.abs(b.x - a.x),
-        h: Math.abs(b.y - a.y),
-        rotation: 0,
-        absorption: 0.3,
-        label: drag.tool === 'room' ? 'Area' : 'Object',
-        role: 'furniture',
-        height: 0.9,
-      });
-    } else {
-      setPreview({
-        id: 'preview',
-        kind: 'circle',
-        center: a,
-        r: v.dist(a, b),
-        absorption: 0.3,
-        label: 'Object',
-        height: 0.75,
-      });
-    }
+    // Only 'draw' reaches here — 'pan' and 'band' returned far above and every
+    // scene-writing kind returned just now. The guard is what lets TypeScript
+    // see it, and it is a real belt-and-braces against a future eighth kind.
+    if (drag.kind !== 'draw') return;
+    setPreview(previewForDraw(drag, p, settings.snap));
   };
 
   const rafRef = useRef(0);
@@ -1275,12 +1110,7 @@ export default function SimCanvas({
     }
     if (drag.kind === 'draw' && drawn) {
       const cur = sceneRef.current;
-      let commit: SceneObject | null = null;
-      if (drawn.kind === 'rect' && drawn.w >= 0.15 && drawn.h >= 0.15) {
-        commit = { ...drawn, id: createId('rect') };
-      } else if (drawn.kind === 'circle' && drawn.r >= 0.1) {
-        commit = { ...drawn, id: createId('circle') };
-      }
+      const commit = commitDraw(drawn, createId);
       if (commit) {
         onScene({ ...cur, objects: [...cur.objects, commit] });
         onSelection({ type: 'object', id: commit.id });
