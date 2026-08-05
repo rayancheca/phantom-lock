@@ -912,6 +912,95 @@ speed. Confirm the next kickoff you write re-states this protocol.*
 
 ## Progress log
 
+### Session 37 — 2026-08-05 — component decomposition against the 800-line cap (`docs/ideas.md` §18)
+
+No P1 was outstanding, so this session chose on merit. The project's own coding-style rule is
+200–400 lines typical / **800 max**, and five files were over it; the two worst were the two the
+committed suite barely covers, and both grow every session. **The App half is done. The SimCanvas
+half is not, and the residual is named rather than left implicit** (`docs/ideas.md` §18a).
+
+| file | before | after |
+|---|---|---|
+| `components/app/App.tsx` | 1292 | **85** (boot wrapper) |
+| `components/app/AppInner.tsx` | — | **707** ✅ |
+| `components/canvas/SimCanvas.tsx` | 1447 | **1042** ❌ still over |
+
+Eleven new modules: `app/run-command.ts` + six App hooks, and `canvas/drag-apply.ts`,
+`useCanvasCamera.ts`, `useCanvasPainter.ts`, `CanvasOverlays.tsx`.
+
+**Why the extractions are worth more than the line count.** Both new test files cover logic that was
+UNREACHABLE from `npm test` before. jsdom dispatches a plain `Event` for pointer events — `button`,
+`pointerId` and `clientX` all arrive `undefined` (TRAP 21) — so SimCanvas's whole pointer path could
+only ever be checked by driving real Chrome; and the command dispatcher lived inside a 1292-line
+component reached through a mount-once ref. As pure functions they are ordinary unit-test material:
+**+83 tests**, and twenty negative controls all caught.
+
+**What had to be preserved exactly, and how.**
+
+- `move-rc` re-bases `rot0` IN PLACE on the mutable `Drag` record when an external `q`/`e` lands
+  mid-gesture. A pure function cannot mutate, so `applyDragToScene` RETURNS the re-based baseline and
+  the rotation it wrote, and the call site writes both back. Dropping either reverts the user's
+  rotate on the next pointermove — the S23 regression verbatim. The comparison stays `Object.is`,
+  which disagrees with `===` on exactly one input (−0 vs 0), and there is now a test on it.
+- `discardDetectionRef` and `closeFloatingPanels` moved as ONE unit. The callback is mount-once and
+  created early while `useWallDetection` is created far below it, so the ref IS that forward
+  reference. `closeFloatingPanels` keeps `useCallback([])` because `applyMode` and `useLayoutActions`
+  depend on its identity.
+- Only the `wheel` listener left SimCanvas's mount-once key effect. The window keydown/keyup/blur
+  handler stays: splitting it per concern would register two window listeners, call `canvasKeyAction`
+  twice per keystroke, and put "a Space keyup ALWAYS disarms" behind two paths.
+- `import './app.css'` moved with the component and stays the LAST import. Rollup emits CSS in
+  module-graph traversal order, so a stylesheet that moves ahead of the ones it overrides changes the
+  cascade. **Verified, not argued: the emitted CSS asset hash is byte-identical across all eight
+  commits** (`index-j_hTKTEs.css`).
+
+**Deliberately NOT done, with the reason.** A `useAppMode` hook was designed and refused: `theme`
+must stay a derived `const modeTheme(appMode)` — the structural S14 guarantee that killed the
+three-way theme fight — and any hook storing it reopens the class while looking correct on the first
+render. `applyMode`'s `sceneNow = scene` default reads the LIVE render closure and three callers rely
+on it. Extracting `overlayOpen` was refused too: it is the one value where a SECOND computation is a
+critical hazard, and its deliberate asymmetry (the tutorial's chapter MENU is in it, the step CARD is
+not) is invisible to every test.
+
+---
+
+#### Evidence
+
+*Agents.* One 7-agent design workflow (2 died on a session usage limit — the surviving conservative
+plan was adjudicated by hand and its two load-bearing claims verified independently: `App` really is
+imported from `components/app/App` by `main.tsx:4` and `shell.a11y.test.tsx:5`, and the suppression
+count really was 6). One 4-lens self-review over the real diff. **Both completed lenses returned "no
+shipping behaviour change" with MECHANICAL evidence** — one token-diffed every moved body against
+`git show e379395:` with qualifier prefixes normalised away, the other computed a normalised
+set-difference of semantic lines and got the empty set. Nine findings were real and all were fixed;
+they were comment rot rather than behaviour, which is exactly what a mechanical move leaves behind.
+
+*Tests.* 1706 → **1789** (+83). `run-command.test.ts` **47**, `drag-apply.test.ts` **36**. Twenty
+negative controls in a copied tree, all twenty caught — but **two passed on the first attempt and
+both were holes in the tests, not clean bills**: the move-multi fixture put every origin ON the 0.05
+snap grid, where snapping the DELTA and snapping each PIECE are arithmetically identical (measured:
+both move by exactly 0.35 at x = 4 / 0 / 2; off-grid they diverge to 0.37 / 0.39 / 0.38), and the
+handle-idempotence test used an EDGE grip, which is idempotent either way because `'e'` pins the west
+edge — only a ROTATE compounds.
+
+*Completeness, checked mechanically rather than by eye.* All 27 single-line user-facing strings and
+all 17 template messages from the pre-split `App.tsx` are present somewhere in the new files. All
+**149** top-level declarations and all 16 user-facing strings from the pre-split `SimCanvas.tsx` have
+exactly one home.
+
+*Suppressions.* Unchanged at **6**. Two would have been added and both were removed instead: the
+painter's draw effect was restructured to destructure its render state in the PARAMETER LIST so the
+dep array is a list eslint can verify, and the `discardDetectionRef` registration lists the ref by
+name (a `useRef` object is identity-fixed, so it is a literal no-op).
+
+*Honest limits.* One browser (headless Chrome), no real screen reader. The differential exercises 36
+scripted steps — it does not prove anything off that script, and it cannot see RENDER COUNT (a step
+that renders twice as often produces identical pixels). Three of the four new canvas modules
+(`useCanvasCamera`, `useCanvasPainter`, `CanvasOverlays`) ship with no unit tests of their own: the
+first two are jsdom-hostile by nature (no canvas pixels, no layout) and are covered only by the
+differential, which is a real gap and is why the differential exists.
+
+
 ### Session 36 — 2026-08-04 — Word-style resize/rotate grips (`docs/ideas.md` §16, owner-requested)
 
 > *"i also want to be able to change the shape and size and rotation of objects with my mouse

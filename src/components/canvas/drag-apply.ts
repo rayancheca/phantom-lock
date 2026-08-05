@@ -123,10 +123,14 @@ export function applyDragToScene(
 ): DragApplyResult | null {
   const cur = scene;
   const snap = (q: Vec2) => snapTo(q, opts.snapOn);
+  // The five branches that write a scene and nothing else. `move-rc` never
+  // routes through here — it is the only kind that owns a guide and a rotation
+  // baseline, so it builds its own result literal — which is why `rot0` is a
+  // flat 0 rather than a conditional read of a field only that kind has.
   const plain = (next: Scene): DragApplyResult => ({
     scene: next,
     guide: null,
-    rot0: drag.kind === 'move-rc' ? drag.rot0 : 0,
+    rot0: 0,
     lastRot: null,
   });
 
@@ -221,7 +225,15 @@ export function applyDragToScene(
   if (drag.kind === 'move-rc') {
     const d = v.sub(p, drag.start);
 
-    // RE-BASE on an external rotation. `q`/`e` are not gated on drag state
+    // RE-BASE on an external rotation.
+    //
+    // The comparison is `Object.is`, not `===`, and they disagree on TWO inputs
+    // in OPPOSITE directions: `Object.is(0, -0)` is false where `===` is true
+    // (so a rotation that flipped sign-of-zero re-bases, which is harmless), and
+    // `Object.is(NaN, NaN)` is true where `===` is false — so under `===` a NaN
+    // rotation would re-base on EVERY frame and the drag would stop being a pure
+    // function of the gesture. `sanitizeObject` should keep NaN out, but the
+    // drag path must not depend on that being true. `q`/`e` are not gated on drag state
     // (`keyboard.ts` needs only an object selection, which pointerdown has just
     // set), so a rotate can land mid-gesture. Every frame snaps from `rot0`, so
     // without this the next pointermove would silently revert that rotate — a

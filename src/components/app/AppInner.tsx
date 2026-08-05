@@ -256,13 +256,6 @@ export default function AppInner({ initialStore, persistMode, showFirstRun, drop
     lastDeletedRef,
   });
 
-  /** First-run "Start from a floorplan photo" — the DESIGN photo-import entry,
-   *  reusing the same underlay builder as UnderlayCard. */
-
-  /** Two calibration clicks arrived — scale the underlay so they match reality. */
-
-  /** A dragged room box arrived from the canvas — ask for its name. */
-
   // --- floorplan wall detection ---------------------------------------------
 
   const detection = useWallDetection({
@@ -283,9 +276,6 @@ export default function AppInner({ initialStore, persistMode, showFirstRun, drop
   useEffect(() => {
     discardDetectionRef.current = detection.discard;
   }, [detection.discard, discardDetectionRef]);
-
-  /** Add a named rectangular room to the CURRENT layout — flush against the
-   *  existing bounds, so a house composes room by room. */
 
   // --- layout management (create / switch / rename / delete / import) ---------
   const {
@@ -336,8 +326,6 @@ export default function AppInner({ initialStore, persistMode, showFirstRun, drop
     closeCompare: () => setCompare(null),
     setGalleryOpen,
   });
-
-  // --- optimizer -----------------------------------------------------------------
 
   // --- shareable output (item H) -------------------------------------------------
   const { exportPlanImage, copyVerdict } = useShareActions({

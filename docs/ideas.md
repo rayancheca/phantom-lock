@@ -42,6 +42,9 @@ effort — a small high-value item beats a large one.
 | 7 | Drag-release wall splitting | P3 | small |
 | 8 | Multi-select with a listener in it | P3 | small |
 | 9 | Window/door-leaf reflection materials | P3 | small |
+| 18a | Finish the SimCanvas decomposition — `pick.ts` (the pointerdown ladder, and the valuable one) + `chain.ts`; it is **1042** against the 800 cap | P2 | ½ session |
+| 18b | `render.ts` 1172 / `scene.ts` 1030 / `arrange.ts` 907 are over the cap too, but cohesive — do not split on cap-compliance alone | P3 | — |
+| 18c | Two pre-existing inconsistencies found while mapping S37 (scene prop vs sceneRef in onPointerDown; `seatSelection`'s "ONE write seam" comment is false) | P3 | small |
 
 ---
 
@@ -1495,3 +1498,65 @@ Fixed by wrapping BOTH rows. Wrapping only the outer one still left 353 px of co
 viewport. Inert at ≥560 px — head height is unchanged there. After: `scrollWidth == clientWidth` at
 every width, in both gallery states, every head button ≥26 px, and a real click on Close closes the
 gallery at 320 px. S34's 320 × 200 tray guarantee re-verified (5/5 reachable, tray bounded at 62 px).
+
+---
+
+## 18. Component decomposition against the 800-line cap — ⚠️ **HALF DONE (S37)**
+
+The project's own coding-style rule is 200–400 lines typical, **800 max**. Five files were over it at
+the start of S37. Two were decomposed:
+
+| file | before | after |
+|---|---|---|
+| `components/app/App.tsx` | 1292 | **85** (boot wrapper) + **707** `AppInner.tsx` |
+| `components/canvas/SimCanvas.tsx` | 1447 | **1042** |
+
+The App half is DONE. The SimCanvas half is not, and the residual is named below rather than left
+implicit. Everything landed is pure code motion, proven by a CDP differential that drives both builds
+through the same 36-step script and compares canvas bitmaps, engine metrics, live-region text, DOM
+state and the persisted store.
+
+### 18a. Finish SimCanvas — **P2**, ~½ session
+
+SimCanvas is **1042** lines against the 800 cap. Two cuts remain, and together they are enough:
+
+**`canvas/pick.ts` — the pointerdown ladder (~190 lines, the valuable one).** `onPointerDown` is a
+twelve-branch ladder mixing decision with side effects (`startDrag`, `onScene`, `onSelection`,
+`setBandBoth`, `calibRef`). Turning it into `resolvePointerDown(...) -> PickAction` makes the whole
+thing unit-testable for the first time — jsdom cannot deliver a usable PointerEvent (TRAP 21), so
+today it is reachable only through the CDP harness. It is also where the S36 grip-vs-pod ORDERING
+lives (grips are tested BELOW the node and seat hit tests, and `drawHandles` paints below `drawNodes`
+to match), which is currently an invariant with a comment and no test.
+
+⚠️ Deferred from S37 deliberately rather than for lack of lines: this is the most-used interaction
+path in the app, an action union is a redesign rather than a move, and it deserves its own
+differential rather than the tail end of a long session. Do it FIRST in its session, not last.
+
+**`canvas/chain.ts` — the wall chain (~55 lines).** `CLOSE_RADIUS`, `ANGLE_SNAP_DEG`, `angleSnap`,
+`snapTargets`, `addChainPoint`, and the cursor-preview arm of `applyMove`. Pure except for the
+`chainWallsRef` bookkeeping, which stays put — one id-group per appended corner is what makes
+Backspace pop exactly the walls that corner added.
+
+**Acceptance:** SimCanvas < 800 · every branch of the pointerdown ladder has a test · negative
+controls run and each caught by the test written for it · the S37 differential re-run base-vs-head
+comes back identical · ratchet respected.
+
+### 18b. The three engine files still over the cap — **P3**
+
+`canvas/render.ts` **1172**, `engine/scene.ts` **1030**, `engine/arrange.ts` **907**. All three are
+cohesive in a way the two components were not — `render.ts` is one paint pass, `scene.ts` is the scene
+model plus its sanitizer, `arrange.ts` is one placement brain — so the case for splitting them is much
+weaker and should not be taken on cap-compliance alone. Listed so the number is written down.
+
+### 18c. Two pre-existing inconsistencies found while mapping — **P3**
+
+Both are real, both are OUT of scope for a motion-only change, and fixing either is an observable
+behaviour change:
+
+1. **`SimCanvas.onPointerDown` reads the `scene` PROP** for its select-mode hit ladder while
+   `applyMove` and every other branch read `sceneRef.current`. They agree today because a pointerdown
+   is never deferred, but the two provenances are one `setTimeout` away from disagreeing.
+2. **`seatSelection`'s doc comment claims to be "the ONE write seam for the seat command"** and it is
+   not: the `f` key reaches `seatObjectAgainstWall` through `run-command.ts`'s flip-door fall-through,
+   with a DIFFERENT notice string, and only for `field === 'hinge'`. Either unify them (which changes
+   spoken output) or correct the comment.

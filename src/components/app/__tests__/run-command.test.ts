@@ -207,12 +207,15 @@ describe('runCommand — delete', () => {
   });
 
   it.each([
-    ['object', { type: 'object', id: 'r1' } as Selection, 'deleteObject'],
-    ['speaker', { type: 'speaker', id: 's1' } as Selection, 'deleteSpeaker'],
-  ])('routes a %s selection to %s', (_kind, selection, expected) => {
+    ['object', { type: 'object', id: 'r1' } as Selection, 'deleteObject' as const, 'r1'],
+    ['speaker', { type: 'speaker', id: 's1' } as Selection, 'deleteSpeaker' as const, 's1'],
+  ])('routes a %s selection to %s, WITH the selected id', (_kind, selection, expected, id) => {
+    // The id matters: asserting only which callback ran leaves
+    // `ctx.deleteObject('nope')` passing.
     const { ctx, calls } = makeCtx({ selection });
     runCommand({ type: 'delete' }, ctx);
     expect(calls).toEqual([expected]);
+    expect(ctx[expected]).toHaveBeenCalledWith(id);
   });
 
   it('routes a multi selection to deleteMulti with BOTH id lists', () => {
@@ -246,6 +249,23 @@ describe('runCommand — coalesce reaches setScene', () => {
     const { ctx } = makeCtx({ selection: { type: 'object', id: 'r1' } });
     runCommand({ type: 'nudge', dx: 1, dy: 0, coalesce }, ctx);
     expect(ctx.setScene).toHaveBeenCalledWith(expect.any(Function), { coalesce });
+  });
+
+  it('rotate turns the SELECTED rect — the narrowing bind is the one line this extraction rewrote', () => {
+    // The `const rotId = ctx.selection.id` bind exists only because TypeScript
+    // drops narrowing at the callback boundary through a context parameter. It
+    // is therefore the single line most likely to have picked up the wrong id,
+    // and asserting "setScene was called with a function" cannot see that.
+    const { ctx } = makeCtx({
+      scene: sceneWith([rect('r1', 0, 0), rect('r2', 5, 5)]),
+      selection: { type: 'object', id: 'r2' },
+    });
+    runCommand({ type: 'rotate', dir: 1, coarse: true, coalesce: false }, ctx);
+    const next = appliedScene(ctx);
+    const turned = next.objects.find((o) => o.id === 'r2');
+    const still = next.objects.find((o) => o.id === 'r1');
+    expect(turned && 'rotation' in turned ? turned.rotation : 0).not.toBe(0);
+    expect(still && 'rotation' in still ? still.rotation : null).toBe(0);
   });
 
   it('rotate on a non-object selection is a no-op', () => {

@@ -163,7 +163,7 @@ export function runCommand(cmd: KeyCommand, ctx: CommandContext): void {
       if (ctx.selection?.type !== 'object') return;
       const next = flipDoor(ctx.scene, ctx.selection.id, cmd.field);
       // `flipDoor` returns the SAME ref for a non-door — the dispatcher is
-      // ctx.scene-independent so it can't tell a door from a wall/furniture. That
+      // scene-independent so it can't tell a door from a wall/furniture. That
       // same-ref result IS the router: fall through to the furniture seat.
       if (next !== ctx.scene) {
         ctx.setScene(() => next);

@@ -300,9 +300,28 @@ describe('applyDragToScene — move-rc re-bases on an EXTERNAL rotation (the S23
     expect(res!.rot0).toBe(0);
   });
 
-  it('Shift suppresses the seat magnet and reports no guide', () => {
-    const scene = sceneOf([wall(), rect({ center: { x: 5, y: 0.6 }, rotation: 0 })]);
-    const free = applyDragToScene(scene, d(0), { x: 1, y: 0 }, { ...OPTS, shiftKey: true })!;
+  it('Shift suppresses the seat magnet — and WITHOUT shift the same drag captures a wall', () => {
+    // ⚠️ Both halves are required. The first cut of this test asserted only the
+    // shifted case, with a fixture that landed the rect 2.5 m from the wall —
+    // seven times WALL_ALIGN_GAP_M — so `guide` was null with Shift or without
+    // it and the assertion could not fail. The magnet has to actually BITE for
+    // "suppressed" to mean anything.
+    const scene = sceneOf([wall(), rect({ center: { x: 4, y: 3 }, rotation: 0 })]);
+    // The pointer lands the rect centre at y = 0.6: half-height 0.5, so a 0.1 m
+    // gap to the wall at y = 0, well inside the 0.35 m align band.
+    const drag: Drag = {
+      kind: 'move-rc',
+      pointerId: 1,
+      id: 'r1',
+      start: { x: 0, y: 0 },
+      c0: { x: 4, y: 3 },
+      rot0: 0,
+    };
+    const magnet = applyDragToScene(scene, drag, { x: 0, y: -2.4 }, OPTS)!;
+    expect(magnet.guide).not.toBeNull();
+    expect(magnet.guide?.wallId).toBe('w1');
+
+    const free = applyDragToScene(scene, drag, { x: 0, y: -2.4 }, { ...OPTS, shiftKey: true })!;
     expect(free.guide).toBeNull();
   });
 
