@@ -703,6 +703,10 @@ function scoreSlot(ctx: Ctx, preset: FurniturePreset, slot: Slot): Evaluated | n
  *      instead crowd the very floor `generate/pair.ts` searches for a stereo
  *      triangle. It buys nothing in exchange: every piece the `programme`
  *      sub-score asks about — bed, counter, sofa, TV, desk — is `core`.
+ *      ⚠️ This stops fill being pinned INTO a room; it does not stop fill being
+ *      PUSHED there. Filling the bedrooms with their promised pieces displaces
+ *      their fill somewhere, and the seat's room is where it lands — measured,
+ *      that second-order path costs `two-bed`/12345 its stereo pair.
  *
  *   2. A pin may pull a piece OUT of the seat's room, never push one IN. This
  *      is `SEAT_CLEARANCE`'s principle one level up: that room's floor is what
@@ -714,6 +718,15 @@ function scoreSlot(ctx: Ctx, preset: FurniturePreset, slot: Slot): Evaluated | n
  *      their pair. It buys nothing either — the instrument's only TV rule is
  *      for a room named exactly "TV room", i.e. the single-cell `cinema`
  *      archetype, where a pin is a structural no-op.
+ *      ⚠️ Do not read this as protecting the seat's floor from sofas and beds.
+ *      It fires 1445 times on five presets, and narrowing it to
+ *      `preset.id === 'tv'` leaves **all 480 designs byte-identical** — every
+ *      other firing is either unambiguous (`ZONE_AFFINITY.sofa` names exactly
+ *      one room, so the argmax already lands there) or inside a single-cell
+ *      archetype where a pin is vacuous. The TV is the only core piece whose
+ *      affinity (`/living|lounge|tv|family|bed/i`) names a second room. It is
+ *      kept GENERAL because that costs nothing and the next archetype may make
+ *      another core piece ambiguous — not because it is doing wider work today.
  *
  * ⚠️ Rule 2 leaves a REAL defect standing, deliberately and with its number:
  * in 13 of 480 designs (all `one-bed`) the TV lands in the bedroom while the
@@ -781,11 +794,17 @@ function placeOne(
 
   // A pin is a PREFERENCE, not a veto. When the room a piece was ordered for
   // has no surviving slot, the whole plan is scored instead — the pre-S39
-  // answer. Refusing outright was measured and rejected: designs skipping at
-  // least one piece went **9 -> 69 of 480** and pieces skipped 10 -> 90, which
-  // is the owner's original "broken as fuck" complaint made an order of
-  // magnitude worse in exchange for the same programme score this reaches
-  // anyway. The recursion is depth-1 by construction, since `room` is dropped.
+  // answer. Refusing outright was measured and rejected: deleting exactly this
+  // line takes designs skipping at least one piece from **2 to 38 of 480** and
+  // pieces skipped from 2 to 50, which is the owner's original "broken as fuck"
+  // complaint made 19x worse in exchange for the same programme score (0.9986)
+  // this reaches anyway. The recursion is depth-1 by construction, since `room`
+  // is dropped.
+  //
+  // ⚠️ This said "9 -> 69 of 480 / 10 -> 90" until self-review re-derived it.
+  // That figure was real but measured on an EARLIER PROTOTYPE which also pinned
+  // fill and had no `pinnedZone` gate — a different change. Re-measure a number
+  // against the code that actually ships before writing it into a comment.
   if (!best && zone) return placeOne(ctx, preset, notes, skipped, optional, undefined);
 
   if (!best) {
@@ -993,14 +1012,28 @@ export function arrangeFurniture(scene: Scene, items: ArrangeItem[]): ArrangeRes
     // with `skipped` left empty because the second was never queued at all.
     // That is strictly worse than the bug being fixed, and it is invisible.
     let queued = 0;
-    for (const item of items.filter((i) => i.presetId === id)) {
+    // REQUIRED before OPTIONAL. The cap's TOTAL is unchanged, but which copies
+    // it drops is not: with one item per preset the tail was homogeneous and the
+    // drop immaterial, while per-room items are heterogeneous, so spending the
+    // budget in cell order lets an earlier room's FILL outrank a later room's
+    // PROMISE — and it vanishes with `skipped` empty, the same invisible failure
+    // the `filter` above exists to prevent. It does not fire on today's corpus
+    // (measured: the cap truncates a required item 18 times over 3200 designs,
+    // all `loft` bookshelves, all `wanted 3 got 2`, so the promise survives), but
+    // the margin is exactly one and any `programmeFor` cap rise removes it.
+    // `sort` is stable, so within a tier the caller's order is untouched.
+    const mine = items
+      .filter((i) => i.presetId === id)
+      .sort((a, b) => Number(a.optional === true) - Number(b.optional === true));
+    for (const item of mine) {
       if (item.count <= 0) continue;
       // The cap stays GLOBAL per preset rather than becoming per room, so this
       // change moves pieces without ever ordering more of them. Per-item it
       // would have added 8 pieces across 7 designs (bookshelf 6, plant 2) and
       // raised the worst-case queue from 12 x 6 to 6 per item — a bound that
-      // grows with the caller's array. Identical to the old expression whenever
-      // a preset appears once, which is every caller outside the generator.
+      // grows with the caller's array. The COUNT is identical to the old
+      // expression whenever a preset appears once, which is every caller outside
+      // the generator; which copies survive a truncation is not, hence the sort.
       for (let i = 0; i < item.count && queued < MAX_PER_PRESET; i++, queued++) {
         queue.push({ preset, optional: item.optional === true, room: item.room });
       }

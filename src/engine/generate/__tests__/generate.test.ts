@@ -961,7 +961,7 @@ describe('S39: every bedroom gets its own bed, end to end', () => {
     // survivor is `railroad`/2654435761, whose 4.4 x 3.5 m Bedroom has no slot
     // a 2.0 x 1.6 m bed fits after its door corridor and wardrobe, so the piece
     // legitimately falls back to the plan rather than being skipped. Refusing
-    // instead would take designs skipping a piece from 9 to 69 of 480.
+    // instead would take designs skipping a piece from 2 to 38 of 480.
     let bedroomsChecked = 0;
     let without = 0;
     for (const id of ARCHETYPE_IDS) {

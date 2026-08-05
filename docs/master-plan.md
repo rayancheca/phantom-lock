@@ -912,6 +912,54 @@ speed. Confirm the next kickoff you write re-states this protocol.*
 
 ## Progress log
 
+### Session 39 — 2026-08-05 — a room keeps the furniture it was promised (`docs/ideas.md` §15b)
+
+**`programme` 0.9583 → 0.9986** over the 8-archetype × 60-seed corpus (`two-bed` **0.800 → 1.000**,
+`loft` 0.933 → 1.000, `railroad` 0.933 → 0.989). Test count **1893 → 1911**. All three gates green.
+
+**The filed cause was right about WHAT and wrong about WHY, and the why decided the design.** A
+census of all 480 designs found every one of the 60 programme misses is WRONG-ROOM — a piece ordered
+in the right quantity, placed successfully, standing in the wrong room. Zero are under-ordered and
+zero fail to place. But the filed mechanism (a long living-room wall out-voting `zoneAffinity`'s
++1.6) holds in only **2 of the 36** failing `two-bed` designs. In the other 34 both candidate slots
+score `zone +1.60`, because `ZONE_AFFINITY.bed` matches "Bedroom" and "Guest bedroom" identically,
+so the term cancels out of the argmax and `slot.wallLen` decides. Swept at rewards 3.0 and 6.0 and
+at a −3.0 penalty, the same-bedroom count stayed at exactly **34/60** every time — **no scalar on
+that rule can ever split the beds**, which is what makes a quota the right shape.
+
+**Shipped.** `ArrangeItem.room` carries a `RoomLabel.id`; `inventoryFor(cells, roomIds?)` returns one
+item per (cell, preset) from a `perCell` accumulator inside the existing loop; `placeOne` scores that
+room's slots first via a new `pinnedZone`. Three clauses, each forced by a measurement: only a
+REQUIRED piece is pinned (pinning fill too → no-speaker 7 → **14**); a pin may pull a piece OUT of
+the seat's room, never push one IN (without it 7 → **9**); and a pin is a preference, not a veto
+(refusing → designs skipping a piece 9 → **69** of 480). The queue moved from `items.find` to
+`items.filter` — with per-room items `find` places ONE bed and leaves `skipped` empty.
+
+| metric | before | after |
+|---|---|---|
+| TOTAL | 0.8552 | **0.8594** (+0.0044 against a fixed denominator) |
+| placement | 0.9984 | **0.9988** |
+| programme | 0.9583 | **0.9986** |
+| density | 0.4160 | 0.4140 (**0.4154** corrected) |
+| orientation | 0.7696 | 0.7653 (47 more pairs measured; 25 more oriented absolutely) |
+| lock | 0.9854 | **0.9854** |
+| designs skipping a piece | 9 / 480 | **7 / 480** |
+| designs with no speakers | 7 / 480 | **7 / 480** |
+
+**Two instrument facts established here that will bite the next measurement.** `density` is
+CONFOUNDED — `regionOf` grids off `sceneBounds`, which includes furniture, so moving a piece
+re-phases the walkable denominator; one candidate's reported +0.0041 TOTAL became −0.0026 once
+corrected, and 199 designs had a moving denominator with a byte-identical footprint.
+`orientation` has a moving denominator in the other direction. Use
+`docs/sessions/S39/bench/density-counterfactual.mts`.
+
+**Deferred with numbers, not dropped:** pinning the TV fixes 13 designs where it lands in the bedroom
+while the sofa and listener stay in the living room 4.5–6.3 m away (the sofa follows in **0 of 13**),
+and costs 2 designs their pair — filed as §15c with all thirteen seeds. A pre-existing dialog defect
+found on the way is §15d.
+
+**Evidence block** at the end of this entry.
+
 ### Session 38 — 2026-08-05 — finished the SimCanvas decomposition, and fixed the instrument (§18a + §18d)
 
 **SimCanvas 1046 → 789**, under the project's own 800-line cap for the first time since S16. Test

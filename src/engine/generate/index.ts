@@ -277,6 +277,20 @@ export function inventoryFor(cells: Cell[], roomIds?: readonly string[]): Arrang
   // the aggregate below is byte-identical to the pre-S39 return, which is what
   // makes this invisible to `suggestInventory`'s caller and to the 25 test call
   // sites that pass no ids.
+  //
+  // ⚠️ ONE CONSEQUENCE WORTH STATING, because it moves a headline number for a
+  // reason that is not "more furniture landed". The aggregate merges `optional`
+  // with `&&`, so a preset that is `core` in ANY room came out required
+  // EVERYWHERE; per room each keeps its own answer. `dining` is core for a
+  // kitchen and fill for a living room, so a big living room's dining table was
+  // previously reported as a failed PROMISE when it did not fit and is now
+  // correctly an unmet ambition. Measured over the corpus, pieces actually
+  // placed went 7696 -> 7689 (SEVEN FEWER) while pieces reported skipped went
+  // 10 -> 2, so `placement` reads 0.9987 -> 0.9997 with a numerator that fell.
+  // The reclassification is right — it is what `programmeFor` always said — but
+  // "designs skipping a piece 9 -> 2" is mostly better REPORTING, not more
+  // furniture on the floor, and this repo's own lesson about instruments that
+  // move their own denominator applies to it.
   if (roomIds) {
     const out: ArrangeItem[] = [];
     perCell.forEach((m, i) => {

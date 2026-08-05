@@ -29,7 +29,8 @@ effort — a small high-value item beats a large one.
 | 4d | ⇧F quarter-turn — the turned class is not representable in the drag magnet, so the next drag un-turns it | P2 | ½ session |
 | 11 | ✅ **Generate a design** (owner-requested randomizer) — **DONE S22** | ~~P1~~ done | — |
 | 15 | ✅ **Generator QUALITY (owner-reported)** — **DONE S33**: skips 26.3 % → 1.9 %, no-speaker 9.6 % → 1.5 %, coverage 12.7 % → 18.4 %. Filed cause was WRONG (see below). Residual → 15b | ~~P1~~ done | — |
-| 15b | Per-ROOM furniture quotas — `two-bed` programme 0.800, both beds can land in one bedroom | P2 | ½ session |
+| 15b | ✅ **Per-ROOM furniture quotas** — **DONE S39**: programme 0.9583 → 0.9986 (`two-bed` 0.800 → 1.000), skips 9 → 7 of 480, no-speaker 7 → 7. Residual → 15c | ~~P2~~ done | — |
+| 15c | The TV lands in the BEDROOM in 13 of 480 designs while the sofa and listener stay in the living room — cinema mode then aims through a wall. Fixing it costs 2 designs their pair | P2 | ½ session |
 | 16 | ✅ **Word-style direct-manipulation handles (owner-requested 2026-08-03)** — **DONE S36**: 8 resize grips + a rotate grip in the object's own rotated frame, Shift/Alt modifiers, clamp-not-mirror | ~~P1~~ done | — |
 | 16b | A WINDOW's rotate grip is revoked by `openingMagnetFor` on the next drag — pre-existing, affects `q`/`e` and the Inspector identically | P3 | ½ session |
 | 5 | Read-only 3D view | P2 | 1 session *(plan exists)* |
@@ -1252,16 +1253,95 @@ piece of work here — see §15b. `cinema` density is 0.254 and `great-room` 0.3
 `orientation` at 0.770 is limited by wall-placed sofa/TV pairs, and weighting facing harder was
 measured and REJECTED: it buys +0.011 orientation and costs 3 more no-speaker designs.
 
-### 15b. Per-ROOM furniture quotas — **P2**, ~½ session
+### 15b. Per-ROOM furniture quotas — ✅ **DONE (S39)**
 
-`inventoryFor` decides per room and then sums into one flat `ArrangeItem[]`; `arrangeFurniture`
-places by score with no notion of which room a piece was ordered for. `ZONE_AFFINITY` is a soft
-pull (+1.6 in the right zone, −0.9 in the wrong one) and it is not always enough: measured after
-S33, `two-bed`'s `programme` is **0.800**, i.e. one bedroom in five is missing its bed because both
-beds scored better in the same room. The fix is to carry a room id on each `ArrangeItem` and give
-`placeOne` a per-room candidate filter. Cheap to state, and it touches the same seam the
-user-facing "Arrange furniture for me" dialog uses, so it needs its own before/after over the
-instrument.
+Shipped: `ArrangeItem.room` carries a `RoomLabel.id`, `inventoryFor(cells, roomIds?)` returns one
+item per (cell, preset), and `placeOne` scores that room's slots first.
+
+    programme  0.9583 -> 0.9986   two-bed 0.800 -> 1.000 · loft 0.933 -> 1.000 · railroad 0.933 -> 0.989
+    TOTAL      0.8552 -> 0.8595   placement 0.9984 -> 0.9997 · coverage 18.4 %
+    skipping   9 -> 2 of 480      no speakers 7 -> 7, which is ONE LOST and ONE GAINED
+
+⚠️ **Two of those numbers mean less than they look.** `placement` and "designs skipping" improve
+mostly by RECLASSIFICATION, not by placing more: pieces actually placed went **7696 -> 7689 (seven
+fewer)** while pieces reported skipped went 10 -> 2, because per-room `optional` correctly makes a
+big living room's dining table an unmet ambition rather than a failed promise (`programmeFor` puts
+`dining` in the living room's `fill` and the kitchen's `core`; the aggregate collapsed both to
+required). And `no speakers 7 -> 7` is a net figure: `two-bed`/12345 — which is `SEEDS[0]`, the
+first tile on any contact sheet — LOSES its pair, and `railroad`/387289262 gains one.
+
+**The filed cause was right about WHAT and wrong about WHY, and the why matters.** All 60 corpus
+programme misses are WRONG-ROOM — a piece ordered in the right quantity, placed successfully, in
+the wrong room (26 "Guest bedroom wants a bed", 12 "Study wants a desk", 11 + 10 more beds, 1
+counter; zero under-ordered, zero failed placements). But the filed mechanism — a long living-room
+wall out-voting `zoneAffinity`'s +1.6 — happens in only 2 of the 36 failing `two-bed` designs. In
+the other 34 **both** candidate slots score `zone +1.60`, because `ZONE_AFFINITY.bed` matches
+"Bedroom" and "Guest bedroom" identically, so the term cancels out of the argmax and `slot.wallLen`
+decides. Swept at rewards 3.0 and 6.0 and at a −3.0 mismatch penalty, the count of designs putting
+both beds in one bedroom stayed at exactly **34/60** in all three. *No scalar on that rule can ever
+split the beds* — which is what makes the quota the right shape rather than a heavy hammer.
+
+Secondary, and worth knowing before touching `scoreSlot`: `slot.wallLen` exceeds the winning room's
+own longest side in **59/60** designs (mean ratio 1.78). It measures an envelope wall running past
+several rooms — a property of the *building*, not the room — so the smaller bedroom wins in 9 of 36.
+
+**Three clauses, each forced by a measurement, none by taste.** A pin applies only to a REQUIRED
+piece (pinning fill too: no-speaker 7 → 14, and it buys nothing because every piece `programme`
+asks about is `core`); a pin may pull a piece OUT of the seat's room but never push one IN (without
+it: 7 → 9, see §15c); and a pin is a preference, not a veto (refusing outright: designs skipping a
+piece 9 → **69** of 480, the owner's original complaint an order of magnitude worse).
+
+**Two instrument facts this work established, both of which will bite the next measurement here.**
+(1) `density` is CONFOUNDED: `regionOf` grids off `sceneBounds`, which includes furniture, so moving
+a piece re-phases the walkable denominator with no change in what is walkable. One candidate's
+reported +0.0041 TOTAL became −0.0026 once corrected. Always run
+`docs/sessions/S39/bench/density-counterfactual.mts`. (2) `orientation` fell for a reason that
+is NOT a denominator artefact — though an intermediate variant of this very change made it look like
+one. That variant pinned the TV, which co-located 47 more (sofa, TV) pairs and made them measurable
+at all. What SHIPPED does not pin the TV, so `orientable` is unchanged at **1730** and `oriented`
+simply fell by **11**: 8 designs, every one on the living room's sofa-to-TV axis, and disabling only
+the pin restores exactly 0.7696. Three of the eight are `railroad` designs that are hugely better
+overall (387289262 goes from a bed in the LIVING ROOM and no speakers, to a bed in the bedroom and a
+locked pair) — the metric worsening while the plan improves.
+
+### 15c. The TV lands in the bedroom, and the sofa does not follow — **P2**, ~½ session
+
+Measured over the corpus: in **13 of 480 designs — all `one-bed`** — the TV is placed in the
+Bedroom while the sofa AND the listener stay in the Living room, 4.5–6.3 m away through a wall.
+It is not a coherent second seating area: the sofa follows the TV in **0 of 13**. Because
+`settings.tvAnchor` defaults true, cinema mode then aims the whole verdict at a screen the listener
+cannot see, and `findLockingPair` forces the pair's heading at it.
+
+`ZONE_AFFINITY.tv` deliberately lists `bed` as an acceptable zone, so this is legal by the
+arranger's own rules — but `inventoryFor` ordered that TV for the LIVING room's programme, and a
+living room whose promised TV went elsewhere leaves a sofa facing nothing.
+
+S39 could have fixed all 13 by pinning the TV, and did not, because it is the one core piece the
+acoustic search reads directly: pinning it costs **2 designs their speakers** (no-speaker 7 → 9),
+which S39's own acceptance protected. The obvious way round it does not work — tightening
+`ZONE_AFFINITY.tv` to `/living|lounge|tv|family/i`, which forces nothing anywhere, was measured and
+presents the IDENTICAL bill (TV split 13 → 0, no-speaker 7 → **9**, total 0.8594 → 0.8584): the two
+lost pairs are caused by the TV occupying living-room floor at all, not by the pin mechanism.
+**The trade is also closer than "2 beats 13" suggests in the other direction:** a design with no
+speakers lands on `TuneToolsCard`'s existing "suggest a stereo pair" affordance and is one click
+from recovery, whereas a TV in the bedroom has no affordance at all and simply looks broken. Weigh
+recoverability, not counts. The `programme` sub-score cannot see either side of this
+trade — its only TV rule is for a room named exactly "TV room", i.e. the single-cell `cinema`
+archetype, where a pin is a structural no-op — so whoever takes this needs a different instrument
+or a screenshot. Reproducers (all `one-bed`): seeds 4055629249, 774566179, 3189651548, 2563024239,
+922492704, 1936396930, 2323673847, 683142312, 2710950764, 4112131907, 591718445, 3246154206,
+3633431123. The two that lose their pair when the TV is pinned are 922492704 and 683142312.
+
+### 15d. "Rearrange" strips the `optional` flags the previous click just set — **P3, pre-existing**
+
+`ArrangeDialog.tsx:44` copies `it.count` out of `suggestInventory`'s items into its stepper state
+and drops `optional`; line 86 then rebuilds items from counts alone. So clicking "Decide for me"
+and then the manual run button re-runs the IDENTICAL inventory with every optional flag stripped.
+Measured on `apartmentScene()`, same geometry both times, but skipped notes **1 → 4**: the three
+extra are `"No spot survives the rules for a plant — it was skipped."`, the exact S33 message that
+session set out to remove, one click later. Reproduces identically on `main` and on S39. Fixing it
+means deciding whether a hand-picked count should be silent when it does not fit — a product call,
+not a mechanical one.
 
 ---
 

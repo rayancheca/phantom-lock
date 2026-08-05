@@ -452,20 +452,120 @@ describe('S39: a room keeps the furniture it was promised', () => {
     expect(zones[0]).toBe(zones[1]);
   });
 
+  /**
+   * The seat-room rule needs its OWN fixture, and the reason is the whole
+   * lesson of this block.
+   *
+   * `twoBed()` above puts the listener at {x:2,y:4}, which is exactly
+   * `ZONES[0].at` — so on that geometry "the zone containing the listener",
+   * "`ctx.zones[0]`" and "the zone whose centre is nearest" are the SAME zone,
+   * and a rule-2 test written on it passes under all three. Measured: with
+   * `seatZone = ctx.zones[0]`, 36 of 480 corpus designs change and bedrooms
+   * without a bed go 1 -> 20, while that test stays green.
+   *
+   * This fixture separates all three: the seat is in `living`, `zones[0]` is
+   * `bed1`, and the centre NEAREST the seat is also `bed1` (2.55 m against
+   * living's 3.54 m). It cannot express the both-beds-in-one-room collapse —
+   * they split here on their own — which is exactly why `twoBed()` is kept for
+   * that and this one is not asked to do both.
+   */
+  const SEAT_ZONES = [
+    { id: 'bed1', name: 'Bedroom', at: { x: 8.2, y: 1.9 }, w: 3.6, h: 3.8 },
+    { id: 'bed2', name: 'Guest bedroom', at: { x: 8.2, y: 6.1 }, w: 3.6, h: 3.8 },
+    { id: 'living', name: 'Living room', at: { x: 2.8, y: 4 }, w: 5.6, h: 8 },
+  ];
+
+  function seatApart(): Scene {
+    const s = blankScene();
+    return {
+      ...s,
+      listener: { ...s.listener, pos: { x: 5, y: 1.5 } },
+      objects: rectRoomWalls(12, 8),
+      rooms: SEAT_ZONES,
+    };
+  }
+
+  /** Membership in a NAMED zone's rect. Deliberately not a "which zone is this
+   *  in?" lookup: `pointInRect` accepts a boundary, so with edge-sharing zones a
+   *  piece at the shared edge belongs to both and a first-match lookup silently
+   *  attributes it to whichever comes first — which is exactly how an earlier
+   *  version of this fixture let a pin-into-the-seat's-room bug pass. */
+  const inZoneRect = (p: { x: number; y: number }, id: string) => {
+    const z = SEAT_ZONES.find((q) => q.id === id)!;
+    return Math.abs(p.x - z.at.x) <= z.w / 2 + 1e-9 && Math.abs(p.y - z.at.y) <= z.h / 2 + 1e-9;
+  };
+
+  it('THE FIXTURE separates the three readings of "the seat\'s room"', () => {
+    // This block's assertions are only worth anything if the fixture can tell
+    // the shipped rule apart from the two plausible wrong ones. Pinned here so
+    // a later edit to the coordinates cannot quietly re-merge them.
+    const seat = { x: 5, y: 1.5 };
+    const contains = SEAT_ZONES.filter((z) => inZoneRect(seat, z.id));
+    expect(contains.map((z) => z.id)).toEqual(['living']);          // exactly one
+    expect(SEAT_ZONES[0].id).not.toBe('living');                    // != zones[0]
+    const byCentre = [...SEAT_ZONES].sort(
+      (a, b) => Math.hypot(a.at.x - seat.x, a.at.y - seat.y) - Math.hypot(b.at.x - seat.x, b.at.y - seat.y),
+    );
+    expect(byCentre[0].id).not.toBe('living');                      // != nearest centre
+    // …and no two zones share a point, so membership is never ambiguous.
+    for (let a = 0; a < SEAT_ZONES.length; a++) {
+      for (let b = a + 1; b < SEAT_ZONES.length; b++) {
+        const p = SEAT_ZONES[a];
+        const q = SEAT_ZONES[b];
+        const ox = Math.min(p.at.x + p.w / 2, q.at.x + q.w / 2) - Math.max(p.at.x - p.w / 2, q.at.x - q.w / 2);
+        const oy = Math.min(p.at.y + p.h / 2, q.at.y + q.h / 2) - Math.max(p.at.y - p.h / 2, q.at.y - q.h / 2);
+        expect(Math.min(ox, oy), `${p.id} x ${q.id}`).toBeLessThanOrEqual(0);
+      }
+    }
+  });
+
   it('does NOT pin a piece INTO the room the listener sits in', () => {
     // SEAT_CLEARANCE's principle one level up: that floor belongs to the
     // stereo pair. Pinning into it costs 9 no-speaker designs against 7.
-    const res = arrangeFurniture(twoBed(), [{ presetId: 'bed', count: 1, room: 'living' }]);
-    const zones = bedZones(res);
-    expect(zones).toHaveLength(1);
-    expect(zones[0]).not.toBe('Living room');
+    const res = arrangeFurniture(seatApart(), [{ presetId: 'bed', count: 1, room: 'living' }]);
+    const placed = placedOf(res.objects).filter((o) => o.label === 'Bed');
+    expect(placed).toHaveLength(1);
+    expect(inZoneRect(placed[0].center, 'living')).toBe(false);
+  });
+
+  it('DOES honour a pin into a room the listener is NOT in — the other direction', () => {
+    // Without this, "never pin anything" passes the rule-2 test trivially.
+    const res = arrangeFurniture(seatApart(), [{ presetId: 'bed', count: 1, room: 'bed2' }]);
+    const placed = placedOf(res.objects).filter((o) => o.label === 'Bed');
+    expect(placed).toHaveLength(1);
+    expect(inZoneRect(placed[0].center, 'bed2')).toBe(true);
+  });
+
+  it('still REPORTS a required pinned piece that fits nowhere at all', () => {
+    // Every skip notice the generator emits comes through the fallback
+    // recursion, and nothing else in the suite reaches it: the pre-existing
+    // skip tests all pass a room-less item, so `zone` is undefined and the
+    // recursion never runs. Two wrong versions of that one line — re-entering
+    // with `optional: true`, or with fresh `[]` arrays — leave the geometry
+    // byte-identical and delete every "No spot survives the rules" message the
+    // user would have seen. Exactly one note, so a double report reds too.
+    const s = blankScene();
+    const nowhere: Scene = {
+      ...s,
+      // The seat is OUTSIDE the zone, or the pin would be dropped by rule 2 and
+      // the recursion — the thing under test — would never execute.
+      listener: { ...s.listener, pos: { x: 50, y: 50 } },
+      // Every wall is under `wallSlots`'s 1.0 m floor, so there is no candidate
+      // anywhere: not in the room, and not in the plan either.
+      objects: rectRoomWalls(0.9, 0.9),
+      rooms: [{ id: 'z', name: 'Nook', at: { x: 0.45, y: 0.45 }, w: 0.5, h: 0.5 }],
+    };
+    const res = arrangeFurniture(nowhere, [{ presetId: 'bed', count: 1, room: 'z' }]);
+    expect(res.objects).toHaveLength(0);
+    expect(res.skipped).toHaveLength(1);
+    expect(res.skipped[0]).toMatch(/bed/i);
   });
 
   it('falls back to the whole plan when the pinned room has no viable slot', () => {
     // A zone floating in the middle of the shell contains no wall slot at all,
-    // so the filter empties. Refusing outright was measured at 69 of 480
-    // designs skipping a piece against 9 — the owner's original complaint,
-    // an order of magnitude worse.
+    // so the filter empties. Refusing outright was measured at 38 of 480
+    // designs skipping a piece against 2 — the owner's original complaint,
+    // 19x worse.
     const s = blankScene();
     const scene: Scene = {
       ...s,
@@ -486,6 +586,35 @@ describe('S39: a room keeps the furniture it was promised', () => {
       { presetId: 'bookshelf', count: 4, room: 'bed2' },
     ]);
     expect(placedOf(res.objects).filter((o) => o.label === 'Bookshelf')).toHaveLength(6);
+  });
+
+  it('spends the cap on a PROMISE before an ambition', () => {
+    // The cap's total is unchanged, but which copies it drops is not. With
+    // per-room items an earlier room's FILL can consume the budget before a
+    // later room's CORE, and the promise then vanishes with `skipped` EMPTY —
+    // the same invisible failure the queue's `filter` exists to prevent.
+    // Reachable shape: `bookshelf` is core for a study and fill for a bedroom
+    // and a living room, so `loft` can order 7 against a cap of 6 (measured: the
+    // cap truncates a required item 18 times over 3200 designs, all exactly
+    // this). Two REQUIRED items competing is not reachable — `programmeFor`
+    // makes a preset core in at most one room kind — so the sort is enough.
+    const res = arrangeFurniture(twoBed(), [
+      { presetId: 'bookshelf', count: 6, optional: true, room: 'bed1' },
+      { presetId: 'bookshelf', count: 1, optional: false, room: 'bed2' },
+    ]);
+    const shelves = placedOf(res.objects).filter((o) => o.label === 'Bookshelf');
+    expect(shelves).toHaveLength(6);
+    expect(shelves.filter((o) => zoneOf(o.center) === 'Guest bedroom').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('bounds a hostile items array — 10 000 entries still queue 6', () => {
+    // The old cap was `Math.min(6, item.count)` on ONE item per preset, so the
+    // queue could never exceed 12 x 6. Per item it would grow with the array,
+    // which is the S8 "bound the derived value" lesson: the bound must be on
+    // what the loop actually walks. Measured at 5 ms for this input.
+    const items = Array.from({ length: 10_000 }, () => ({ presetId: 'plant', count: 1, room: 'bed1' }));
+    const res = arrangeFurniture(twoBed(), items);
+    expect(placedOf(res.objects).filter((o) => o.label === 'Plant').length).toBeLessThanOrEqual(6);
   });
 
   it('scores the whole plan when the room id resolves to nothing', () => {
