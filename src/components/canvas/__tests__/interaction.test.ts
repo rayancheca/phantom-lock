@@ -7,6 +7,8 @@ import {
   isDraggableAt,
   itemsInBand,
   makeOpening,
+  nextWallHover,
+  openingGhost,
   pointInMarquee,
   popChainSegment,
   resolveSelection,
@@ -687,5 +689,124 @@ describe('canvasKeyAction interactive-target exemption (S7)', () => {
   it('keeps the {kind:"space", armed} shape (no new fields)', () => {
     const a = canvasKeyAction(ev({ code: 'Space' }), false, false);
     expect(Object.keys(a).sort()).toEqual(['armed', 'kind']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// S38 — the two reducers lifted out of `SimCanvas.applyMove`
+// ---------------------------------------------------------------------------
+
+describe('nextWallHover', () => {
+  const objs = [
+    wall('w1', { x: 0, y: 0 }, { x: 6, y: 0 }),
+    wall('w2', { x: 0, y: 3 }, { x: 6, y: 3 }),
+  ];
+  const box = { left: 100, top: 40, right: 200, bottom: 80 };
+  const base = {
+    objects: objs,
+    cursorS: { x: 1000, y: 1000 },
+    worldPt: { x: 100, y: 100 },
+    chipBox: null as null | typeof box,
+    appearDist: 0.3,
+    project: (w: { x: number; y: number }) => ({ x: w.x * 10, y: w.y * 10 }),
+  };
+
+  it('latches onto the nearest wall within the appear distance', () => {
+    const out = nextWallHover(null, { ...base, worldPt: { x: 2.37, y: 0.2 } });
+    expect(out).toEqual({ id: 'w1', at: { x: 2.37, y: 0 } });
+  });
+
+  it('KEEPS the same wall’s anchor while sliding along it — the chip must not chase', () => {
+    const prev = { id: 'w1', at: { x: 2.37, y: 0 } };
+    const out = nextWallHover(prev, { ...base, worldPt: { x: 4.9, y: 0.1 } });
+    expect(out).toBe(prev); // same reference: React bails out, the chip stays put
+  });
+
+  it('…but SWITCHES to a different wall, so a neighbour’s chip is reachable', () => {
+    const prev = { id: 'w1', at: { x: 2.37, y: 0 } };
+    const out = nextWallHover(prev, { ...base, worldPt: { x: 2.37, y: 2.9 } });
+    expect(out).toEqual({ id: 'w2', at: { x: 2.37, y: 3 } });
+  });
+
+  it('THE "RUNS AWAY FROM THE MOUSE" RULE: a cursor on the chip keeps it, even over a nearer wall', () => {
+    // Without this, crossing the plan relocates the chip to whichever wall is
+    // closest — so it jumps out from under the pointer and can never be clicked.
+    const prev = { id: 'w1', at: { x: 2.37, y: 0 } };
+    const out = nextWallHover(prev, {
+      ...base,
+      chipBox: box,
+      cursorS: { x: 150, y: 60 }, // inside the chip's box
+      worldPt: { x: 2.37, y: 2.9 }, // …while hovering the OTHER wall
+    });
+    expect(out).toBe(prev);
+  });
+
+  it('off every wall, it holds while the cursor is near the chip and drops when it is not', () => {
+    const prev = { id: 'w1', at: { x: 2.37, y: 0 } };
+    const held = nextWallHover(prev, {
+      ...base,
+      chipBox: box,
+      cursorS: { x: 205, y: 85 }, // just outside the box, inside the margin
+      worldPt: { x: 2.37, y: 40 },
+    });
+    expect(held).toBe(prev);
+
+    const dropped = nextWallHover(prev, {
+      ...base,
+      chipBox: box,
+      cursorS: { x: 900, y: 900 },
+      worldPt: { x: 2.37, y: 40 },
+    });
+    expect(dropped).toBeNull();
+  });
+
+  it('SELF-HEALS when the latched wall was deleted underneath it', () => {
+    const prev = { id: 'gone', at: { x: 2.37, y: 0 } };
+    // Even with the cursor sitting right on the chip, a dead wall must not stick.
+    expect(
+      nextWallHover(prev, { ...base, chipBox: box, cursorS: { x: 150, y: 60 }, worldPt: { x: 99, y: 99 } }),
+    ).toBeNull();
+  });
+
+  it('a dead latch does not block a NEW wall from being picked up', () => {
+    const prev = { id: 'gone', at: { x: 2.37, y: 0 } };
+    expect(nextWallHover(prev, { ...base, worldPt: { x: 2.37, y: 0.2 } })).toEqual({
+      id: 'w1',
+      at: { x: 2.37, y: 0 },
+    });
+  });
+
+  it('null in, nothing near, null out', () => {
+    expect(nextWallHover(null, base)).toBeNull();
+  });
+});
+
+describe('openingGhost', () => {
+  const objs = [wall('w1', { x: 0, y: 0 }, { x: 6, y: 0 })];
+
+  it('ghosts a door ON the wall, carrying the reserved preview id', () => {
+    const g = openingGhost(objs, { x: 2.37, y: 0.2 }, 0.3, 'door');
+    expect(g).not.toBeNull();
+    expect(g!.id).toBe('preview');
+    expect(g!.kind).toBe('rect');
+    if (g!.kind !== 'rect') throw new Error('unreachable');
+    expect(g!.role).toBe('door');
+    expect(g!.center).toEqual({ x: 2.37, y: 0 });
+  });
+
+  it('ghosts a window when asked', () => {
+    const g = openingGhost(objs, { x: 2.37, y: 0.2 }, 0.3, 'window');
+    expect(g!.kind === 'rect' && g!.role).toBe('window');
+  });
+
+  it('returns null off every wall — so the caller clears the ghost', () => {
+    expect(openingGhost(objs, { x: 2.37, y: 4 }, 0.3, 'door')).toBeNull();
+    expect(openingGhost([], { x: 0, y: 0 }, 0.3, 'door')).toBeNull();
+  });
+
+  it('agrees with `makeOpening` — the ghost is the object the click would make', () => {
+    const ghost = openingGhost(objs, { x: 2.37, y: 0.2 }, 0.3, 'door')!;
+    const real = makeOpening(objs[0], { x: 2.37, y: 0 }, 'door', 'preview');
+    expect(ghost).toEqual(real);
   });
 });
